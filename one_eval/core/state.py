@@ -44,7 +44,8 @@ class NodeState(MainState):
     # === 人机交互控制 ===
     waiting_for_human: bool = False
     human_feedback: Optional[str] = None
-
+    approved_warning_ids: List[str] = field(default_factory=list) # validator 白名单
+    
     # === 异常与日志 ===
     error_flag: bool = False
     error_msg: Optional[str] = None
