@@ -1,6 +1,8 @@
 from dataflow_agent.graphbuilder.graph_builder import GenericGraphBuilder
+from langgraph.graph import StateGraph
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from one_eval.toolkits.tool_manager import get_tool_manager
-from typing import Callable, Dict, List, Tuple, Any
+from typing import Optional, Callable, Dict, List, Tuple, Any
 
 class GraphBuilder(GenericGraphBuilder):
     """Eval流程Graph的构建类"""
@@ -80,6 +82,28 @@ class GraphBuilder(GenericGraphBuilder):
                         func=lambda s=state, f=tool_func: f(s),
                     )
 
-    def build(self):
-        """用父类的方法，构建并返回编译后的图"""
-        return super().build()
+    def build(self, 
+              checkpointer: Optional[BaseCheckpointSaver] = None, 
+              **kwargs : Any):
+        """
+        重写父类的build方法。
+        支持接收任意参数如 interrupt、checkpointer等
+        """
+        sg = StateGraph(self.state_model)
+        
+        # 添加节点（自动包装工具注册逻辑）
+        for name, (func, role) in self.nodes.items():
+            wrapped_func = self._wrap_node_with_tools(func, role)
+            sg.add_node(name, wrapped_func)
+        
+        # 添加普通边
+        for src, dst in self.edges:
+            sg.add_edge(src, dst)
+            
+        # 添加条件边
+        for src, cond_func in self.conditional_edges.items():
+            sg.add_conditional_edges(src, cond_func)
+            
+        sg.set_entry_point(self.entry_point)
+        return sg.compile(checkpointer=checkpointer, **kwargs)
+        
