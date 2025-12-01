@@ -1,0 +1,361 @@
+{
+    "gsm8k": {
+        "aliases": [
+            "小学水平的数学应用题",
+            "用于评估模型解决多步算术问题的答案准确率",
+            "题目为英文，以开放式问答形式呈现，要求模型给出最终数值",
+            "由OpenAI创建，是衡量基础数学能力的常用基准",
+            "Grade School Math word problems",
+            "final answer accuracy",
+            "multi-step arithmetic"
+        ],
+        "bench_mode": "Text_QA",
+        "hf_repo": "openai/gsm8k",
+        "test_subset": [
+            "main"
+        ],
+        "test_split": [
+            "test"
+        ],
+        "default_question_split": [
+            "question"
+        ],
+        "default_answer_split": [
+            "answer"
+        ],
+        "task_type": "math",
+        "source_url": "https://huggingface.co/datasets/openai/gsm8k"
+    },
+    "MATH-500": {
+        "aliases": [
+            "高难度竞赛级数学题的抽样子集",
+            "Hendrycks' MATH基准的500题快速评测版",
+            "主要用于快速、低成本地评估模型",
+            "题目来源于美国数学竞赛（AMC/AIME），难度高",
+            "覆盖代数、几何、数论等",
+            "问题常包含LaTeX公式，要求模型给出最终答案",
+            "MATH-500",
+            "Hendrycks MATH subset",
+            "competition math",
+            "fast evaluation"
+        ],
+        "bench_mode": "Text_QA",
+        "hf_repo": "HuggingFaceH4/MATH-500",
+        "test_subset": null,
+        "test_split": [
+            "test"
+        ],
+        "default_question_split": [
+            "problem"
+        ],
+        "default_answer_split": [
+            "answer"
+        ],
+        "task_type": "math",
+        "source_url": "https://huggingface.co/datasets/HuggingFaceH4/MATH-500"
+    },
+    "aqua-rat": {
+        "aliases": [
+            "代数应用题选择题",
+            "评估模型在ABCDE选项中做选择的能力",
+            "由DeepMind创建",
+            "难度中等，介于gsm8k和MATH之间",
+            "评测简单快速，只需比对选项字母",
+            "题目为英文，要求模型输出正确选项的字母",
+            "AQUA-RAT",
+            "algebraic word problems",
+            "multiple-choice QA"
+        ],
+        "bench_mode": "Text_QA_choice",
+        "hf_repo": "deepmind/aqua_rat",
+        "test_subset": [
+            "raw"
+        ],
+        "test_split": [
+            "test"
+        ],
+        "default_question_split": [
+            "question",
+            "options"
+        ],
+        "default_answer_split": [
+            "correct"
+        ],
+        "task_type": "math",
+        "source_url": "https://huggingface.co/datasets/deepmind/aqua_rat"
+    },
+    "mmlu": {
+        "aliases": [
+            "MMLU中的数学部分",
+            "包含初等数学、高中数学、高中统计学、抽象代数等子任务",
+            "所有题目均为四选一的单项选择题（ABCD）",
+            "评估模型在标准课程体系下的数学知识和解题能力，而非竞赛级难题",
+            "难度高于gsm8k，低于MATH",
+            "评测时只需判断模型选择的选项字母是否正确",
+            "MMLU-Math",
+            "MMLU数学",
+            "高中数学选择题"
+        ],
+        "bench_mode": "Text_QA_choice",
+        "hf_repo": "cais/mmlu",
+        "test_subset": [
+            "abstract_algebra",
+            "college_mathematics",
+            "elementary_mathematics",
+            "high_school_mathematics",
+            "high_school_statistics"
+        ],
+        "test_split": [
+            "test",
+            "test",
+            "test",
+            "test",
+            "test"
+        ],
+        "default_question_split": [
+            "question",
+            "choices"
+        ],
+        "default_answer_split": [
+            "answer"
+        ],
+        "task_type": "math",
+        "source_url": "https://huggingface.co/datasets/cais/mmlu"
+    },
+    "agieval-gaokao-mathqa": {
+        "aliases": [
+            "中国高考数学题",
+            "AGIEval评测集的一部分",
+            "评估模型在中文环境下的高级数学推理能力",
+            "题目难度高，与MATH相当",
+            "题目为中文",
+            "AGIEval-gaokao-mathqa",
+            "Gaokao Math",
+            "Chinese Math benchmark"
+        ],
+        "bench_mode": "Text_QA_choice",
+        "hf_repo": "dmayhem93/agieval-gaokao-mathqa",
+        "test_subset": null,
+        "test_split": [
+            "test"
+        ],
+        "default_question_split": [
+            "query",
+            "choices"
+        ],
+        "default_answer_split": [
+            "gold"
+        ],
+        "task_type": "math",
+        "source_url": "https://huggingface.co/datasets/dmayhem93/agieval-gaokao-mathqa"
+    },
+    "SVAMP": {
+        "aliases": [
+            "简单算术应用题的变体集合",
+            "专门用于测试模型的鲁棒性",
+            "通过改变数字、问题结构或添加无关信息来构造题目",
+            "数学计算本身不难（类似GSM8K），但语言理解有挑战",
+            "诊断模型是真正理解还是在模式匹配",
+            "SVAMP",
+            "Robustness benchmark"
+        ],
+        "bench_mode": "Text_QA",
+        "hf_repo": "ChilleD/SVAMP",
+        "test_subset": null,
+        "test_split": [
+            "test"
+        ],
+        "default_question_split": [
+            "Body",
+            "Question"
+        ],
+        "default_answer_split": [
+            "Answer"
+        ],
+        "task_type": "math",
+        "source_url": "https://huggingface.co/datasets/ChilleD/SVAMP"
+    },
+    "hendrycks_math": {
+        "aliases": [
+            "MATH数据集",
+            "由Dan Hendrycks创建",
+            "美国数学竞赛题 (AMC, AIME)",
+            "高难度数学推理的重要标准",
+            "难度极高",
+            "题目为英文，包含LaTeX",
+            "非选择题，要求生成自由形式的最终答案",
+            "标准答案格式为用 \\boxed{...} 包裹",
+            "包含详细解题步骤，可用于CoT微调",
+            "hendrycks_math",
+            "Competition Math",
+            "数学竞赛题"
+        ],
+        "bench_mode": "Text_QA",
+        "hf_repo": "EleutherAI/hendrycks_math",
+        "test_subset": [
+            "algebra",
+            "counting_and_probability",
+            "geometry",
+            "intermediate_algebra",
+            "number_theory",
+            "prealgebra",
+            "precalculus"
+        ],
+        "test_split": [
+            "test",
+            "test",
+            "test",
+            "test",
+            "test",
+            "test",
+            "test"
+        ],
+        "default_question_split": [
+            "problem"
+        ],
+        "default_answer_split": [
+            "solution"
+        ],
+        "task_type": "math",
+        "source_url": "https://huggingface.co/datasets/EleutherAI/hendrycks_math"
+    },
+    "Calc-ape210k": {
+        "aliases": [
+            "ape210K数据集",
+            "小学数学应用题",
+            "大规模数据集(21万条)",
+            "数学难度类似GSM8K",
+            "包含问题、答案和解题方程",
+            "可用于训练“文本到方程”的生成任务",
+            "ape210k",
+            "Chinese Math Word Problems"
+        ],
+        "bench_mode": "Text_QA",
+        "hf_repo": "MU-NLPC/Calc-ape210k",
+        "test_subset": [
+            "default"
+        ],
+        "test_split": [
+            "test"
+        ],
+        "default_question_split": [
+            "question"
+        ],
+        "default_answer_split": [
+            "result"
+        ],
+        "task_type": "math",
+        "source_url": "https://huggingface.co/datasets/MU-NLPC/Calc-ape210k"
+    },
+    "Calc-mawps": {
+        "aliases": [
+            "MAWPS数据集",
+            "小学数学应用题",
+            "由多个早期数据集组合而成的基准集合",
+            "难度和任务类型类似ape210k",
+            "数学难度低于GSM8K",
+            "提供解题方程，可用于训练“文本到方程”模型",
+            "数学应用题领域的经典基准之一",
+            "mawps",
+            "Math Word Problem Solving"
+        ],
+        "bench_mode": "Text_QA",
+        "hf_repo": "MU-NLPC/Calc-mawps",
+        "test_subset": [
+            "default"
+        ],
+        "test_split": [
+            "test"
+        ],
+        "default_question_split": [
+            "question"
+        ],
+        "default_answer_split": [
+            "result"
+        ],
+        "task_type": "math",
+        "source_url": "https://huggingface.co/datasets/MU-NLPC/Calc-mawps"
+    },
+    "Calc-asdiv_a": {
+        "aliases": [
+            "ASDiv数据集",
+            "英文小学数学应用题",
+            "强调语言多样性",
+            "比MAWPS语言更复杂，用于测试模型语言鲁棒性",
+            "数学难度低于GSM8K",
+            "提供解题方程",
+            "asdiv",
+            "Academically Sourced Diverse Math Word Problems"
+        ],
+        "bench_mode": "Text_QA",
+        "hf_repo": "MU-NLPC/Calc-asdiv_a",
+        "test_subset": [
+            "default"
+        ],
+        "test_split": [
+            "test"
+        ],
+        "default_question_split": [
+            "question"
+        ],
+        "default_answer_split": [
+            "result"
+        ],
+        "task_type": "math",
+        "source_url": "https://huggingface.co/datasets/MU-NLPC/Calc-asdiv_a"
+    },
+    "competition_math": {
+        "aliases": [
+            "competition_math数据集",
+            "由MATH和AIME数据集组合而成",
+            "高中数学竞赛题",
+            "奥数题",
+            "高难度数学推理",
+            "难度远超GSM8K",
+            "问题包含LaTeX公式",
+            "需要模型生成详细解题步骤",
+            "涵盖代数、几何、数论等",
+            "评测大模型数学能力的顶级基准",
+            "math dataset",
+            "aime dataset"
+        ],
+        "bench_mode": "Text_QA",
+        "hf_repo": "chiayewken/competition_math",
+        "test_subset": null,
+        "test_split": [
+            "test"
+        ],
+        "default_question_split": [
+            "problem"
+        ],
+        "default_answer_split": [
+            "solution"
+        ],
+        "task_type": "math",
+        "source_url": "https://huggingface.co/datasets/chiayewken/competition_math"
+    },
+    "Math-QA": {
+        "aliases": [
+            "MathQA数据集",
+            "英文高中数学应用题",
+            "核心特点是为每个问题提供了结构化的、程序化的解题步骤",
+            "可用于对模型的推理过程进行精细化诊断分析",
+            "难度介于GSM8K和MATH之间",
+            "math_qa"
+        ],
+        "bench_mode": "Text_QA",
+        "hf_repo": "rvv-karma/Math-QA",
+        "test_subset": null,
+        "test_split": [
+            "test"
+        ],
+        "default_question_split": [
+            "question"
+        ],
+        "default_answer_split": [
+            "answer"
+        ],
+        "task_type": "math",
+        "source_url": "https://huggingface.co/datasets/rvv-karma/Math-QA"
+    }
+}

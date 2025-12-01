@@ -52,6 +52,7 @@ prompt_registry.register(
   "is_mm": Bool,
   "add_bench_request": Bool,
   "domain": [str, ...],
+  "specific_benches": [str, ...],
   "model_path": [str, ...],
   "special_request": str
 }}
@@ -72,6 +73,7 @@ prompt_registry.register(
   "is_mm": 是否涉及多模态任务(bool类型),
   "add_bench_request": 是否需要检索 benchmark(bool类型),
   "domain": ["math", "medical", ...],  # 评测任务的领域，如 ["text", "math", "code"]
+  "specific_benches": ["gsm8k", "mmlu", ...],  # 由用户提出的必须评测的指定 benchmark 列表
   "model_path": ["gpt-4o", "local://qwen", ...],  # 被测模型名或本地路径，从用户给的文字描述中寻找，没有则填写 None
   "special_request": "其他无法结构化但依旧重要的需求文本"  # 其他无法结构化但依旧重要的需求,用文字记录用于后续处理
 }}
