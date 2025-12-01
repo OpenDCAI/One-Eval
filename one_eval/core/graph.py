@@ -3,6 +3,8 @@ from langgraph.graph import StateGraph
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from one_eval.toolkits.tool_manager import get_tool_manager
 from typing import Optional, Callable, Dict, List, Tuple, Any
+from langchain_core.runnables import RunnableConfig
+import asyncio
 
 class GraphBuilder(GenericGraphBuilder):
     """Eval流程Graph的构建类"""
@@ -81,6 +83,37 @@ class GraphBuilder(GenericGraphBuilder):
                         role=role,
                         func=lambda s=state, f=tool_func: f(s),
                     )
+
+    def _wrap_node_with_tools(self, node_func: Callable, role: str):
+        """
+        重写父类的包装器。
+        原因：当启用 checkpointer 时，LangGraph 可能会向节点传递 `config` 等额外参数。
+        父类的包装器只接受 `state`，会导致 TypeError。
+        """
+        async def wrapped_node(state, config: RunnableConfig = None):
+            # 注册工具
+            self._register_tools_for_role(role, state)
+            
+            # 执行原节点函数 (尝试智能透传参数)
+            # 这里的逻辑是：如果 LangGraph 传了 config，我们尝试传给用户的函数
+            # 如果用户的函数只接受 state，我们捕获错误并降级调用
+            try:
+                if asyncio.iscoroutinefunction(node_func):
+                    return await node_func(state, config)
+                else:
+                    return node_func(state, config)
+            except TypeError as e:
+                # 如果是因为参数过多导致的错误，尝试只传 state
+                # 注意：这里需要小心区分是“函数内部的TypeError”还是“参数匹配的TypeError”
+                # 简单起见，我们假设用户的大部分节点只接受 state
+                if "argument" in str(e): 
+                    if asyncio.iscoroutinefunction(node_func):
+                        return await node_func(state)
+                    else:
+                        return node_func(state)
+                raise e # 抛出真正的逻辑错误
+        
+        return wrapped_node
 
     def build(self, 
               checkpointer: Optional[BaseCheckpointSaver] = None, 
