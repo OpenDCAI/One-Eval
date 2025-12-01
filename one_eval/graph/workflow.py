@@ -76,5 +76,5 @@ async def run_demo(user_query: str):
 
 if __name__ == "__main__":
     asyncio.run(
-        run_demo("我想评估我的模型在图像 reasoning 任务上的表现")
+        run_demo("我想评估我的模型在文本 reasoning 任务上的表现")
     )
