@@ -31,6 +31,6 @@ class QueryUnderstandNode(BaseNode):
 
         new_state = await agent.run(state)
 
-        log.info(f"[{self.name}] 执行结束，输出结果: {new_state.result}")
-
+        log.info(f"[{self.name}] 执行结束，输出结果: {new_state.result[agent.role_name]}")
+        
         return new_state

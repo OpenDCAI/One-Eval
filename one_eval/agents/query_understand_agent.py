@@ -48,7 +48,7 @@ class QueryUnderstandAgent(CustomAgent):
         resp = await llm.call(msgs, bind_post_tools=False)
         parsed = self.parse_result(resp.content)
 
-        state.result = parsed
+        state.result[self.role_name] = parsed
         log.info(f"{self.role_name} 结果: {parsed}")
 
         return state

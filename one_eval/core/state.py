@@ -26,8 +26,10 @@ class NodeState(MainState):
     user_query: Optional[str] = None               # e.g. "评估模型在文本过滤任务的表现"
     task_domain: Optional[str] = None              # "text", "vision", "math" 等
     target_model: Optional[str] = None             # 被测模型名或本地路径
-    temp: Dict[str, Any] = field(default_factory=dict)  # 临时存储，用于中间结果
+    # temp: Dict[str, Any] = field(default_factory=dict)  # 临时存储，用于中间结果
     reference_models: List[str] = field(default_factory=list) # 预留semantic评估接口
+
+    result: Optional[Dict[str, Any]] = field(default_factory=dict) # 某个agent的输出结果
 
     # === 数据与评测基准 ===
     benches: List[BenchInfo] = field(default_factory=list)
