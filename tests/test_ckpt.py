@@ -5,7 +5,8 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from one_eval.core.state import NodeState
 from one_eval.core.graph import GraphBuilder
 from one_eval.nodes.query_understand_node import QueryUnderstandNode
-
+from dotenv import load_dotenv
+load_dotenv()
 async def main():
     # === 创建/寻找数据库 ===
     current_file_path = Path(__file__).resolve()
