@@ -45,7 +45,7 @@ class InterruptNode(BaseNode):
         log.info(f"[{self.name}] 开始执行安全扫描...")
 
         # 获取已批准的警告列表 (更新 NodeState : approved_warning_ids 字段)
-        approved_ids = getattr(state, "approved_warning_ids", [])
+        approved_ids = getattr(state, "approved_warning_ids", []) or []
 
         for i, validator in enumerate(self.validators):
             # 生成一个唯一 ID 标识当前校验器

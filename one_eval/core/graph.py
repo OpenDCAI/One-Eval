@@ -1,6 +1,10 @@
 from dataflow_agent.graphbuilder.graph_builder import GenericGraphBuilder
+from langgraph.graph import StateGraph
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from one_eval.toolkits.tool_manager import get_tool_manager
-from typing import Callable, Dict, List, Tuple, Any
+from typing import Optional, Callable, Dict, List, Tuple, Any
+from langchain_core.runnables import RunnableConfig
+import asyncio
 
 class GraphBuilder(GenericGraphBuilder):
     """Eval流程Graph的构建类"""
@@ -80,6 +84,59 @@ class GraphBuilder(GenericGraphBuilder):
                         func=lambda s=state, f=tool_func: f(s),
                     )
 
-    def build(self):
-        """用父类的方法，构建并返回编译后的图"""
-        return super().build()
+    def _wrap_node_with_tools(self, node_func: Callable, role: str):
+        """
+        重写父类的包装器。
+        原因：当启用 checkpointer 时，LangGraph 可能会向节点传递 `config` 等额外参数。
+        父类的包装器只接受 `state`，会导致 TypeError。
+        """
+        async def wrapped_node(state, config: RunnableConfig = None):
+            # 注册工具
+            self._register_tools_for_role(role, state)
+            
+            # 执行原节点函数 (尝试智能透传参数)
+            # 这里的逻辑是：如果 LangGraph 传了 config，我们尝试传给用户的函数
+            # 如果用户的函数只接受 state，我们捕获错误并降级调用
+            try:
+                if asyncio.iscoroutinefunction(node_func):
+                    return await node_func(state, config)
+                else:
+                    return node_func(state, config)
+            except TypeError as e:
+                # 如果是因为参数过多导致的错误，尝试只传 state
+                # 注意：这里需要小心区分是“函数内部的TypeError”还是“参数匹配的TypeError”
+                # 简单起见，我们假设用户的大部分节点只接受 state
+                if "argument" in str(e): 
+                    if asyncio.iscoroutinefunction(node_func):
+                        return await node_func(state)
+                    else:
+                        return node_func(state)
+                raise e # 抛出真正的逻辑错误
+        
+        return wrapped_node
+
+    def build(self, 
+              checkpointer: Optional[BaseCheckpointSaver] = None, 
+              **kwargs : Any):
+        """
+        重写父类的build方法。
+        支持接收任意参数如 interrupt、checkpointer等
+        """
+        sg = StateGraph(self.state_model)
+        
+        # 添加节点（自动包装工具注册逻辑）
+        for name, (func, role) in self.nodes.items():
+            wrapped_func = self._wrap_node_with_tools(func, role)
+            sg.add_node(name, wrapped_func)
+        
+        # 添加普通边
+        for src, dst in self.edges:
+            sg.add_edge(src, dst)
+            
+        # 添加条件边
+        for src, cond_func in self.conditional_edges.items():
+            sg.add_conditional_edges(src, cond_func)
+            
+        sg.set_entry_point(self.entry_point)
+        return sg.compile(checkpointer=checkpointer, **kwargs)
+        
