@@ -10,6 +10,8 @@ from one_eval.nodes.query_understand_node import QueryUnderstandNode
 from one_eval.agents.query_understand_agent import QueryUnderstandAgent
 from one_eval.toolkits.tool_manager import get_tool_manager
 from one_eval.logger import get_logger
+from dotenv import load_dotenv
+load_dotenv()
 
 log = get_logger("QueryUnderstandNode")
 # === 修改 QueryUnderstandNode 类 ===
