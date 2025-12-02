@@ -1,140 +1,157 @@
-# test for InterruptNode
 import asyncio
 import uuid
-from langgraph.graph import StateGraph
+from typing import Dict, Any
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
-from one_eval.nodes.interrupt_node import InterruptNode
 from one_eval.core.state import NodeState
+from one_eval.core.graph import GraphBuilder  
+from one_eval.nodes.interrupt_node import InterruptNode
+from one_eval.nodes.query_understand_node import QueryUnderstandNode
+from one_eval.agents.query_understand_agent import QueryUnderstandAgent
+from one_eval.toolkits.tool_manager import get_tool_manager
+from one_eval.logger import get_logger
 
-# --- 定义两个 validators ---
-async def mock_validator(state: NodeState):
-    if "删除" in state.user_query:
+log = get_logger("QueryUnderstandNode")
+# === 修改 QueryUnderstandNode 类 ===
+class QueryUnderstandNode(QueryUnderstandNode):
+    def __init__(self) -> None:
+        super().__init__()
+    
+    async def run(self, state: NodeState) -> dict:  
+        log.info(f"[{self.name}] 节点开始执行")
+
+        tm = get_tool_manager()
+
+        # 初始化 Agent
+        agent = QueryUnderstandAgent(
+            tool_manager=tm,
+            model_name="gpt-4o", # 或从配置读取
+        )
+
+        processed_state = await agent.run(state)
+        
+        # 提取 Agent 的原始输出字典
+        raw_result = getattr(processed_state, "result", {}) or {}
+
+        log.info(f"[{self.name}] Agent 原始输出: {raw_result}")
+
+        # 关键修改：返回字典以触发 LangGraph 状态更新
+        # 手动把 Agent 的字段 (key) 映射到 NodeState 的字段 (key)
         return {
-            "id": "WARN_001", 
-            "reason": "检测到高危操作：数据删除"
+            # 映射：Agent 叫 'model_path' -> State 叫 'target_model'
+            "target_model": raw_result.get("model_path", []), 
+            
+            # 映射：Agent 叫 'domain' -> State 叫 'domain'
+            "domain": raw_result.get("domain", []),
+            
+            # 映射：Agent 叫 'specific_benches' -> State 叫 'specific_benches'
+            # (这是给 BenchSearchNode 用的关键字段)
+            "specific_benches": raw_result.get("specific_benches", []),
+            
+            # 保留原始结果以备查验
+            "result": raw_result 
         }
+
+# === 定义 Validator ===
+def expensive_model_validator(state: NodeState):
+    """
+        规则：如果 target_model 包含昂贵模型，返回警告信息。
+    """
+    # 定义敏感名单
+    EXPENSIVE_MODELS = {"gpt-4-expensive", "claude-3-opus"}
+    
+    # 获取当前请求的模型列表
+    current_models = getattr(state, "target_model", []) or []
+    
+    # 遍历检查
+    for model in current_models:
+        if model in EXPENSIVE_MODELS:
+            # 发现违规！返回一个字典作为警告
+            return {
+                "reason": f"预算预警: 检测到使用了高成本模型 [{model}]",
+                "severity": "warning",
+                "model": model
+            }
+            
+    # 一切正常，返回 None
     return None
 
-async def sensitive_topic_validator(state: NodeState):
-    if "数据库" in state.user_query:
-        return {
-            "id": "WARN_SENSITIVE_001",
-            "type": "content_warning",
-            "reason": "检测到敏感词：数据库",
-            "risk_level": "MEDIUM"
-        }
-    return None
-
-# 定义几个简单的节点，用于跳转测试
-async def input_node(state: NodeState):
-    print(f"[InputNode] 接收到输入: {state.user_query}")
-    return {"user_query": state.user_query}
-
-async def success_node(state: NodeState):
-    print("[SuccessNode] 操作执行成功！")
-    return {"final_result": "Success"}
-
-async def failure_node(state: NodeState):
-    print("[FailureNode] 操作被拒绝。")
-    return {"final_result": "Blocked"}
-
-# 将 validators 合并为列表，后续传给 interrupt node
-ALL_VALIDATORS = [
-    mock_validator,
-    sensitive_topic_validator
-]
-
-# --- Graph Build --- 
-# 这里用的 LangGraph 官方建图器
-# 目前 One-Eval 库的 graphbuilder 以及 DataFlow-Agent 的 GenericGraphBuilder 不支持 **kwargs 传参
-# 无法接收 checkpointer 以及 interrupt 函数
-# 后续可做改进
-
+# === 使用 GraphBuilder 构建图 ===
 def build_graph():
-    workflow = StateGraph(NodeState)
+    checkpointer = MemorySaver()
     
-    # 创建中断节点
-    check_node = InterruptNode(
-        name="security_check",
-        validators=ALL_VALIDATORS,
-        success_node="success_node",
-        failure_node="failure_node"
+    # 定义节点
+    query_node = QueryUnderstandNode()
+    
+    # 定义中断节点
+    interrupt_node = InterruptNode(
+        name="cost_check",
+        validators=[expensive_model_validator], # 挂载刚才写的规则
+        success_node="end_node",  # 批准后去哪里？ -> 结束或下一步
+        failure_node="end_node"   # 拒绝后去哪里？ -> 结束（通常是终止流程）
     )
-
-    workflow.add_node("input_node", input_node)
-    workflow.add_node("security_check", check_node.run)
-    workflow.add_node("success_node", success_node)
-    workflow.add_node("failure_node", failure_node)
-
-    workflow.add_edge("input_node", "security_check")
-
-    workflow.set_entry_point("input_node")
     
-    return workflow.compile(checkpointer=MemorySaver())
+    # 简略定义终点
+    async def end_node_func(state: NodeState):
+        print("[EndNode] 流程结束")
 
-# --- 测试函数 ---
+    # 构建图
+    builder = GraphBuilder(state_model=NodeState, entry_point=query_node.name)
+    
+    builder.add_node(query_node.name, query_node.run)
+    builder.add_node(interrupt_node.name, interrupt_node.run)
+    builder.add_node("end_node", end_node_func)
+
+    # 连接边 (Query -> Check)
+    builder.add_edge(query_node.name, interrupt_node.name)
+    
+    return builder.build(checkpointer=checkpointer)
+
+# === 4. 运行测试 (逻辑保持不变) ===
 async def run_test():
+    # 初始化图
     app = build_graph()
-    
-    # 唯一的 Thread ID，用于记忆状态
     thread_id = str(uuid.uuid4())
     config = {"configurable": {"thread_id": thread_id}}
+
+    print(f"=== 开始测试 (Thread: {thread_id}) ===")
+
+    # --- Step 1: 触发中断 ---
+    print("\nStep 1: 用户发出请求...")
     
-    print(f"启动工作流 (Thread: {thread_id})")
-    print("=" * 50)
+    initial_state = NodeState(user_query="请评估 gpt-4-expensive 在 gsm-8k 上的性能")
+    # initial_state = NodeState(user_query="请评估 claude-3-opus 在 gsm-8k 上的性能")
+    
+    async for event in app.astream(initial_state, config=config):
+        pass
+    
+    # --- Step 2: 检查中断 ---
+    snapshot = app.get_state(config)
+    if snapshot.next:
+        print(f"\n流程暂停于: {snapshot.next}")
+        if snapshot.tasks:
+            val = snapshot.tasks[0].interrupts[0].value
+            print(f"警告: {val.get('reason')}")
+    else:
+        print("错误：未触发中断")
+        return
 
-    # 第一阶段：运行直到触发中断
-    await app.ainvoke(
-        NodeState(user_query="请帮我删除数据库。"), 
-        config=config
-    )
+    # --- Step 3: 批准 ---
+    print("\nStep 3: 用户反馈...")
+    user_input = input("请输入是否同意(Y/N)：")
+    if user_input == 'Y' or 'y' or 'Yes' or 'yes' or 'YES':
+        print("用户批准")
+        approval = Command(resume={"action": "approve", "reason": "Budget OK"})
+    else:
+        print("用户拒绝")
+        approval = Command(resume={"action": "refuse", "reason": "Budget too expensive"})
+    
+    async for event in app.astream(approval, config=config):
+        pass
 
-    # 检查当前状态
-    # while 循环用于检测所有的 validators 的意见
-    while True:
-        # 获取当前快照
-        snapshot = app.get_state(config)
-
-        # 如果没有下一步 (next)，说明流程结束
-        if not snapshot.next:
-            print("\n流程全部完成！")
-            # 这里可以打印最终结果
-            final_state = snapshot.values
-            print("-" * 30)
-            print(f"最终执行结果: {final_state.get('final_result')}")
-            # 这里在 NodeState 中添加了字段 approved_warning_ids
-            # 目的是用于统计 InterruptNode 中人工同意通过的 validator 名单，避免被重复执行 
-            print(f"最终白名单 (Approved IDs): {final_state.get('approved_warning_ids')}")
-            print(f"完整 State: {final_state}")
-            print("-" * 30)
-            break
-
-        # 否则，进程中断，获取中断详情
-        if snapshot.tasks and snapshot.tasks[0].interrupts:
-            interrupt_value = snapshot.tasks[0].interrupts[0].value
-            # value 可能是 dict 或 string 
-            reason = interrupt_value.get('reason') if isinstance(interrupt_value, dict) else str(interrupt_value)
-            
-            print(f"\n工作流已暂停 (节点: {snapshot.next})")
-            print(f"拦截原因: {reason}")
-
-            # 人机交互：获取用户输入
-            user_input = input("请输入是否同意 (y/n) > ")
-            action = "approve" if user_input.strip().lower() == "y" else "decline"
-
-            print(f"发送指令: {action} ...")
-            
-            # 恢复执行 (Resume)
-            # 注意：这里不需要接收返回值，循环回到开头会再次检查 get_state
-            await app.ainvoke(
-                Command(resume={"action": action}),
-                config=config
-            )
-        else:
-            # 若有 next 但没有 interrupts，通常是系统处于调度间隙
-            print("等待调度中...")
-            break
-
+    # --- Step 4: 验证 ---
+    final_state = app.get_state(config).values
+    print(f"\n最终状态: TargetModel={final_state.get('target_model')}")
+    
 if __name__ == "__main__":
     asyncio.run(run_test())
