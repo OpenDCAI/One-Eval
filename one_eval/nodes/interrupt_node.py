@@ -43,7 +43,7 @@ class InterruptNode(BaseNode):
             validator_id = f"{self.name}_validator_{validator.__name__}"
 
             if validator_id in approved_ids:
-                log.info(f"[{self.name}] 规则 {validator_id} 已在白名单中，跳过。")
+                log.info(f"规则 {validator_id} 已在白名单中，跳过。")
                 continue
 
             try:

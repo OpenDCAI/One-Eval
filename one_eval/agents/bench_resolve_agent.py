@@ -4,7 +4,7 @@ from typing import Dict, List, Any, Optional
 from huggingface_hub import DatasetCard, list_datasets
 
 from one_eval.core.agent import CustomAgent
-from one_eval.core.state import NodeState
+from one_eval.core.state import NodeState, BenchInfo
 from one_eval.logger import get_logger
 
 log = get_logger("BenchResolveAgent")
@@ -167,7 +167,17 @@ class BenchResolveAgent(CustomAgent):
                 }
 
         # ================ Step 3: 写回 state ================
-        state.benches = list(bench_info.keys())
+        benches = []
+        for repo_id, info in bench_info.items():
+            benches.append(
+                BenchInfo(
+                    bench_name=repo_id,
+                    bench_table_exist=info.get("source") != "hf_resolve",
+                    bench_source_url=(info.get("hf_meta", {}) or {}).get("hf_repo") or repo_id,
+                    meta=info,
+                )
+            )
+        state.benches = benches
         state.bench_info = bench_info
 
         state.agent_results["BenchResolveAgent"] = {
@@ -176,5 +186,5 @@ class BenchResolveAgent(CustomAgent):
             "hf_resolved": hf_resolved,
         }
 
-        log.info(f"最终 bench 列表: {state.benches}")
+        log.info(f"最终 bench 数量: {len(state.benches)}")
         return state

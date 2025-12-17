@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from one_eval.core.agent import CustomAgent
-from one_eval.core.state import NodeState
+from one_eval.core.state import NodeState, BenchInfo
 from one_eval.utils.bench_registry import BenchRegistry
 from one_eval.logger import get_logger
 
@@ -72,7 +72,15 @@ class BenchNameSuggestAgent(CustomAgent):
 
         # 如果本地 >= 3，认为已经足够，不再调用 LLM 推荐
         if len(local_matches) >= 3:
-            state.benches = list(bench_info.keys())
+            state.benches = [
+                BenchInfo(
+                    bench_name=name,
+                    bench_table_exist=True,
+                    bench_source_url=None,
+                    meta=bench_info[name],
+                )
+                for name in bench_info.keys()
+            ]
             state.bench_info = bench_info
             state.agent_results["BenchNameSuggestAgent"] = {
                 "local_matches": local_matches,
