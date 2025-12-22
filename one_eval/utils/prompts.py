@@ -140,7 +140,6 @@ prompt_registry.register(
 {local_benches}
 """
 )
-
 # ======================================================
 # Human-in-the-loop Agent (Interrupt / Review)
 # ======================================================
@@ -229,5 +228,129 @@ prompt_registry.register(
 }}
 
 不要输出任何 JSON 以外的内容。
+"""
+)
+
+# ======================================================
+# MetricRecommend (指标推荐) Prompts (Fixed)
+# ======================================================
+
+prompt_registry.register(
+    "metric_recommend.system",
+    """
+你是 One-Eval 系统中的 MetricRecommendAgent（指标推荐专家）。
+你的任务是基于 Benchmark 的元数据和样例，推荐最符合其任务类型的评估指标（Metrics）。
+
+### 核心原则
+1. **精准匹配**：必须根据任务本质（如是算术计算还是符号推导，是短文本抽取还是长文本生成）选择指标。
+2. **对齐注册表**：你推荐的指标名称必须属于系统支持的标准列表（见下文）。
+3. **格式严格**：输出必须是纯 JSON 格式，且符合 `name`, `priority`, `args` 的结构要求。
+
+### 支持的指标库 (Metric Library)
+请从以下类别中选择最合适的指标：
+
+1. **数学与逻辑 (Math & Logic)**
+   - `numerical_match`: 算术题、小学数学 (容忍浮点误差，如 1.0 == 1)
+   - `symbolic_match`: 高等数学、代数推导 (基于 SymPy/LaTeX 等价性)
+   - `strict_match`: 格式严格的字符串匹配 (辅助指标)
+
+2. **选择与分类 (Choice & Classification)**
+   - `choice_accuracy`: 选项匹配 (A/B/C/D) 或 离散标签分类
+   - `missing_answer_rate`: (诊断) 未输出有效选项的比例
+   - `auc_roc`: 二分类/多分类任务的 AUC 指标
+
+3. **代码生成 (Code Generation)**
+   - `pass_at_k`: 代码通过率 (需在 args 中指定 k，如 {{"k": 1}})
+
+4. **文本生成与摘要 (Generation & Summarization)**
+   - `rouge_l`: 摘要、翻译、开放生成 (结构相似度)
+   - `bleu`: 翻译任务
+   - `bert_score`: 语义相似度 (可选)
+
+5. **问答 (QA)**
+   - `exact_match`: 抽取式 QA (SQuAD类)，答案必须完全一致
+   - `f1`: 抽取式 QA 或 长文本 QA (Token 级重叠率)
+   - `llm_judge_score`: 开放式问答、主观题 (依靠 LLM 打分)
+
+6. **长文本与检索 (Long Context & Retrieval)**
+   - `retrieval_accuracy`: 检索类任务 (RAG, NeedleBench)
+   - `count_accuracy`: 计数类任务 (统计数量)
+
+7. **安全与评估 (Safety & Evaluation)**
+   - `toxicity_max`: 安全性检测 (毒性分数)
+   - `truth_score`: 幻觉检测/真实性评估
+
+### 通用诊断指标
+- `extraction_rate`: **强烈建议**为所有非选择题任务添加此指标，用于监控正则提取的成功率。
+
+### 输出结构
+必须返回 JSON 字典：
+{{
+    "benchmark_name": [
+        {{"name": "metric_name", "priority": "primary/secondary/diagnostic", "args": {{...}}, "desc": "..."}}
+    ]
+}}
+"""
+)
+
+prompt_registry.register(
+    "metric_recommend.task",
+    """
+请分析以下 Benchmark 信息，并推荐评估指标。
+
+### Benchmark 信息
+{bench_context}
+
+### 用户需求
+{user_requirement}
+
+### 决策逻辑 (Decision Logic)
+请根据 Benchmark 的 `任务类型` 和 `样例数据` 按以下逻辑进行推断：
+
+1. **若是 数学/计算题**：
+   - 简单算术/应用题 -> 推荐 `numerical_match` (primary) + `extraction_rate` (diagnostic)。
+   - 复杂公式/竞赛数学 (含 LaTeX) -> 推荐 `symbolic_match` (primary) + `strict_match` (secondary)。
+
+2. **若是 选择题 (Multiple Choice)**：
+   - 推荐 `choice_accuracy` (primary) + `missing_answer_rate` (diagnostic)。
+
+3. **若是 代码题**：
+   - 推荐 `pass_at_k` (k=1) (primary) + `pass_at_k` (k=5 或 10) (secondary)。
+   - 注意：`args` 必须显式写出，例如 `"args": {{"k": 1}}`。
+
+4. **若是 抽取式QA (SQuAD风格)**：
+   - 推荐 `exact_match` (primary) + `f1` (secondary)。
+
+5. **若是 长文本QA / 摘要**：
+   - 推荐 `rouge_l` (primary) 或 `f1` (针对 LongBench 类)。
+
+6. **若是 检索/大海捞针 (Needle in a Haystack)**：
+   - 推荐 `retrieval_accuracy` (primary)。
+
+7. **若是 开放式主观问答 (Open-ended)**：
+   - 推荐 `llm_judge_score` (primary)。
+
+8. **若是 安全/毒性检测**：
+   - 推荐 `toxicity_max` (primary) + `toxicity_rate` (diagnostic)。
+
+### 输出要求
+1. 仅输出一个 JSON 字典，Key 为 Benchmark 名称。
+2. 不要包含 Markdown 标记。
+3. 确保 JSON 可解析。
+
+### JSON 示例
+{{
+  "gsm8k_test": [
+    {{"name": "numerical_match", "priority": "primary", "desc": "数值软匹配"}},
+    {{"name": "extraction_rate", "priority": "diagnostic", "desc": "答案提取率"}}
+  ],
+  "humaneval": [
+    {{"name": "pass_at_k", "priority": "primary", "args": {{"k": 1}}, "desc": "Pass@1"}},
+    {{"name": "pass_at_k", "priority": "secondary", "args": {{"k": 10}}, "desc": "Pass@10"}}
+  ],
+  "my_retrieval_task": [
+    {{"name": "retrieval_accuracy", "priority": "primary", "desc": "检索准确率"}}
+  ]
+}}
 """
 )
