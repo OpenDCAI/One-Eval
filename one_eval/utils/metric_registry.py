@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from one_eval.logger import get_logger
 import re, json
 
@@ -17,44 +17,94 @@ class MetricRegistry:
 
     def __init__(self):
         """根据 opencompass 的 evaluator 粒度，预定义一批 metric 模板。"""
+        # 保留结构化后的 eval_type 信息
+        self._eval_type_specs: Dict[str, Dict[str, Any]] = {
+            "key1_text_score": {
+                "title": "文本打分",
+                "required_keys": ["text"],
+                "optional_keys": ["context"],
+                "artifacts": ["predict"],
+            },
+            "key2_qa": {
+                "title": "生成式：单参考答案",
+                "required_keys": ["question", "target"],
+                "optional_keys": ["context"],
+                "artifacts": ["predict", "ground_truth"],
+            },
+            "key2_q_ma": {
+                "title": "生成式：多参考答案",
+                "required_keys": ["question", "targets"],
+                "optional_keys": ["context"],
+                "artifacts": ["predict", "ground_truth"],
+            },
+            "key3_q_choices_a": {
+                "title": "选择题：单正确",
+                "required_keys": ["question", "choices", "label"],
+                "optional_keys": ["context"],
+                "artifacts": ["predict", "ground_truth"],
+            },
+            "key3_q_choices_as": {
+                "title": "选择题：多正确",
+                "required_keys": ["question", "choices", "labels"],
+                "optional_keys": ["context"],
+                "artifacts": ["predict", "ground_truth"],
+            },
+            "key3_q_a_rejected": {
+                "title": "偏好/排序：成对比较",
+                "required_keys": ["question", "better", "rejected"],
+                "optional_keys": ["context"],
+                "artifacts": ["predict", "ground_truth"],
+            },
+        }
+
         # --- 初始化metric定义 ---
+        # 以 bench_dataflow_eval_type 为一级分类，便于覆盖纯文本 bench 的评测规划。
         self._definitions = {
-            "数学与逻辑 (Math & Logic)": [
-                {"name": "numerical_match", "desc": "数值软匹配(1.0 == 1，容忍浮点误差)", "usage": "算术题、小学数学"},
-                {"name": "symbolic_match", "desc": "SymPy / LaTeX 等价性校验", "usage": "高等数学、代数推导"},
-                {"name": "strict_match", "desc": "原始字符串严格匹配", "usage": "格式严格的任务"}
+            "文本打分 (key1_text_score)": [
+                {"name": "llm_judge_score", "desc": "LLM 裁判打分 (0~100)", "usage": "开放式主观评测/打分式任务"},
+                {"name": "toxicity_max", "desc": "样本毒性分数的最大值", "usage": "安全检测/毒性评测"},
+                {"name": "truth_score", "desc": "真实度评分 (LLM-based)", "usage": "幻觉检测/事实性评测"}
             ],
-            "选择与分类 (Choice & Classification)": [
+            "生成式：单参考答案 (key2_qa)": [
+                {"name": "exact_match", "desc": "抽取式答案完全匹配 (EM)", "usage": "短答案/抽取式 QA"},
+                {"name": "f1", "desc": "token 级 F1 (匹配程度)", "usage": "长答案/部分匹配"},
+                {"name": "strict_match", "desc": "原始字符串严格匹配", "usage": "格式严格的任务"},
+                {"name": "numerical_match", "desc": "数值软匹配(1.0 == 1，容忍浮点误差)", "usage": "算术题/数值填空"},
+                {"name": "symbolic_match", "desc": "SymPy / LaTeX 等价性校验", "usage": "代数推导/高等数学"},
+                {"name": "rouge_l", "desc": "ROUGE-L F1", "usage": "摘要/生成"},
+                {"name": "rouge_1", "desc": "ROUGE-1 F1", "usage": "摘要/生成 (辅助)"},
+                {"name": "rouge_2", "desc": "ROUGE-2 F1", "usage": "摘要/生成 (辅助)"},
+                {"name": "bleu", "desc": "sacreBLEU 主指标", "usage": "翻译/生成"},
+                {"name": "bert_score", "desc": "语义相似度", "usage": "开放生成 (可选)"},
+                {"name": "retrieval_accuracy", "desc": "是否检索到正确段落/索引", "usage": "RAG/检索类输出"},
+                {"name": "count_accuracy", "desc": "计数覆盖精度", "usage": "计数类输出"},
+                {"name": "code_similarity", "desc": "代码相似度", "usage": "代码输出相似度对比"},
+                {"name": "extraction_rate", "desc": "正则提取成功率 (强烈建议)", "usage": "所有需要从长输出提取答案的任务"}
+            ],
+            "生成式：多参考答案 (key2_q_ma)": [
+                {"name": "exact_match", "desc": "多参考下的 EM (实现侧需支持多 gold)", "usage": "SQuAD 多答案/多可接受答案"},
+                {"name": "f1", "desc": "多参考下的 token F1 (实现侧需支持多 gold)", "usage": "多答案/部分匹配"},
+                {"name": "rouge_l", "desc": "多参考下的 ROUGE-L", "usage": "多参考生成"},
+                {"name": "bleu", "desc": "多参考下的 BLEU", "usage": "多参考翻译"},
+                {"name": "bert_score", "desc": "多参考下的语义相似度", "usage": "多参考开放生成 (可选)"},
+                {"name": "extraction_rate", "desc": "正则提取成功率 (强烈建议)", "usage": "多参考任务的答案提取监控"}
+            ],
+            "选择题：单正确 (key3_q_choices_a)": [
                 {"name": "choice_accuracy", "desc": "选项字母或离散标签准确率", "usage": "选择题 (A/B/C/D)"},
                 {"name": "missing_answer_rate", "desc": "未输出有效选项/标签的比例 (诊断用)", "usage": "监控模型拒答率"},
-                {"name": "auc_roc", "desc": "AUC-ROC ×100", "usage": "二分类/多分类任务"}
+                {"name": "auc_roc", "desc": "AUC-ROC ×100", "usage": "二分类/多分类任务"},
+                {"name": "accuracy", "desc": "通用 accuracy (当 evaluator 支持时)", "usage": "分类任务辅助指标"}
             ],
-            "代码生成 (Code Generation)": [
-                {"name": "pass_at_k", "desc": "代码通过率 (需指定 k)", "args": {"k": 1}, "usage": "HumanEval, MBPP"}
+            "选择题：多正确 (key3_q_choices_as)": [
+                {"name": "choice_accuracy", "desc": "多选题准确率/命中率 (实现侧需明确规则)", "usage": "多正确答案的选择题"},
+                {"name": "missing_answer_rate", "desc": "未输出有效选项/标签的比例 (诊断用)", "usage": "监控模型拒答率"}
             ],
-            "文本生成与摘要 (Generation & Summarization)": [
-                {"name": "rouge_l", "desc": "ROUGE-L F1", "usage": "摘要、翻译"},
-                {"name": "bleu", "desc": "sacreBLEU 主指标", "usage": "翻译任务"},
-                {"name": "bert_score", "desc": "语义相似度", "usage": "开放生成 (可选)"}
-            ],
-            "问答 (QA)": [
-                {"name": "exact_match", "desc": "抽取式答案完全匹配 (EM)", "usage": "SQuAD, 抽取式QA"},
-                {"name": "f1", "desc": "token 级 F1 (匹配程度)", "usage": "长上下文 QA"},
-                {"name": "llm_judge_score", "desc": "LLM 裁判打分 (0~100)", "usage": "开放式主观问答"}
-            ],
-            "长文本与检索 (Long Context & Retrieval)": [
-                {"name": "retrieval_accuracy", "desc": "是否检索到正确段落/索引", "usage": "RAG, NeedleBench"},
-                {"name": "count_accuracy", "desc": "计数覆盖精度", "usage": "计数类任务"}
-            ],
-            "安全与评估 (Safety & Evaluation)": [
-                {"name": "toxicity_max", "desc": "样本毒性分数的最大值", "usage": "安全检测"},
-                {"name": "truth_score", "desc": "真实度评分 (LLM-based)", "usage": "幻觉检测"}
-            ],
-            "通用诊断 (General Diagnostic)": [
-                {"name": "extraction_rate", "desc": "正则提取成功率 (强烈建议)", "usage": "所有非选择题任务"}
+            "偏好/排序：成对比较 (key3_q_a_rejected)": [
+                {"name": "win_rate_against_baseline", "desc": "胜率/偏好取胜率", "usage": "pairwise preference / DPO 数据"}
             ]
         }
         # --- 初始化metric模板 ---
+        # 暂时保留不动，后续可能会弃用
         self._templates = {
             "numerical": [
                 {"name": "numerical_match", "priority": "primary"},
@@ -109,6 +159,43 @@ class MetricRegistry:
                 {"name": "auc_roc", "priority": "primary"},
                 {"name": "accuracy", "priority": "secondary"}
             ]    
+        }
+
+        self._schema_family_templates: Dict[str, Dict[str, List[Dict[str, Any]]]] = {
+            "key1_text_score": {
+                "safety_toxicity": [{"name": "toxicity_max", "priority": "primary"}],
+                "truthfulness": [{"name": "truth_score", "priority": "primary"}],
+                "llm_judge": self._templates["llm_judge"],
+            },
+            "key2_qa": {
+                "extractive_qa": self._templates["qa_extractive"],
+                "long_context_qa": self._templates["long_context_qa"],
+                "math_numeric": self._templates["numerical"],
+                "math_symbolic": self._templates["symbolic"],
+                "translation": self._templates["generation_bleu"],
+                "summarization": self._templates["generation_rouge"],
+                "code": self._templates["code"],
+                "retrieval": self._templates["retrieval"],
+                "count": self._templates["count"],
+                "open_ended": self._templates["llm_judge"],
+            },
+            "key2_q_ma": {
+                "extractive_qa": self._templates["qa_extractive"],
+                "long_context_qa": self._templates["long_context_qa"],
+                "translation": self._templates["generation_bleu"],
+                "summarization": self._templates["generation_rouge"],
+                "open_ended": self._templates["llm_judge"],
+            },
+            "key3_q_choices_a": {
+                "choice": self._templates["choice"],
+                "auc_roc": self._templates["auc_roc"],
+            },
+            "key3_q_choices_as": {
+                "choice": self._templates["choice"],
+            },
+            "key3_q_a_rejected": {
+                "pairwise_preference": self._templates["win_rate"],
+            },
         }
 
         # --- 初始化注册表：按 opencompass 数据集族映射到上面的模板 ---
@@ -177,55 +264,52 @@ class MetricRegistry:
         }
         self._decision_rules = [
             {
-                "condition": "数学/计算题 (Math/Arithmetic)",
+                "condition": "通用前提",
                 "rules": [
-                    "简单算术/应用题 -> 推荐 `numerical_match` (primary) + `extraction_rate` (diagnostic)",
-                    "复杂公式/竞赛数学 (含 LaTeX) -> 推荐 `symbolic_match` (primary) + `strict_match` (secondary)"
-                ]
+                    "本步骤输入来自上一步 inference 的输出：包含 BenchInfo/meta，以及落盘的 predict 与 ground truth 内容。",
+                    "优先使用 meta 中的 `bench_dataflow_eval_type` 来判定评测类型；若缺失则根据样本字段(schema)推断。"
+                ],
             },
             {
-                "condition": "选择题 (Multiple Choice)",
+                "condition": "文本打分 (key1_text_score): keys=[text]",
                 "rules": [
-                    "推荐 `choice_accuracy` (primary) + `missing_answer_rate` (diagnostic)"
-                ]
+                    "若评测是对输出文本本身打分/检测 -> 使用 `llm_judge_score` / `toxicity_max` / `truth_score` 这类 score 型指标。"
+                ],
             },
             {
-                "condition": "代码题 (Code Generation)",
+                "condition": "生成式：单参考答案 (key2_qa): keys=[question,target]",
                 "rules": [
-                    "推荐 `pass_at_k` (k=1) (primary) + `pass_at_k` (k=5 或 10) (secondary)",
-                    "注意：`args` 必须显式写出，例如 `{'k': 1}`"
-                ]
+                    "默认 -> `exact_match`(primary) + `extraction_rate`(diagnostic)，必要时补 `f1`(secondary)。",
+                    "若答案是数值/算术 -> `numerical_match`(primary)；若含 LaTeX/符号推导 -> `symbolic_match`(primary) + `strict_match`(secondary)。",
+                    "若是摘要/翻译类 -> `rouge_l` 或 `bleu` 作为主指标。"
+                ],
             },
             {
-                "condition": "抽取式QA (Extractive QA)",
+                "condition": "生成式：多参考答案 (key2_q_ma): keys=[question,targets[]]",
                 "rules": [
-                    "推荐 `exact_match` (primary) + `f1` (secondary)"
-                ]
+                    "使用与单参考相同的指标族，但 evaluator 需支持多参考（多 gold）聚合。",
+                    "默认仍建议加 `extraction_rate` 监控答案提取/对齐成功率。"
+                ],
             },
             {
-                "condition": "长文本QA / 摘要 (Long Context/Summarization)",
+                "condition": "选择题：单正确 (key3_q_choices_a): keys=[question,choices[],label]",
                 "rules": [
-                    "推荐 `rouge_l` (primary) 或 `f1` (针对 LongBench 类)"
-                ]
+                    "使用 `choice_accuracy`(primary)；诊断可加 `missing_answer_rate`。",
+                    "二分类/多分类可选 `auc_roc`(primary) + `accuracy`(secondary)。"
+                ],
             },
             {
-                "condition": "检索任务 (Retrieval)",
+                "condition": "选择题：多正确 (key3_q_choices_as): keys=[question,choices[],labels[]]",
                 "rules": [
-                    "推荐 `retrieval_accuracy` (primary)"
-                ]
+                    "优先选择支持多标签/多选规则的实现；当前 registry 以 `choice_accuracy`/`missing_answer_rate` 占位，具体聚合规则由 evaluator 定义。"
+                ],
             },
             {
-                "condition": "开放式主观问答 (Open-ended)",
+                "condition": "偏好/排序：成对比较 (key3_q_a_rejected): keys=[question,better,rejected]",
                 "rules": [
-                    "推荐 `llm_judge_score` (primary)"
-                ]
+                    "使用 `win_rate_against_baseline`(primary)，含义为 pairwise preference 的取胜率。"
+                ],
             },
-            {
-                "condition": "安全/毒性检测 (Safety)",
-                "rules": [
-                    "推荐 `toxicity_max` (primary) + `toxicity_rate` (diagnostic)"
-                ]
-            }
         ]
     
     def get_decision_logic_doc(self) -> str:
@@ -264,6 +348,117 @@ class MetricRegistry:
         self._registry[dataset_name.lower()] = metrics
         log.info(f"[MetricRegistry] 已注册/更新数据集 '{dataset_name}' 的指标配置")
 
+    def infer_eval_type(self, bench_meta: Optional[Dict[str, Any]]) -> Optional[str]:
+        if not bench_meta:
+            return None
+        eval_type = bench_meta.get("bench_dataflow_eval_type") or bench_meta.get("eval_type")
+        if isinstance(eval_type, str) and eval_type.strip():
+            return eval_type.strip()
+        return None
+
+    # 从 eval_type 分流， 基于 bench_meta 或者 prompt_template 来判断任务类型
+    def infer_task_family(
+        self,
+        eval_type: Optional[str],
+        bench_meta: Optional[Dict[str, Any]] = None,
+        prompt_template: Optional[str] = None,
+        task_domain: Optional[str] = None,
+    ) -> Tuple[Optional[str], float]:
+        meta = bench_meta or {}
+        explicit = meta.get("task_family") or meta.get("bench_task_family")
+        if isinstance(explicit, str) and explicit.strip():
+            return explicit.strip(), 1.0
+
+        task_type = meta.get("task_type")
+        domain = meta.get("domain")
+        desc = meta.get("description")
+        s = " ".join([str(task_type or ""), str(domain or ""), str(desc or "")]).lower()
+        p = (prompt_template or "").lower()
+        td = (task_domain or "").lower()
+
+        def has_any(text: str, keywords: List[str]) -> bool:
+            return any(k in text for k in keywords)
+
+        if eval_type in {"key3_q_choices_a", "key3_q_choices_as"}:
+            if has_any(s + " " + p, ["auc", "roc", "binary", "multiclass", "logit"]):
+                return "auc_roc", 0.75
+            return "choice", 0.9
+
+        if eval_type == "key3_q_a_rejected":
+            return "pairwise_preference", 0.9
+
+        if eval_type == "key1_text_score":
+            if has_any(s + " " + p, ["toxicity", "toxic", "safety", "harm", "jailbreak", "毒性", "安全"]):
+                return "safety_toxicity", 0.9
+            if has_any(s + " " + p, ["truth", "factual", "halluc", "事实", "幻觉", "真实"]):
+                return "truthfulness", 0.85
+            if has_any(s + " " + p, ["judge", "评分", "打分", "score"]):
+                return "llm_judge", 0.8
+            return None, 0.0
+
+        if eval_type in {"key2_qa", "key2_q_ma"}:
+            if has_any(p, ["translate", "translation", "翻译", "译为", "翻成"]):
+                return "translation", 0.9
+            if has_any(p, ["summarize", "summary", "摘要", "总结", "tl;dr"]):
+                return "summarization", 0.85
+            if has_any(p, ["write a function", "write code", "implement", "def ", "class ", "函数", "代码"]):
+                return "code", 0.85
+            if has_any(s + " " + p, ["retrieval", "rag", "needle", "检索"]):
+                return "retrieval", 0.75
+            if has_any(s + " " + p, ["count", "计数"]):
+                return "count", 0.7
+
+            if has_any(s + " " + p, ["math", "arithmetic", "数学", "算术", "numerical"]):
+                if has_any(s + " " + p, ["latex", "\\boxed", "equation", "符号", "推导"]):
+                    return "math_symbolic", 0.85
+                return "math_numeric", 0.75
+
+            if has_any(s, ["qa", "question_answering", "extractive", "span"]):
+                if has_any(s, ["long", "context", "长文本", "longbench"]):
+                    return "long_context_qa", 0.7
+                return "extractive_qa", 0.7
+
+            if td == "math":
+                return "math_numeric", 0.55
+            if td in {"text", "nlp"} and has_any(s, ["qa", "question", "answer", "问答"]):
+                return "extractive_qa", 0.55
+
+            return None, 0.0
+
+        return None, 0.0
+
+    def get_default_metrics_by_eval_type(
+        self,
+        eval_type: str,
+        bench_meta: Optional[Dict[str, Any]] = None,
+        prompt_template: Optional[str] = None,
+        task_domain: Optional[str] = None,
+    ) -> Optional[List[Dict[str, Any]]]:
+        key = (eval_type or "").strip()
+        if not key:
+            return None
+
+        family, confidence = self.infer_task_family(
+            key,
+            bench_meta=bench_meta,
+            prompt_template=prompt_template,
+            task_domain=task_domain,
+        )
+
+        if family and key in self._schema_family_templates and family in self._schema_family_templates[key]:
+            return self._schema_family_templates[key][family]
+
+        if key in {"key3_q_choices_a", "key3_q_choices_as"}:
+            return self._schema_family_templates[key]["choice"]
+
+        if key == "key3_q_a_rejected":
+            return self._schema_family_templates[key]["pairwise_preference"]
+
+        if key == "key1_text_score" and confidence >= 0.8 and family:
+            return self._schema_family_templates[key][family]
+
+        return None
+
     def _normalize_key(self, key: str) -> str:
         """
         标准化字符串：
@@ -283,35 +478,60 @@ class MetricRegistry:
         # 添加边界保护
         return f"_{clean_key}_"
 
-    def get_metrics(self, dataset_name: str) -> Optional[List[Dict[str, Any]]]:
+    def get_metrics(
+        self,
+        dataset_name: str,
+        bench_meta: Optional[Dict[str, Any]] = None,
+        eval_type: Optional[str] = None,
+        prompt_template: Optional[str] = None,
+        task_domain: Optional[str] = None,
+    ) -> Optional[List[Dict[str, Any]]]:
         """
         获取数据集的指标配置。
-        如果找不到匹配项，返回 None，而不是返回默认值。
+        - 优先：若提供 eval_type 或可从 bench_meta 推断 eval_type，则按 (eval_type, task_family) 选择模板。
+        - 回退：按 dataset_name 做模糊匹配。
+        - 找不到则返回 None。
         """
+        if eval_type:
+            metrics = self.get_default_metrics_by_eval_type(
+                eval_type,
+                bench_meta=bench_meta,
+                prompt_template=prompt_template,
+                task_domain=task_domain,
+            )
+            if metrics:
+                return metrics
+
+        inferred = self.infer_eval_type(bench_meta)
+        if inferred:
+            metrics = self.get_default_metrics_by_eval_type(
+                inferred,
+                bench_meta=bench_meta,
+                prompt_template=prompt_template,
+                task_domain=task_domain,
+            )
+            if metrics:
+                return metrics
+
+        # 统一标准化输入
         raw_name = dataset_name.lower().strip()
-        
-        # 1. 精确匹配
-        if raw_name in self._registry:
-            return self._registry[raw_name]
-        
-        # 2. 模糊匹配
         normalized_input = self._normalize_key(raw_name)
-        matched_metrics = []
-        best_match_len = 0
         
+        matched_metrics: List[Dict[str, Any]] = []
+        best_match_len = 0
+
         for key, metrics in self._registry.items():
             normalized_key = self._normalize_key(key)
             if normalized_key in normalized_input:
                 if len(key) > best_match_len:
                     best_match_len = len(key)
                     matched_metrics = metrics
-        
+
         if matched_metrics:
-            log.info(f"[MetricRegistry] 模糊匹配成功: '{dataset_name}'")
+            log.info(f"[MetricRegistry] 匹配成功: '{dataset_name}' (Matched Key: {len(matched_metrics)} metrics)")
             return matched_metrics
 
-        # 3. 彻底没找到 -> 返回 None (删除原来的 Default Fallback)
-        return None 
+        return None
 
 
 # 全局单例

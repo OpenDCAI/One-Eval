@@ -10,6 +10,8 @@ class BenchInfo:
     bench_name: str
     bench_table_exist: bool = False
     bench_source_url: str = None
+    bench_dataflow_eval_type: str = None
+    bench_prompt_template: str = None
     meta: Dict[str, Any] = field(default_factory=dict)
     dataset_cache: Optional[str] = None
 

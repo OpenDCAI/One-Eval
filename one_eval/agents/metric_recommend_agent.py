@@ -14,7 +14,12 @@ class MetricRecommendAgent(CustomAgent):
     Step 3 Agent: Metric推荐
     双轨制策略：
     1. Registry Track: 已知 Benchmark 直接查表。
-    2. Analyst Track: 未知 Benchmark 基于 Info 和 Examples 调用 LLM 分析。
+    查表策略：
+        - 查看 benchinfo 中是否指定了 metric
+        - 基于 bench_dataflow_eval_type 进行第一次分流
+        - 启发式 task_family (主要基于 prompt_template 分析)匹配， 进行第二次分流
+        - (eval_type, task_family)   ---->  template 的映射
+    2. Analyst Track: 未知 Benchmark 基于 Info (name、prompt_template) 调用 LLM 分析。
     """
 
     @property
@@ -29,11 +34,26 @@ class MetricRecommendAgent(CustomAgent):
     def task_prompt_template_name(self) -> str:
         return "metric_recommend.task"
 
-    def _check_registry(self, bench_name: str) -> Optional[List[Dict[str, Any]]]:
+    def _check_registry(self, bench: BenchInfo, task_domain: Optional[str] = None) -> Optional[List[Dict[str, Any]]]:
         """
         检查注册表是否有预定义的 Metric。
         """
-        return metric_registry.get_metrics(bench_name)
+        eval_type = bench.bench_dataflow_eval_type
+        if not eval_type and bench.meta:
+            eval_type = bench.meta.get("bench_dataflow_eval_type") or bench.meta.get("eval_type")
+
+        prompt_template = bench.bench_prompt_template
+
+        try:
+            return metric_registry.get_metrics(
+                bench.bench_name,
+                bench_meta=bench.meta,
+                eval_type=eval_type,
+                prompt_template=prompt_template,
+                task_domain=task_domain,
+            )
+        except TypeError:
+            return metric_registry.get_metrics(bench.bench_name)
     
     def _normalize_metric_format(self, metric: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -77,7 +97,7 @@ class MetricRecommendAgent(CustomAgent):
                 continue
         return validated
 
-    def _format_bench_context(self, benches: List[BenchInfo]) -> str:
+    def _format_bench_context(self, benches: List[BenchInfo], task_domain: Optional[str] = None) -> str:
         """
         将 Benchmark 信息格式化为 LLM 可读的上下文。
         """
@@ -100,13 +120,21 @@ class MetricRecommendAgent(CustomAgent):
             input_col = b.meta.get("input_column", b.meta.get("question_column", "question"))
             output_col = b.meta.get("output_column", b.meta.get("answer_column", "answer"))
             
+            eval_type = b.bench_dataflow_eval_type or b.meta.get("bench_dataflow_eval_type") or b.meta.get("eval_type")
+            prompt_template = b.bench_prompt_template
+            if isinstance(prompt_template, str) and len(prompt_template) > 600:
+                prompt_template = prompt_template[:300] + "\n...[SNIP]...\n" + prompt_template[-300:]
+
             part = (
                 f"### Benchmark: {b.bench_name}\n"
+                f"- state.task_domain: {task_domain or 'Unknown'}\n"
+                f"- bench_dataflow_eval_type: {eval_type or 'Unknown'}\n"
                 f"- 任务类型: {task_type}\n"
                 f"- 领域标签: {b.meta.get('domain', 'Unknown')}\n"
                 f"- 描述: {b.meta.get('description', 'No description provided')}\n"
                 f"- 输入字段: {input_col}\n"
                 f"- 输出字段: {output_col}\n"
+                f"- 推理Prompt模板(截断): {prompt_template or 'None'}\n"
                 f"- 样例数据:\n{examples_str}\n"
             )
             context_parts.append(part)
@@ -147,7 +175,7 @@ class MetricRecommendAgent(CustomAgent):
                 continue
 
             # 2. 注册表查找
-            registry_metrics = self._check_registry(bench_name)
+            registry_metrics = self._check_registry(bench, task_domain=state.task_domain)
             
             if registry_metrics:
                 validated = self._validate_metrics(registry_metrics)
@@ -161,7 +189,7 @@ class MetricRecommendAgent(CustomAgent):
             log.info(f"正在调用 LLM 分析以下 Benchmark 的 Metrics: {[b.bench_name for b in unknown_benches]}")
             
             # 1. 准备上下文
-            bench_context_str = self._format_bench_context(unknown_benches)
+            bench_context_str = self._format_bench_context(unknown_benches, task_domain=state.task_domain)
             
             # 2. 从 Registry 获取动态文档 (关键修改点)
             # 这些文档将注入到 Prompt 模板中，替代硬编码

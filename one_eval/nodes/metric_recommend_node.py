@@ -10,7 +10,7 @@ log = get_logger("MetricRecommendNode")
 
 class MetricRecommendNode(BaseNode):
     """
-    Step 2 Node:
+    Step 3 Node:
     根据 Benchmark 信息推荐评估指标 (Metric)。
     """
     
