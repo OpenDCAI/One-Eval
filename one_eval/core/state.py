@@ -10,8 +10,13 @@ class BenchInfo:
     bench_name: str
     bench_table_exist: bool = False
     bench_source_url: str = None
+    bench_dataflow_eval_type: str = None        # specified type in bench eval pipeline
+    bench_prompt_template: str = None
+    bench_keys: List[str] = field(default_factory=list)
     meta: Dict[str, Any] = field(default_factory=dict)
     dataset_cache: Optional[str] = None
+
+    download_status: Optional[str] = None          # "success", "failed", "pending"
 
 @dataclass
 class NodeState(MainState):
@@ -26,6 +31,7 @@ class NodeState(MainState):
     user_query: Optional[str] = None               # e.g. "评估模型在文本过滤任务的表现"
     task_domain: Optional[str] = None              # "text", "vision", "math" 等
     target_model: Optional[str] = None             # 被测模型名或本地路径
+    model_type: Optional[str] = None              # "Qwen", "Llama", "DeepSeek"
     # temp: Dict[str, Any] = field(default_factory=dict)  # 临时存储，用于中间结果
     reference_models: List[str] = field(default_factory=list) # 预留semantic评估接口
 

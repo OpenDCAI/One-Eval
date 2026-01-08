@@ -111,7 +111,7 @@ async def run_demo(user_query: str, mode="debug"):
     async with get_checkpointer(db_path, mode) as checkpointer: 
         graph = build_workflow(checkpointer=checkpointer)
 
-        config = {"configurable": {"thread_id": "demo_run_004"}}
+        config = {"configurable": {"thread_id": "demo_run_006"}}
 
         # 1) 先看看这个 thread_id 有没有历史状态（有没有 ckpt）
         snap = None

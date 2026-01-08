@@ -167,13 +167,20 @@ class BenchResolveAgent(CustomAgent):
                 }
 
         # ================ Step 3: 写回 state ================
-        benches = []
+        benches: List[BenchInfo] = []
+        seen_short_ids = set()
         for repo_id, info in bench_info.items():
+            hf_meta = (info.get("hf_meta", {}) or {})
+            hf_repo = hf_meta.get("hf_repo") or repo_id
+            short_id = hf_repo.split("/")[-1].lower()
+            if short_id in seen_short_ids:
+                continue
+            seen_short_ids.add(short_id)
             benches.append(
                 BenchInfo(
                     bench_name=repo_id,
                     bench_table_exist=info.get("source") != "hf_resolve",
-                    bench_source_url=(info.get("hf_meta", {}) or {}).get("hf_repo") or repo_id,
+                    bench_source_url=hf_repo,
                     meta=info,
                 )
             )
