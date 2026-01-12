@@ -84,7 +84,6 @@ async def run_eval(thread_id: str, mode: str = "debug"):
                 model_name_or_path=state0.target_model,
                 tensor_parallel_size=1,
                 max_tokens=2048,
-                vllm_max_model_len=4096, # 防止 OOM
             )
             log.info(f"[eval] Injected debug model config: {state0.target_model}")
 

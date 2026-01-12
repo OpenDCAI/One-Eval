@@ -53,8 +53,8 @@ class DataFlowEvalTool:
                 vllm_max_tokens=config.max_tokens,
                 vllm_temperature=config.temperature,
                 vllm_top_p=config.top_p,
-                vllm_max_model_len=config.max_model_len,
-                trust_remote_code=config.trust_remote_code,
+                vllm_max_model_len=getattr(config, "max_model_len", None),
+                # trust_remote_code=True, # 默认信任，State 中已移除该配置
             )
         
         self._current_model_config = config

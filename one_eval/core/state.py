@@ -36,7 +36,6 @@ class ModelConfig:
     # Local model parameters
     tensor_parallel_size: int = 1
     max_model_len: Optional[int] = None
-    trust_remote_code: bool = True
 
 
 @dataclass
