@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import axios from "axios";
 import { motion } from "framer-motion";
 import { 
-    Clock, X, Search, Database, Play, Save, Layers, Plus, BookOpen, Trash2, AlertTriangle
+    Clock, X, Search, Database, Play, Save, Layers, Plus, BookOpen, Trash2, AlertTriangle, Settings, ChevronRight, ChevronDown, Check
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,6 +48,17 @@ export const Eval = () => {
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
   const [isResuming, setIsResuming] = useState(false); // Flag to prevent polling overwrites during resume
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [isChatCollapsed, setIsChatCollapsed] = useState(false);
+  const chatWidth = isChatCollapsed ? 60 : 400;
+
+  // Eval Params State (Manual)
+  const [evalParams, setEvalParams] = useState({
+      temperature: 0.7,
+      top_k: 50,
+      max_tokens: 2048
+  });
+
+  const [expandedResults, setExpandedResults] = useState<number[]>([]);
   
   // Chat State
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -85,11 +96,23 @@ export const Eval = () => {
         
         // Status Transition Logic for Chat
         if (data.status !== status) {
-            if (data.status === "completed") {
-                setMessages(prev => [...prev, { id: Date.now().toString(), role: "ai", content: "Evaluation completed successfully! Check the results below.", timestamp: Date.now() }]);
-            } else if (data.status === "failed") {
-                 setMessages(prev => [...prev, { id: Date.now().toString(), role: "system", content: "Evaluation failed. Please check logs.", timestamp: Date.now() }]);
-            }
+            // Prevent duplicate messages by checking the last message content
+            setMessages(prev => {
+                const lastMsg = prev[prev.length - 1];
+                
+                if (data.status === "completed") {
+                    const successText = "Evaluation completed successfully! Check the results below.";
+                    if (lastMsg?.content !== successText) {
+                        return [...prev, { id: Date.now().toString(), role: "ai", content: successText, timestamp: Date.now() }];
+                    }
+                } else if (data.status === "failed") {
+                    const failText = "Evaluation failed. Please check logs.";
+                    if (lastMsg?.content !== failText) {
+                         return [...prev, { id: Date.now().toString(), role: "system", content: failText, timestamp: Date.now() }];
+                    }
+                }
+                return prev;
+            });
         }
 
         setStatus(data.status);
@@ -177,8 +200,13 @@ export const Eval = () => {
       };
       
       if (status === "interrupted") {
+          // Check if we are at Execution Confirmation step (by node or by phase logic)
+          // For now, if we are interrupted and in exec phase (or prep phase finished), we attach eval params.
+          // Since we don't have explicit node name for custom interrupt, we attach params generally if they exist.
+          
           payload.state_updates = {
-              benches: editBenches
+              benches: editBenches,
+              eval_params: evalParams // Attach eval params
           };
       }
 
@@ -260,10 +288,14 @@ export const Eval = () => {
       
       const newBench: Bench = {
           bench_name: bench.bench_name,
-          eval_type: bench.task_type?.[0] || "unknown",
+          eval_type: Array.isArray(bench.task_type) ? bench.task_type[0] : "unknown",
           meta: {
               ...bench.meta,
-              tags: bench.task_type || [] // Store all task types as tags
+              tags: Array.isArray(bench.task_type) ? bench.task_type : [], // Store all task types as tags
+              source: "gallery", // Flag to skip probing
+              skip_probing: true,
+              keys: [], // Default empty keys to prevent white screen
+              preview_data: [] // Default empty preview to prevent white screen
           }
       };
       setEditBenches([...editBenches, newBench]);
@@ -321,7 +353,7 @@ export const Eval = () => {
        {/* --- Left Sidebar (History) --- */}
        <motion.div 
          initial={{ width: 60, opacity: 1 }}
-         animate={{ width: showHistory ? 280 : 70 }}
+         animate={{ width: showHistory ? 240 : 60 }}
          className="bg-white border-r border-slate-200 z-50 flex flex-col shadow-[4px_0_24px_-12px_rgba(0,0,0,0.1)] transition-all duration-300 relative"
        >
            <div className="p-4 border-b border-slate-100 flex items-center justify-between h-16 shrink-0">
@@ -496,74 +528,117 @@ export const Eval = () => {
                             { id: "HumanReviewNode", label: "Review" }
                         ]}
                    >
-                       <div className="space-y-6">
-                           <div className="space-y-2">
-                               <label className="text-xs font-bold text-slate-400 uppercase tracking-wider pl-1">User Query</label>
-                               <div className="p-4 bg-slate-50/50 rounded-xl border border-slate-100 text-sm text-slate-700 shadow-inner min-h-[50px] leading-relaxed">
-                                   {query || <span className="text-slate-400 italic">Waiting for input...</span>}
+                       <div className="space-y-8 relative">
+                           {/* Node 1: Understand */}
+                           <div className="pl-6 border-l-2 border-violet-100 relative">
+                               <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-violet-50 border-2 border-violet-200" />
+                               <h4 className="text-xs font-bold text-violet-600 uppercase tracking-wider mb-3">1. Understand</h4>
+                               
+                               <div className="space-y-3">
+                                   <div>
+                                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">User Query</label>
+                                       <div className="p-3 bg-slate-50/50 rounded-lg border border-slate-100 text-sm text-slate-700 shadow-inner">
+                                           {query || <span className="text-slate-400 italic">Waiting for input...</span>}
+                                       </div>
+                                   </div>
+                                   {/* Domain (Placeholder/Mock if not in state) */}
+                                   {(state as any)?.domain && (
+                                       <div>
+                                           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Identified Domain</label>
+                                           <div className="flex flex-wrap gap-2 mt-1">
+                                               {Array.isArray((state as any).domain) 
+                                                   ? (state as any).domain.map((d: string) => <span key={d} className="px-2 py-1 bg-violet-100 text-violet-700 text-xs rounded-md font-bold">{d}</span>)
+                                                   : <span className="px-2 py-1 bg-violet-100 text-violet-700 text-xs rounded-md font-bold">{(state as any).domain}</span>
+                                               }
+                                           </div>
+                                       </div>
+                                   )}
                                </div>
                            </div>
-                           
-                           {/* Editable Benches List */}
-                           {state?.benches?.length ? (
-                               <div className="space-y-3">
-                                   <div className="flex justify-between items-center px-1">
-                                       <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Target Benchmarks</label>
-                                       {status === "interrupted" && (
-                                           <div className="flex gap-2">
-                                               <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] gap-1 bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100" onClick={handleManualAdd}>
-                                                    <Plus className="w-3 h-3" /> Add Custom
-                                               </Button>
-                                               <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] gap-1 bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100" onClick={() => setIsGalleryOpen(true)}>
-                                                    <BookOpen className="w-3 h-3" /> From Gallery
-                                               </Button>
-                                           </div>
-                                       )}
-                                   </div>
-                                   
-                                   <div className="grid grid-cols-1 gap-3">
-                                       {(status === "interrupted" ? editBenches : state.benches).map((b, i) => (
-                                           <div key={i} className={cn(
-                                               "flex items-center gap-4 p-3 rounded-xl border transition-all",
-                                               status === "interrupted" 
-                                                   ? "bg-white border-amber-200 shadow-sm shadow-amber-100" 
-                                                   : "bg-slate-50/50 border-slate-100"
-                                           )}>
-                                               <div className="w-8 h-8 rounded-lg bg-violet-100 text-violet-600 flex items-center justify-center text-xs font-bold shrink-0">
-                                                   {b.bench_name.substring(0, 2).toUpperCase()}
+
+                           {/* Node 2: Search */}
+                           <div className="pl-6 border-l-2 border-violet-100 relative">
+                               <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-violet-50 border-2 border-violet-200" />
+                               <h4 className="text-xs font-bold text-violet-600 uppercase tracking-wider mb-3">2. Search</h4>
+                               
+                               {/* Editable Benches List */}
+                               {state?.benches?.length ? (
+                                   <div className="space-y-3">
+                                       <div className="flex justify-between items-center px-1">
+                                           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Target Benchmarks</label>
+                                           {status === "interrupted" && (
+                                               <div className="flex gap-2">
+                                                   <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] gap-1 bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100" onClick={handleManualAdd}>
+                                                        <Plus className="w-3 h-3" /> Add Custom
+                                                   </Button>
+                                                   <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] gap-1 bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100" onClick={() => setIsGalleryOpen(true)}>
+                                                        <BookOpen className="w-3 h-3" /> From Gallery
+                                                   </Button>
                                                </div>
-                                               {status === "interrupted" ? (
-                                                   <div className="flex flex-1 items-center gap-2">
-                                                      <Input 
-                                                          placeholder="Enter benchmark name..."
-                                                          value={b.bench_name}
-                                                          onChange={(e) => {
-                                                                const nb = [...editBenches];
-                                                                nb[i].bench_name = e.target.value;
-                                                                setEditBenches(nb);
-                                                           }}
-                                                           className="h-9 text-sm border-amber-100 focus-visible:ring-amber-500 bg-amber-50/30"
-                                                       />
-                                                       <Button 
-                                                           variant="ghost" 
-                                                           size="icon" 
-                                                           className="h-9 w-9 text-amber-600 hover:bg-amber-100 hover:text-amber-700"
-                                                           onClick={() => {
-                                                               const nb = editBenches.filter((_, idx) => idx !== i);
-                                                               setEditBenches(nb);
-                                                           }}
-                                                       >
-                                                           <X className="w-4 h-4" />
-                                                       </Button>
+                                           )}
+                                       </div>
+                                       
+                                       <div className="grid grid-cols-1 gap-3">
+                                           {(status === "interrupted" ? editBenches : state.benches).map((b, i) => (
+                                               <div key={i} className={cn(
+                                                   "flex items-center gap-4 p-3 rounded-xl border transition-all",
+                                                   status === "interrupted" 
+                                                       ? "bg-white border-amber-200 shadow-sm shadow-amber-100" 
+                                                       : "bg-slate-50/50 border-slate-100"
+                                               )}>
+                                                   <div className="w-8 h-8 rounded-lg bg-violet-100 text-violet-600 flex items-center justify-center text-xs font-bold shrink-0">
+                                                       {b.bench_name.substring(0, 2).toUpperCase()}
                                                    </div>
-                                               ) : (
-                                                   <span className="font-mono font-medium text-sm text-slate-700">{b.bench_name}</span>
-                                               )}
-                                           </div>
-                                       ))}
+                                                   {status === "interrupted" ? (
+                                                       <div className="flex flex-1 items-center gap-2">
+                                                          <Input 
+                                                              placeholder="Enter benchmark name..."
+                                                              value={b.bench_name}
+                                                              onChange={(e) => {
+                                                                    const nb = [...editBenches];
+                                                                    nb[i].bench_name = e.target.value;
+                                                                    setEditBenches(nb);
+                                                               }}
+                                                               className="h-9 text-sm border-amber-100 focus-visible:ring-amber-500 bg-amber-50/30"
+                                                           />
+                                                           <Button 
+                                                               variant="ghost" 
+                                                               size="icon" 
+                                                               className="h-9 w-9 text-amber-600 hover:bg-amber-100 hover:text-amber-700"
+                                                               onClick={() => {
+                                                                   const nb = editBenches.filter((_, idx) => idx !== i);
+                                                                   setEditBenches(nb);
+                                                               }}
+                                                           >
+                                                               <X className="w-4 h-4" />
+                                                           </Button>
+                                                       </div>
+                                                   ) : (
+                                                       <span className="font-mono font-medium text-sm text-slate-700">{b.bench_name}</span>
+                                                   )}
+                                               </div>
+                                           ))}
+                                       </div>
                                    </div>
+                               ) : (
+                                   <div className="text-sm text-slate-400 italic pl-1">No benchmarks selected yet.</div>
+                               )}
+                           </div>
+
+                           {/* Node 3: Review */}
+                           <div className="pl-6 border-l-2 border-transparent relative">
+                               <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-violet-50 border-2 border-violet-200" />
+                               <h4 className="text-xs font-bold text-violet-600 uppercase tracking-wider mb-3">3. Review</h4>
+                               
+                               <div className="space-y-2">
+                                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">User Notes</label>
+                                   <textarea 
+                                       className="w-full p-3 bg-slate-50/50 rounded-lg border border-slate-100 text-sm text-slate-700 shadow-inner resize-none focus:outline-none focus:ring-1 focus:ring-violet-200"
+                                       rows={2}
+                                       placeholder="Add any specific instructions or notes for this evaluation..."
+                                   />
                                </div>
-                           ) : null}
+                           </div>
                        </div>
                    </WorkflowBlock>
 
@@ -613,40 +688,169 @@ export const Eval = () => {
                             { id: "DataFlowEvalNode", label: "Evaluation" }
                         ]}
                    >
-                       <div className="space-y-3">
-                           {state?.benches?.map((b, i) => (
-                               <div key={i} className="flex items-center justify-between p-4 bg-white rounded-xl border border-slate-100 shadow-sm">
-                                   <div className="flex items-center gap-3">
-                                       <div className={cn(
-                                           "w-2 h-8 rounded-full",
-                                           b.eval_status === "success" ? "bg-emerald-500" : "bg-slate-200"
-                                       )} />
-                                       <span className="text-sm font-bold text-slate-700">{b.bench_name}</span>
+                       <div className="space-y-6">
+                           {/* Eval Config Section */}
+                           <div className={cn(
+                               "bg-emerald-50/50 p-4 rounded-xl border space-y-4 transition-all",
+                               status === "interrupted" && getBlockStatus('exec') === "pending" // Highlight if waiting for exec confirm
+                                   ? "border-amber-400 ring-2 ring-amber-100 shadow-lg shadow-amber-50" 
+                                   : "border-emerald-100"
+                           )}>
+                               <div className="flex justify-between items-center">
+                                   <div className="flex items-center gap-2 text-emerald-800 font-bold text-sm">
+                                       <Settings className="w-4 h-4" /> Evaluation Configuration
                                    </div>
                                    
-                                   {b.meta?.eval_result ? (
-                                       <div className="flex items-center gap-3 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100">
-                                           <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Score</span>
-                                           <span className="text-lg font-black text-emerald-700 font-mono">
-                                                {/* Metric Display Logic */}
-                                                {(() => {
-                                                    const res = b.meta.eval_result;
-                                                    const score = res.score ?? res.accuracy ?? res.exact_match ?? Object.values(res)[0];
-                                                    return typeof score === 'number' ? score.toFixed(2) : score;
-                                                })()}
-                                           </span>
-                                       </div>
-                                   ) : (
-                                       <span className="text-xs text-slate-400 italic">Waiting for results...</span>
+                                   {/* Status Indicator */}
+                                   {status === "interrupted" && getBlockStatus('exec') === "pending" && (
+                                       <span className="text-[10px] font-bold text-amber-600 bg-amber-100 px-2 py-1 rounded animate-pulse">
+                                           Waiting for Confirmation
+                                       </span>
+                                   )}
+
+                                   {state?.benches?.length && (
+                                       <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1">
+                                           <Play className="w-3 h-3" /> Run Manual Eval
+                                       </Button>
                                    )}
                                </div>
-                           ))}
-                           {!state?.benches?.length && (
-                               <div className="py-8 flex flex-col items-center justify-center text-slate-300 border-2 border-dashed border-slate-100 rounded-xl">
-                                   <Play className="w-8 h-8 mb-2 opacity-50" />
-                                   <span className="text-sm">Ready to execute</span>
+                               <div className="grid grid-cols-3 gap-4">
+                                   <div>
+                                       <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">Temperature</label>
+                                       <Input 
+                                           type="number" 
+                                           step="0.1"
+                                           min="0"
+                                           max="2"
+                                           value={evalParams.temperature} 
+                                           onChange={e => setEvalParams({...evalParams, temperature: parseFloat(e.target.value)})}
+                                           disabled={status !== "interrupted" && status !== "idle"} // Only editable when interrupted or idle
+                                           className="h-8 bg-white border-emerald-200 focus-visible:ring-emerald-500 text-xs font-mono"
+                                       />
+                                   </div>
+                                   <div>
+                                       <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">Top K</label>
+                                       <Input 
+                                           type="number" 
+                                           step="1"
+                                           value={evalParams.top_k} 
+                                           onChange={e => setEvalParams({...evalParams, top_k: parseInt(e.target.value)})}
+                                           disabled={status !== "interrupted" && status !== "idle"}
+                                           className="h-8 bg-white border-emerald-200 focus-visible:ring-emerald-500 text-xs font-mono"
+                                       />
+                                   </div>
+                                   <div>
+                                       <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">Max Tokens</label>
+                                       <Input 
+                                           type="number" 
+                                           step="128"
+                                           value={evalParams.max_tokens} 
+                                           onChange={e => setEvalParams({...evalParams, max_tokens: parseInt(e.target.value)})}
+                                           disabled={status !== "interrupted" && status !== "idle"}
+                                           className="h-8 bg-white border-emerald-200 focus-visible:ring-emerald-500 text-xs font-mono"
+                                       />
+                                   </div>
                                </div>
-                           )}
+                           </div>
+
+                           <div className="space-y-3">
+                               {state?.benches?.map((b, i) => {
+                                   const isExpanded = expandedResults.includes(i);
+                                   const res = b.meta?.eval_result;
+                                   const score = res ? (res.score ?? res.accuracy ?? res.exact_match ?? Object.values(res)[0]) : null;
+                                   
+                                   return (
+                                       <div key={i} className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden transition-all hover:border-emerald-200">
+                                           <div 
+                                               className="flex items-center justify-between p-4 cursor-pointer hover:bg-slate-50/50"
+                                               onClick={() => {
+                                                   if (expandedResults.includes(i)) setExpandedResults(expandedResults.filter(idx => idx !== i));
+                                                   else setExpandedResults([...expandedResults, i]);
+                                               }}
+                                           >
+                                               <div className="flex items-center gap-3">
+                                                   <div className={cn(
+                                                       "w-2 h-8 rounded-full transition-colors",
+                                                       b.eval_status === "success" ? "bg-emerald-500" : "bg-slate-200"
+                                                   )} />
+                                                   <div>
+                                                       <div className="text-sm font-bold text-slate-700">{b.bench_name}</div>
+                                                       <div className="text-[10px] text-slate-400 flex items-center gap-2">
+                                                           {b.download_status === "success" && <span className="flex items-center gap-1"><Database className="w-3 h-3" /> Ready</span>}
+                                                           {b.eval_status === "success" && <span className="flex items-center gap-1 text-emerald-600"><Check className="w-3 h-3" /> Evaluated</span>}
+                                                       </div>
+                                                   </div>
+                                               </div>
+                                               
+                                               <div className="flex items-center gap-4">
+                                                   {score !== null ? (
+                                                       <div className="flex items-center gap-3 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100">
+                                                           <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Score</span>
+                                                           <span className="text-lg font-black text-emerald-700 font-mono">
+                                                                {typeof score === 'number' ? score.toFixed(2) : score}
+                                                           </span>
+                                                       </div>
+                                                   ) : (
+                                                       <span className="text-xs text-slate-400 italic">Waiting for results...</span>
+                                                   )}
+                                                   <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-400">
+                                                       {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                                   </Button>
+                                               </div>
+                                           </div>
+                                           
+                                           {/* Expanded Details */}
+                                           {isExpanded && (
+                                               <div className="px-4 pb-4 pt-0 bg-slate-50/30 border-t border-slate-50">
+                                                   <div className="grid grid-cols-2 gap-4 mt-4">
+                                                       <div className="p-3 bg-white rounded-lg border border-slate-100">
+                                                           <div className="text-[10px] text-slate-400 uppercase font-bold mb-1">Total Samples</div>
+                                                           <div className="text-lg font-mono font-bold text-slate-700">
+                                                               {b.meta?.download_config?.count || b.meta?.structure?.count || "N/A"}
+                                                           </div>
+                                                       </div>
+                                                       <div className="p-3 bg-white rounded-lg border border-slate-100">
+                                                           <div className="text-[10px] text-slate-400 uppercase font-bold mb-1">Metrics Detail</div>
+                                                           <div className="text-xs font-mono text-slate-600">
+                                                               {res ? JSON.stringify(res, null, 2) : "No detailed metrics"}
+                                                           </div>
+                                                       </div>
+                                                   </div>
+                                               </div>
+                                           )}
+                                       </div>
+                                   );
+                               })}
+                               
+                               {!state?.benches?.length && (
+                                   <div className="py-8 flex flex-col items-center justify-center text-slate-300 border-2 border-dashed border-slate-100 rounded-xl">
+                                       <Play className="w-8 h-8 mb-2 opacity-50" />
+                                       <span className="text-sm">Ready to execute</span>
+                                   </div>
+                               )}
+                               
+                               {/* Summary Footer */}
+                               {state?.benches?.length && state.benches.some(b => b.eval_status === "success") && (
+                                   <div className="mt-6 p-4 bg-slate-800 text-white rounded-xl shadow-lg flex justify-between items-center">
+                                       <div className="flex gap-6">
+                                           <div>
+                                               <div className="text-[10px] text-slate-400 uppercase font-bold">Benchmarks</div>
+                                               <div className="text-xl font-bold">{state.benches.length}</div>
+                                           </div>
+                                           <div>
+                                               <div className="text-[10px] text-slate-400 uppercase font-bold">Total Samples</div>
+                                               <div className="text-xl font-bold">
+                                                   {state.benches.reduce((acc, b) => acc + (parseInt(b.meta?.download_config?.count || b.meta?.structure?.count || 0)), 0)}
+                                               </div>
+                                           </div>
+                                       </div>
+                                       <div className="text-right">
+                                           <div className="text-[10px] text-emerald-400 uppercase font-bold">Overall Status</div>
+                                           <div className="text-sm font-bold text-emerald-100">Evaluation Completed</div>
+                                       </div>
+                                   </div>
+                               )}
+                           </div>
                        </div>
                    </WorkflowBlock>
 
@@ -654,7 +858,7 @@ export const Eval = () => {
            </main>
            
            {/* Bottom Summary Panel */}
-           <SummaryPanel state={state} sidebarWidth={showHistory ? 280 : 70} />
+           <SummaryPanel state={state} sidebarWidth={showHistory ? 240 : 60} chatWidth={chatWidth} />
        </div>
 
        {/* --- Right Sidebar (Chat) --- */}
@@ -666,6 +870,8 @@ export const Eval = () => {
                 onConfirm={handleResume}
                 isWaitingForInput={status !== "idle"}
                 activeNodeId={activeNode} 
+                isCollapsed={isChatCollapsed}
+                onToggleCollapse={() => setIsChatCollapsed(!isChatCollapsed)}
            />
        </div>
 

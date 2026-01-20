@@ -89,11 +89,15 @@ export const BenchCard = ({ bench, activeNode, onUpdate }: { bench: Bench, activ
     const keyMapping = safeParse(meta.key_mapping); 
     const downloadConfig = safeParse(meta.download_config); 
     const evalType = bench.eval_type || meta.bench_dataflow_eval_type; 
-    const description = meta.description || "No description available.";
-    const tags = meta.tags || [];
+    const description = meta.card_text || meta.description || "No description available.";
+    const tags = Array.isArray(meta.tags) ? meta.tags : [];
+    const availableKeys = Array.isArray(meta.keys) ? meta.keys : []; // Extracted keys from dataset
+    const previewData = Array.isArray(meta.preview_data) ? meta.preview_data : []; // Preview rows
+    const downloadPath = meta.download_path || meta.local_path;
+    const sampleCount = downloadConfig?.count || structure?.count || meta.count;
 
     // Parse structure for selector
-    const structureSubsets = structure?.subsets || [];
+    const structureSubsets = Array.isArray(structure?.subsets) ? structure.subsets : [];
 
     // Init state from bench
     useEffect(() => {
@@ -184,9 +188,9 @@ export const BenchCard = ({ bench, activeNode, onUpdate }: { bench: Bench, activ
                 <div className="text-[10px] text-slate-500 font-mono flex-1 overflow-hidden bg-slate-50/50 p-3 rounded-lg border border-slate-50 group-hover:border-slate-100 transition-colors relative">
                     {hasData ? (
                         <div className="space-y-3 h-full overflow-y-auto pb-4 scrollbar-hide">
-                            <p className="text-slate-400 italic line-clamp-2 mb-2 font-sans leading-relaxed">
+                            <div className="text-slate-500 mb-2 font-sans leading-relaxed text-[10px] whitespace-pre-wrap line-clamp-4">
                                 {description}
-                            </p>
+                            </div>
 
                             {/* Key Mapping Preview */}
                             {keyMapping && (
@@ -200,6 +204,14 @@ export const BenchCard = ({ bench, activeNode, onUpdate }: { bench: Bench, activ
                                             </div>
                                         ))}
                                     </div>
+                                </div>
+                            )}
+
+                            {/* Download Info */}
+                            {(downloadPath || sampleCount) && (
+                                <div className="pt-2 border-t border-slate-200/50 flex justify-between items-center text-[9px] text-slate-400 font-mono">
+                                    {sampleCount && <span className="flex items-center gap-1"><Database className="w-2 h-2" /> {sampleCount}</span>}
+                                    {downloadPath && <span className="truncate max-w-[100px] flex items-center gap-1" title={downloadPath}><SaveIcon className="w-2 h-2" /> ...{downloadPath.slice(-12)}</span>}
                                 </div>
                             )}
                         </div>
@@ -266,13 +278,58 @@ export const BenchCard = ({ bench, activeNode, onUpdate }: { bench: Bench, activ
                                         {Object.entries(editKeyMap).map(([k, v]) => (
                                             <div key={k} className="flex items-center gap-3">
                                                 <span className="text-slate-500 font-mono w-1/3 text-right text-xs truncate" title={k}>{k}</span>
-                                                <Input 
-                                                    value={String(v)}
-                                                    onChange={(e) => setEditKeyMap({...editKeyMap, [k]: e.target.value})}
-                                                    className="h-8 bg-white border-amber-200 focus-visible:ring-amber-500 font-mono text-xs font-bold text-slate-800"
-                                                />
+                                                {availableKeys.length > 0 ? (
+                                                    <select 
+                                                        value={String(v)}
+                                                        onChange={(e) => setEditKeyMap({...editKeyMap, [k]: e.target.value})}
+                                                        className="h-8 bg-white border border-amber-200 rounded px-2 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 w-full"
+                                                    >
+                                                        <option value="">Select key...</option>
+                                                        {availableKeys.map((ak: string) => (
+                                                            <option key={ak} value={ak}>{ak}</option>
+                                                        ))}
+                                                    </select>
+                                                ) : (
+                                                    <Input 
+                                                        value={String(v)}
+                                                        onChange={(e) => setEditKeyMap({...editKeyMap, [k]: e.target.value})}
+                                                        className="h-8 bg-white border-amber-200 focus-visible:ring-amber-500 font-mono text-xs font-bold text-slate-800"
+                                                    />
+                                                )}
                                             </div>
                                         ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Dataset Preview Section */}
+                            {previewData.length > 0 && (
+                                <div className="bg-slate-50 p-5 rounded-xl border border-slate-100">
+                                    <h4 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
+                                        <span className="w-2 h-2 rounded-full bg-blue-500"/> Dataset Preview
+                                    </h4>
+                                    <div className="overflow-x-auto rounded-lg border border-slate-200">
+                                        <table className="w-full text-xs text-left">
+                                            <thead className="text-[10px] text-slate-500 uppercase bg-slate-100 font-bold">
+                                                <tr>
+                                                    {Object.keys(previewData[0] || {}).map(h => <th key={h} className="px-3 py-2 whitespace-nowrap">{h}</th>)}
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {previewData.slice(0, 5).map((row: any, idx: number) => (
+                                                    <tr key={idx} className="bg-white hover:bg-slate-50">
+                                                        {Object.values(row).map((val: any, vi) => (
+                                                            <td key={vi} className="px-3 py-2 font-mono text-slate-600 max-w-[200px] truncate border-r border-slate-50 last:border-r-0" title={String(val)}>
+                                                                {String(val)}
+                                                            </td>
+                                                        ))}
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                        <div className="bg-slate-50 px-3 py-1 text-[10px] text-slate-400 text-center border-t border-slate-200">
+                                            Showing first {Math.min(previewData.length, 5)} rows
+                                        </div>
                                     </div>
                                 </div>
                             )}
@@ -394,14 +451,15 @@ interface ChatPanelProps {
     onConfirm: () => void;
     isWaitingForInput: boolean;
     activeNodeId?: string | null;
+    isCollapsed: boolean;
+    onToggleCollapse: () => void;
 }
 
 const EMOJIS = ["✨", "🤖", "🚀", "💡", "🔮", "✅", "🎯"];
 
-export const ChatPanel = ({ messages, status, onSendMessage, onConfirm, isWaitingForInput, activeNodeId }: ChatPanelProps) => {
+export const ChatPanel = ({ messages, status, onSendMessage, onConfirm, isWaitingForInput, activeNodeId, isCollapsed, onToggleCollapse }: ChatPanelProps) => {
     const [input, setInput] = React.useState("");
     const [hasApproved, setHasApproved] = React.useState(false);
-    const [isCollapsed, setIsCollapsed] = React.useState(false);
     
     // Reset approved state
     useEffect(() => {
@@ -440,7 +498,7 @@ export const ChatPanel = ({ messages, status, onSendMessage, onConfirm, isWaitin
             <Button 
                 variant="ghost" 
                 size="icon" 
-                onClick={() => setIsCollapsed(!isCollapsed)}
+                onClick={onToggleCollapse}
                 className="absolute top-4 right-4 z-50 h-6 w-6 text-slate-400 hover:text-slate-600"
             >
                 {isCollapsed ? <ChevronDown className="w-4 h-4 rotate-90" /> : <ChevronDown className="w-4 h-4 -rotate-90" />}
@@ -711,7 +769,7 @@ export const WorkflowBlock = ({ title, icon: Icon, nodes, activeNodeId, status, 
 };
 
 // --- Summary Panel Component ---
-export const SummaryPanel = ({ state, sidebarWidth }: { state: WorkflowState | null, sidebarWidth: number }) => {
+export const SummaryPanel = ({ state, sidebarWidth, chatWidth }: { state: WorkflowState | null, sidebarWidth: number, chatWidth: number }) => {
     const [isOpen, setIsOpen] = React.useState(true);
 
     if (!state) return null;
@@ -719,8 +777,8 @@ export const SummaryPanel = ({ state, sidebarWidth }: { state: WorkflowState | n
     return (
         <motion.div 
             initial={{ y: 100 }}
-            animate={{ y: 0, left: sidebarWidth }}
-            className="fixed bottom-0 right-[400px] z-40 px-8 pb-0 pointer-events-none transition-[left] duration-300"
+            animate={{ y: 0, left: sidebarWidth + 60, right: chatWidth + 0 }}
+            className="fixed bottom-0 z-40 px-8 pb-0 pointer-events-none transition-all duration-300"
         >
             <div className="max-w-5xl mx-auto pointer-events-auto">
                 <div className="bg-white/90 backdrop-blur-xl border border-slate-200 rounded-t-2xl shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)] overflow-hidden ring-1 ring-slate-100">

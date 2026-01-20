@@ -37,7 +37,7 @@ export const Sidebar = () => {
   const location = useLocation();
 
   return (
-    <aside className="fixed left-0 top-0 bottom-0 w-16 bg-white border-r border-slate-200 flex flex-col items-center py-6 z-50">
+    <aside className="fixed left-0 top-0 bottom-0 w-16 bg-white border-r border-slate-200 flex flex-col items-center py-6 z-[100]">
       {/* Logo */}
       <div className="mb-8">
         <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-violet-600 rounded-xl flex items-center justify-center text-white shadow-md shadow-blue-600/20">
