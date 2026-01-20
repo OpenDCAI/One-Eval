@@ -1,0 +1,305 @@
+# one_eval/metrics/lib/core.py
+from typing import List, Dict, Any, Optional, Set, Tuple
+from one_eval.utils.extractor import (
+    normalize_text, 
+    extract_first_number, 
+    extract_choice, 
+    extract_multi_choice
+)
+from one_eval.metrics.core import register_metric, MetricCategory
+
+@register_metric(
+    name="exact_match",
+    desc="抽取式答案完全匹配 (EM)",
+    usage="短答案/抽取式 QA",
+    categories=[MetricCategory.QA_SINGLE, MetricCategory.QA_MULTI],
+    aliases=["em"],
+    groups={
+        "qa_extractive": "primary",
+        "long_context_qa": "secondary"
+    },
+    priority="primary"
+)
+def compute_exact_match(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
+    strict = kwargs.get("strict", False)
+    scores = []
+    
+    for p, r in zip(preds, refs):
+        # 处理 Multi-reference (r 可能是 list)
+        r_list = r if isinstance(r, list) else [r]
+        
+        p_norm = str(p) if strict else normalize_text(p).lower()
+        
+        match = 0.0
+        for gold in r_list:
+            g_norm = str(gold) if strict else normalize_text(gold).lower()
+            if p_norm == g_norm:
+                match = 1.0
+                break
+        scores.append(match)
+
+    return {
+        "score": sum(scores) / len(scores) if scores else 0.0,
+        "details": scores
+    }
+
+@register_metric(
+    name="strict_match",
+    desc="原始字符串严格匹配",
+    usage="格式严格的任务",
+    categories=[MetricCategory.QA_SINGLE],
+    groups={
+        "numerical": "secondary", 
+        "symbolic": "secondary"
+    },
+    priority="secondary"
+)
+def compute_strict_match(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
+    """严格匹配 (Case-sensitive, no normalization)"""
+    return compute_exact_match(preds, refs, strict=True, **kwargs)
+
+
+# --- From numerical.py ---
+
+@register_metric(
+    name="numerical_match",
+    desc="数值软匹配(1.0 == 1，容忍浮点误差)",
+    usage="算术题/数值填空",
+    categories=[MetricCategory.QA_SINGLE],
+    groups={
+        "numerical": "primary",
+        "math_numeric": "primary"
+    },
+    priority="primary"
+)
+def compute_numerical_match(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
+    atol = float(kwargs.get("atol", 1e-6))
+    scores = []
+    pred_vals = []
+    ref_vals = []
+
+    for p, r in zip(preds, refs):
+        # 1. 在这里调用 extractor
+        pv = extract_first_number(p)
+        rv = extract_first_number(r)
+        
+        pred_vals.append(pv)
+        ref_vals.append(rv)
+
+        if pv is None or rv is None:
+            scores.append(0.0)
+        else:
+            scores.append(1.0 if abs(pv - rv) <= atol else 0.0)
+
+    return {
+        "score": sum(scores) / len(scores) if scores else 0.0,
+        "details": scores,
+        "artifacts": {"pred_vals": pred_vals, "ref_vals": ref_vals}
+    }
+
+
+# --- From choice.py ---
+
+@register_metric(
+    name="choice_accuracy",
+    desc="选项字母或离散标签准确率",
+    usage="选择题 (A/B/C/D)",
+    categories=[MetricCategory.CHOICE_SINGLE, MetricCategory.CHOICE_MULTI],
+    groups={
+        "choice": "primary"
+    },
+    priority="primary"
+)
+def compute_choice_accuracy(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
+    """
+    计算选项准确率 (Choice Accuracy)
+    Args:
+        preds: 预测结果列表 (Raw strings)
+        refs: 参考答案列表 (Raw strings or List of strings)
+    """
+    scores: List[float] = []
+    pred_choices: List[Optional[str]] = []
+    ref_choices: List[Any] = [] # 用于 artifact 展示，可能是 str 或 list
+
+    for p, r in zip(preds, refs):
+        # 1. 提取预测结果的选项 (A/B/C/D)
+        pc = extract_choice(p)
+        pred_choices.append(pc)
+
+        # 2. 如果没提取出来，直接判错
+        if pc is None:
+            scores.append(0.0)
+            ref_choices.append(str(r)) # 记录一下原始 ref 方便 debug
+            continue
+
+        # 3. 处理参考答案 (支持多选/多解)
+        is_match = False
+        
+        if isinstance(r, list):
+            # 如果 ref 是列表，说明有多个正确答案，命中任何一个都算对
+            golds = []
+            for item in r:
+                g = extract_choice(item)
+                if g: golds.append(g)
+            
+            if pc in golds:
+                is_match = True
+            ref_choices.append(golds)
+            
+        else:
+            # 单个 ref
+            gc = extract_choice(r)
+            if gc is not None and pc == gc:
+                is_match = True
+            ref_choices.append(gc)
+
+        scores.append(1.0 if is_match else 0.0)
+
+    score = sum(scores) / len(scores) if scores else 0.0
+    
+    return {
+        "score": score,
+        "details": scores,
+        "artifacts": {
+            "pred_choices": pred_choices,
+            "ref_choices": ref_choices
+        }
+    }
+
+
+# --- From diagnostic.py ---
+
+@register_metric(
+    name="extraction_rate",
+    desc="正则提取成功率 (强烈建议)",
+    usage="所有需要从长输出提取答案的任务",
+    categories=[
+        MetricCategory.QA_SINGLE, 
+        MetricCategory.QA_MULTI,
+        MetricCategory.CHOICE_SINGLE,
+        MetricCategory.CHOICE_MULTI
+    ],
+    groups={
+        "numerical": "diagnostic",
+        "symbolic": "diagnostic",
+        "choice": "diagnostic",
+        "qa_extractive": "diagnostic"
+    },
+    priority="diagnostic"
+)
+def compute_extraction_rate(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
+    """
+    计算提取率：有多少样本能成功提取出有效格式（数字/选项）。
+    Args:
+        extractor: "number" (默认) | "choice"
+    """
+    extractor_type = str(kwargs.get("extractor", "number"))
+    
+    valid_count = 0
+    extracted_values = []
+    details = []
+
+    for p in preds:
+        val = None
+        if extractor_type == "choice":
+            val = extract_choice(p)
+        else:
+            val = extract_first_number(p)
+            
+        extracted_values.append(val)
+        
+        if val is not None:
+            valid_count += 1
+            details.append(1.0)
+        else:
+            details.append(0.0)
+
+    score = valid_count / len(preds) if preds else 0.0
+
+    return {
+        "score": score,
+        "details": details,
+        "artifacts": {
+            "extracted_values": extracted_values,
+            "extractor_used": extractor_type
+        }
+    }
+
+@register_metric(
+    name="missing_answer_rate",
+    desc="未输出有效选项/标签的比例 (诊断用)",
+    usage="监控模型拒答率",
+    categories=[MetricCategory.CHOICE_SINGLE, MetricCategory.CHOICE_MULTI],
+    priority="diagnostic"
+)
+def compute_missing_answer_rate(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
+    """
+    计算丢失率 (1 - Extraction Rate)
+    """
+    result = compute_extraction_rate(preds, refs, **kwargs)
+    return {
+        "score": 1.0 - result["score"],
+        "details": [1.0 - d for d in result["details"]],
+        "artifacts": result["artifacts"]
+    }
+
+
+# --- From multilabel.py ---
+
+def _get_sets(p: Any, r: Any) -> Tuple[Set[str], Set[str]]:
+    p_set = extract_multi_choice(p)
+    r_set = set()
+    if isinstance(r, list):
+        for item in r:
+            r_set.update(extract_multi_choice(item))
+    else:
+        r_set = extract_multi_choice(r)
+    return p_set, r_set
+
+@register_metric(
+    name="multilabel_f1",
+    desc="多标签分类 F1",
+    usage="多标签分类任务",
+    priority="primary"
+)
+def compute_multilabel_f1(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
+    scores = []
+    for p, r in zip(preds, refs):
+        p_set, r_set = _get_sets(p, r)
+        
+        if not p_set and not r_set:
+            f1 = 1.0
+        elif not p_set or not r_set:
+            f1 = 0.0
+        else:
+            tp = len(p_set & r_set)
+            fp = len(p_set - r_set)
+            fn = len(r_set - p_set)
+            prec = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+            rec = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+            f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
+        scores.append(f1)
+        
+    return {
+        "score": sum(scores) / len(scores) if scores else 0.0,
+        "details": scores
+    }
+
+def compute_jaccard_index(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
+    scores = []
+    for p, r in zip(preds, refs):
+        p_set, r_set = _get_sets(p, r)
+        
+        union = len(p_set | r_set)
+        inter = len(p_set & r_set)
+        
+        if union == 0:
+            score = 1.0 # Both empty
+        else:
+            score = inter / union
+        scores.append(score)
+        
+    return {
+        "score": sum(scores) / len(scores) if scores else 0.0,
+        "details": scores
+    }

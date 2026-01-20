@@ -1,11 +1,13 @@
 from __future__ import annotations
+import json
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from one_eval.core.agent import CustomAgent
 from one_eval.core.state import NodeState, BenchInfo
 from one_eval.logger import get_logger
-from one_eval.utils.metric_registry import metric_registry
+from one_eval.metrics.dispatcher import metric_dispatcher as metric_registry
 
 log = get_logger("MetricRecommendAgent")
 
@@ -14,7 +16,12 @@ class MetricRecommendAgent(CustomAgent):
     Step 3 Agent: Metric推荐
     双轨制策略：
     1. Registry Track: 已知 Benchmark 直接查表。
-    2. Analyst Track: 未知 Benchmark 基于 Info 和 Examples 调用 LLM 分析。
+    查表策略：
+        - 查看 benchinfo 中是否指定了 metric
+        - 基于 bench_dataflow_eval_type 进行第一次分流
+        - 基于 bench_meta (task_type, domain) 进行第二次分流 (Type + Domain)
+        - (eval_type, task_family)   ---->  template 的映射
+    2. Analyst Track: 未知 Benchmark 基于 Info (name、prompt_template) 调用 LLM 分析。
     """
 
     @property
@@ -29,11 +36,23 @@ class MetricRecommendAgent(CustomAgent):
     def task_prompt_template_name(self) -> str:
         return "metric_recommend.task"
 
-    def _check_registry(self, bench_name: str) -> Optional[List[Dict[str, Any]]]:
+    def _check_registry(self, bench: BenchInfo, task_domain: Optional[str] = None) -> Optional[List[Dict[str, Any]]]:
         """
         检查注册表是否有预定义的 Metric。
         """
-        return metric_registry.get_metrics(bench_name)
+        eval_type = bench.bench_dataflow_eval_type
+        if not eval_type and bench.meta:
+            eval_type = bench.meta.get("bench_dataflow_eval_type") or bench.meta.get("eval_type")
+
+        try:
+            return metric_registry.get_metrics(
+                bench.bench_name,
+                bench_meta=bench.meta,
+                eval_type=eval_type,
+                task_domain=task_domain,
+            )
+        except TypeError:
+            return metric_registry.get_metrics(bench.bench_name)
     
     def _normalize_metric_format(self, metric: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -77,7 +96,45 @@ class MetricRecommendAgent(CustomAgent):
                 continue
         return validated
 
-    def _format_bench_context(self, benches: List[BenchInfo]) -> str:
+    def _read_preview_from_file(self, file_path: str, limit: int = 2) -> List[Any]:
+        """
+        从文件中读取预览数据 (支持 jsonl 和 json)
+        """
+        if not file_path:
+            return []
+            
+        path = Path(file_path)
+        preview = []
+        if not path.exists():
+            return preview
+            
+        try:
+            if path.suffix.lower() == '.jsonl':
+                with path.open('r', encoding='utf-8') as f:
+                    for _ in range(limit):
+                        line = f.readline()
+                        if not line: break
+                        try:
+                            preview.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            continue
+            elif path.suffix.lower() == '.json':
+                with path.open('r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        preview = data[:limit]
+                    elif isinstance(data, dict):
+                        # 尝试常见的 key
+                        for key in ['rows', 'records', 'data', 'examples', 'items']:
+                            if key in data and isinstance(data[key], list):
+                                preview = data[key][:limit]
+                                break
+        except Exception as e:
+            log.warning(f"无法读取文件预览: {file_path}, 错误: {e}")
+            
+        return preview
+
+    def _format_bench_context(self, benches: List[BenchInfo], task_domain: Optional[str] = None) -> str:
         """
         将 Benchmark 信息格式化为 LLM 可读的上下文。
         """
@@ -87,27 +144,38 @@ class MetricRecommendAgent(CustomAgent):
             if isinstance(task_type, list):
                 task_type = ", ".join(task_type)
             
-            examples = b.meta.get("examples", []) or b.meta.get("few_shot", []) or b.meta.get("preview", [])
+            # 1. 尝试从文件读取 (Strict Mode: Only use eval_detail_path)
+            examples = []
+            source_file = b.meta.get("eval_detail_path")
+            
+            if source_file:
+                examples = self._read_preview_from_file(str(source_file))
+
             if isinstance(examples, list) and len(examples) > 0:
                 display_examples = examples[:2]
+                # 限制每个 sample 的长度，防止 token 爆炸
                 examples_str = "\n".join([
-                    f"  样例 {i+1}: {str(ex)[:300]}"
+                    f"  Sample {i+1}: {json.dumps(ex, ensure_ascii=False)[:1000]}"
                     for i, ex in enumerate(display_examples)
                 ])
             else:
-                examples_str = "  无样例数据"
+                examples_str = "  无样例数据 (无法读取源文件)"
             
-            input_col = b.meta.get("input_column", b.meta.get("question_column", "question"))
-            output_col = b.meta.get("output_column", b.meta.get("answer_column", "answer"))
-            
+            # 让 LLM 自己从 Sample 中看
+            eval_type = b.bench_dataflow_eval_type or b.meta.get("bench_dataflow_eval_type") or b.meta.get("eval_type")
+            prompt_template = b.bench_prompt_template
+            if isinstance(prompt_template, str) and len(prompt_template) > 600:
+                prompt_template = prompt_template[:300] + "\n...[SNIP]...\n" + prompt_template[-300:]
+
             part = (
                 f"### Benchmark: {b.bench_name}\n"
+                f"- state.task_domain: {task_domain or 'Unknown'}\n"
+                f"- bench_dataflow_eval_type: {eval_type or 'Unknown'}\n"
                 f"- 任务类型: {task_type}\n"
                 f"- 领域标签: {b.meta.get('domain', 'Unknown')}\n"
                 f"- 描述: {b.meta.get('description', 'No description provided')}\n"
-                f"- 输入字段: {input_col}\n"
-                f"- 输出字段: {output_col}\n"
-                f"- 样例数据:\n{examples_str}\n"
+                f"- 推理Prompt模板(截断): {prompt_template or 'None'}\n"
+                f"- 样例数据 (Raw JSON):\n{examples_str}\n"
             )
             context_parts.append(part)
         return "\n".join(context_parts)
@@ -147,7 +215,7 @@ class MetricRecommendAgent(CustomAgent):
                 continue
 
             # 2. 注册表查找
-            registry_metrics = self._check_registry(bench_name)
+            registry_metrics = self._check_registry(bench, task_domain=state.task_domain)
             
             if registry_metrics:
                 validated = self._validate_metrics(registry_metrics)
@@ -161,7 +229,7 @@ class MetricRecommendAgent(CustomAgent):
             log.info(f"正在调用 LLM 分析以下 Benchmark 的 Metrics: {[b.bench_name for b in unknown_benches]}")
             
             # 1. 准备上下文
-            bench_context_str = self._format_bench_context(unknown_benches)
+            bench_context_str = self._format_bench_context(unknown_benches, task_domain=state.task_domain)
             
             # 2. 从 Registry 获取动态文档 (关键修改点)
             # 这些文档将注入到 Prompt 模板中，替代硬编码
