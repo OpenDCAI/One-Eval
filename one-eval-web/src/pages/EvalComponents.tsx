@@ -83,6 +83,9 @@ export const BenchCard = ({ bench, activeNode, onUpdate }: { bench: Bench, activ
         return data;
     };
 
+    // Helper to check if value is a plain object (not array, not null)
+    const isObject = (val: any) => val != null && typeof val === 'object' && !Array.isArray(val);
+
     // Extract Meta Data safely
     const meta = bench.meta || {};
     const structure = safeParse(meta.structure); 
@@ -175,14 +178,17 @@ export const BenchCard = ({ bench, activeNode, onUpdate }: { bench: Bench, activ
                 <div className="flex flex-wrap gap-1 mb-3">
                     {evalType && (
                         <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100 font-medium">
-                            {evalType}
+                            {typeof evalType === 'object' ? JSON.stringify(evalType) : String(evalType)}
                         </span>
                     )}
-                    {tags.slice(0, 3).map((tag: string) => (
-                         <span key={tag} className="text-[10px] bg-slate-50 text-slate-500 px-1.5 py-0.5 rounded border border-slate-100 flex items-center gap-1">
-                             <Tag className="w-2 h-2" /> {tag}
-                         </span>
-                    ))}
+                    {tags.slice(0, 3).map((tag: any, i: number) => {
+                         const tagStr = typeof tag === 'object' ? JSON.stringify(tag) : String(tag);
+                         return (
+                            <span key={i} className="text-[10px] bg-slate-50 text-slate-500 px-1.5 py-0.5 rounded border border-slate-100 flex items-center gap-1">
+                                <Tag className="w-2 h-2" /> {tagStr}
+                            </span>
+                         );
+                    })}
                 </div>
 
                 <div className="text-[10px] text-slate-500 font-mono flex-1 overflow-hidden bg-slate-50/50 p-3 rounded-lg border border-slate-50 group-hover:border-slate-100 transition-colors relative">
@@ -193,7 +199,7 @@ export const BenchCard = ({ bench, activeNode, onUpdate }: { bench: Bench, activ
                             </div>
 
                             {/* Key Mapping Preview */}
-                            {keyMapping && (
+                            {keyMapping && isObject(keyMapping) && (
                                 <div>
                                     <div className="text-[9px] uppercase font-bold text-slate-400 mb-1">Key Mapping</div>
                                     <div className="grid grid-cols-1 gap-1 pl-2 border-l-2 border-amber-200">
@@ -246,7 +252,11 @@ export const BenchCard = ({ bench, activeNode, onUpdate }: { bench: Bench, activ
                             <>
                                 <Database className="w-6 h-6 text-blue-600" />
                                 {bench.bench_name}
-                                {evalType && <span className="text-sm font-normal text-slate-400 ml-2 bg-slate-100 px-2 py-0.5 rounded-full">{evalType}</span>}
+                                {evalType && (
+                                    <span className="text-sm font-normal text-slate-400 ml-2 bg-slate-100 px-2 py-0.5 rounded-full">
+                                        {typeof evalType === 'object' ? JSON.stringify(evalType) : String(evalType)}
+                                    </span>
+                                )}
                             </>
                         }
                         description="Review and modify the benchmark configuration."
@@ -318,11 +328,11 @@ export const BenchCard = ({ bench, activeNode, onUpdate }: { bench: Bench, activ
                                             <tbody className="divide-y divide-slate-100">
                                                 {previewData.slice(0, 5).map((row: any, idx: number) => (
                                                     <tr key={idx} className="bg-white hover:bg-slate-50">
-                                                        {Object.values(row).map((val: any, vi) => (
+                                                        {isObject(row) ? Object.values(row).map((val: any, vi) => (
                                                             <td key={vi} className="px-3 py-2 font-mono text-slate-600 max-w-[200px] truncate border-r border-slate-50 last:border-r-0" title={String(val)}>
                                                                 {String(val)}
                                                             </td>
-                                                        ))}
+                                                        )) : <td className="px-3 py-2 text-slate-400 italic">Invalid Row Data</td>}
                                                     </tr>
                                                 ))}
                                             </tbody>
@@ -372,7 +382,7 @@ export const BenchCard = ({ bench, activeNode, onUpdate }: { bench: Bench, activ
                                             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                                                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Split</label>
                                                 <div className="flex flex-wrap gap-2">
-                                                    {structureSubsets.find((s: any) => s.subset === selectedSubset)?.splits.map((split: string) => (
+                                                    {structureSubsets.find((s: any) => s.subset === selectedSubset)?.splits?.map((split: string) => (
                                                         <button
                                                             key={split}
                                                             onClick={() => setSelectedSplit(split)}
@@ -769,7 +779,13 @@ export const WorkflowBlock = ({ title, icon: Icon, nodes, activeNodeId, status, 
 };
 
 // --- Summary Panel Component ---
-export const SummaryPanel = ({ state, sidebarWidth, chatWidth }: { state: WorkflowState | null, sidebarWidth: number, chatWidth: number }) => {
+export const SummaryPanel = ({ state, sidebarWidth, chatWidth, availableModels, onModelChange }: { 
+    state: WorkflowState | null, 
+    sidebarWidth: number, 
+    chatWidth: number,
+    availableModels?: any[],
+    onModelChange?: (model: any) => void
+}) => {
     const [isOpen, setIsOpen] = React.useState(true);
 
     if (!state) return null;
@@ -809,17 +825,35 @@ export const SummaryPanel = ({ state, sidebarWidth, chatWidth }: { state: Workfl
                                         <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                                             Target Model
                                         </h4>
-                                        <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 flex items-center gap-3">
-                                            <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center">
+                                        <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 flex items-center gap-3 relative group">
+                                            <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center shrink-0">
                                                 <Box className="w-5 h-5" />
                                             </div>
-                                            <div>
-                                                <div className="font-bold text-slate-900 text-sm truncate" title={state.target_model_name}>
-                                                    {state.target_model_name || "N/A"}
-                                                </div>
-                                                <div className="text-[10px] text-slate-500 font-mono mt-0.5">
-                                                    Local Model
-                                                </div>
+                                            <div className="flex-1 min-w-0 relative">
+                                                <label className="text-[10px] text-slate-500 font-mono mb-0.5 block">Selected Model</label>
+                                                
+                                                {availableModels && availableModels.length > 0 ? (
+                                                    <select 
+                                                        value={state.target_model_name || ""}
+                                                        onChange={(e) => {
+                                                            const selected = availableModels.find((m: any) => m.name === e.target.value);
+                                                            if (selected && onModelChange) onModelChange(selected);
+                                                        }}
+                                                        className="w-full bg-transparent font-bold text-slate-900 text-sm truncate appearance-none focus:outline-none cursor-pointer pr-4"
+                                                    >
+                                                        {availableModels.map((m: any) => (
+                                                            <option key={m.name} value={m.name}>{m.name}</option>
+                                                        ))}
+                                                    </select>
+                                                ) : (
+                                                    <div className="font-bold text-slate-900 text-sm truncate" title={state.target_model_name}>
+                                                        {state.target_model_name || "N/A"}
+                                                    </div>
+                                                )}
+                                                
+                                                {availableModels && availableModels.length > 0 && (
+                                                    <ChevronDown className="w-3 h-3 text-slate-400 absolute right-0 top-1/2 mt-1 -translate-y-1/2 pointer-events-none" />
+                                                )}
                                             </div>
                                         </div>
                                     </div>
@@ -927,7 +961,14 @@ export const GalleryModal = ({ isOpen, onClose, onSelect, apiBaseUrl }: { isOpen
                                 <div>
                                     <div className="font-bold text-slate-700 text-sm flex items-center gap-2">
                                         {b.bench_name}
-                                        {Array.isArray(b.task_type) && b.task_type.map((t: string) => <span key={t} className="text-[10px] bg-slate-100 text-slate-500 px-1.5 rounded">{t}</span>)}
+                                        {Array.isArray(b.task_type) && b.task_type.map((t: any, idx: number) => {
+                                            const label = typeof t === 'object' && t !== null ? (t.name || JSON.stringify(t)) : String(t);
+                                            return (
+                                                <span key={idx} className="text-[10px] bg-slate-100 text-slate-500 px-1.5 rounded" title={typeof t === 'object' ? JSON.stringify(t) : undefined}>
+                                                    {label}
+                                                </span>
+                                            );
+                                        })}
                                     </div>
                                     <div className="text-xs text-slate-400 line-clamp-1">{b.description}</div>
                                 </div>

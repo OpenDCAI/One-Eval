@@ -67,9 +67,21 @@ export const Eval = () => {
 
   // Editable State (for manual modification)
   const [editBenches, setEditBenches] = useState<Bench[]>([]);
+  const [availableModels, setAvailableModels] = useState<any[]>([]);
 
   const apiBaseUrl = useMemo(() => localStorage.getItem("oneEval.apiBaseUrl") || "http://localhost:8000", []);
   
+  // Fetch Models
+  useEffect(() => {
+      axios.get(`${apiBaseUrl}/api/models`)
+          .then(res => {
+              if (Array.isArray(res.data)) {
+                  setAvailableModels(res.data);
+              }
+          })
+          .catch(e => console.error("Failed to fetch models", e));
+  }, [apiBaseUrl]);
+
   // Fetch History
   const fetchHistory = async () => {
       try {
@@ -286,12 +298,16 @@ export const Eval = () => {
       // Check duplicate
       if (editBenches.some(b => b.bench_name === bench.bench_name)) return;
       
+      const safeTaskTypes = Array.isArray(bench.task_type) 
+          ? bench.task_type.map((t: any) => typeof t === 'object' ? JSON.stringify(t) : String(t))
+          : [];
+
       const newBench: Bench = {
           bench_name: bench.bench_name,
-          eval_type: Array.isArray(bench.task_type) ? bench.task_type[0] : "unknown",
+          eval_type: safeTaskTypes.length > 0 ? safeTaskTypes[0] : "unknown",
           meta: {
               ...bench.meta,
-              tags: Array.isArray(bench.task_type) ? bench.task_type : [], // Store all task types as tags
+              tags: safeTaskTypes, // Store all task types as tags
               source: "gallery", // Flag to skip probing
               skip_probing: true,
               keys: [], // Default empty keys to prevent white screen
@@ -317,6 +333,18 @@ export const Eval = () => {
       }
   };
   
+  const handleModelChange = (model: any) => {
+      // Update local state if needed, or trigger backend update
+      // For now we assume this is just visual selection before running or resuming
+      if (state) {
+          setState({ 
+              ...state, 
+              target_model_name: model.name,
+              target_model: model
+          });
+      }
+  };
+
   // Helper to determine block status
   const getBlockStatus = (block: 'search' | 'prep' | 'exec') => {
       if (status === 'idle') return 'idle';
@@ -811,8 +839,13 @@ export const Eval = () => {
                                                        </div>
                                                        <div className="p-3 bg-white rounded-lg border border-slate-100">
                                                            <div className="text-[10px] text-slate-400 uppercase font-bold mb-1">Metrics Detail</div>
-                                                           <div className="text-xs font-mono text-slate-600">
-                                                               {res ? JSON.stringify(res, null, 2) : "No detailed metrics"}
+                                                           <div className="text-xs font-mono text-slate-600 space-y-1">
+                                                               {res ? Object.entries(res).map(([key, value]) => (
+                                                                   <div key={key} className="flex justify-between border-b border-slate-50 pb-1 last:border-0">
+                                                                       <span className="text-slate-400 mr-2">{key}:</span>
+                                                                       <span className="font-bold text-slate-700 truncate" title={String(value)}>{String(value)}</span>
+                                                                   </div>
+                                                               )) : "No detailed metrics"}
                                                            </div>
                                                        </div>
                                                    </div>
@@ -858,7 +891,13 @@ export const Eval = () => {
            </main>
            
            {/* Bottom Summary Panel */}
-           <SummaryPanel state={state} sidebarWidth={showHistory ? 240 : 60} chatWidth={chatWidth} />
+           <SummaryPanel 
+                state={state} 
+                sidebarWidth={showHistory ? 240 : 60} 
+                chatWidth={chatWidth}
+                availableModels={availableModels}
+                onModelChange={handleModelChange}
+           />
        </div>
 
        {/* --- Right Sidebar (Chat) --- */}
