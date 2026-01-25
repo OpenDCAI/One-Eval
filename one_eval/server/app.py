@@ -483,7 +483,7 @@ async def get_status(thread_id: str):
         status = "running"
         if not next_nodes:
             status = "completed"
-        elif "HumanReviewNode" in next_nodes: 
+        elif "HumanReviewNode" in next_nodes or "PreEvalReviewNode" in next_nodes:
             status = "interrupted"
 
         return {
@@ -497,6 +497,33 @@ async def get_status(thread_id: str):
 async def resume_workflow(req: ResumeWorkflowRequest):
     # Apply state updates if provided
     if req.state_updates:
+        if "target_model" in req.state_updates and isinstance(req.state_updates["target_model"], dict):
+            try:
+                tm = req.state_updates["target_model"]
+                model_name_or_path = (
+                    tm.get("model_name_or_path")
+                    or tm.get("path")
+                    or tm.get("model_path")
+                    or tm.get("hf_model_name_or_path")
+                )
+                if not model_name_or_path:
+                    raise ValueError("target_model missing model_name_or_path/path")
+
+                req.state_updates["target_model"] = ModelConfig(
+                    model_name_or_path=str(model_name_or_path),
+                    is_api=bool(tm.get("is_api", False)),
+                    api_url=tm.get("api_url"),
+                    api_key=tm.get("api_key"),
+                    temperature=float(tm.get("temperature", 0.0) or 0.0),
+                    top_p=float(tm.get("top_p", 1.0) or 1.0),
+                    max_tokens=int(tm.get("max_tokens", 2048) or 2048),
+                    tensor_parallel_size=int(tm.get("tensor_parallel_size", 1) or 1),
+                    max_model_len=tm.get("max_model_len"),
+                )
+            except Exception as e:
+                log.error(f"Failed to parse target_model update: {e}")
+                del req.state_updates["target_model"]
+
         # Deserialize nested objects if needed
         if "benches" in req.state_updates and isinstance(req.state_updates["benches"], list):
             # Convert dicts back to BenchInfo objects
@@ -550,7 +577,7 @@ async def get_history():
                             # Determine status
                             status = "completed"
                             if snap.next:
-                                status = "interrupted" if "HumanReviewNode" in snap.next else "running"
+                                status = "interrupted" if ("HumanReviewNode" in snap.next or "PreEvalReviewNode" in snap.next) else "running"
                             # If no next and no error -> completed
                             
                             ts = snap.metadata.get("created_at") if snap.metadata else None

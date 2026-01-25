@@ -54,11 +54,12 @@ export const Eval = () => {
   // Eval Params State (Manual)
   const [evalParams, setEvalParams] = useState({
       temperature: 0.7,
-      top_k: 50,
+      top_p: 1.0,
       max_tokens: 2048
   });
 
   const [expandedResults, setExpandedResults] = useState<number[]>([]);
+  const [selectedModel, setSelectedModel] = useState<any | null>(null);
   
   // Chat State
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -107,29 +108,25 @@ export const Eval = () => {
         const data: StatusResponse = res.data;
         
         // Status Transition Logic for Chat
-        if (data.status !== status) {
-            // Prevent duplicate messages by checking the last message content
-            setMessages(prev => {
-                const lastMsg = prev[prev.length - 1];
-                
-                if (data.status === "completed") {
-                    const successText = "Evaluation completed successfully! Check the results below.";
-                    if (lastMsg?.content !== successText) {
-                        return [...prev, { id: Date.now().toString(), role: "ai", content: successText, timestamp: Date.now() }];
-                    }
-                } else if (data.status === "failed") {
-                    const failText = "Evaluation failed. Please check logs.";
-                    if (lastMsg?.content !== failText) {
-                         return [...prev, { id: Date.now().toString(), role: "system", content: failText, timestamp: Date.now() }];
-                    }
+                if (data.status !== status) {
+                    // Prevent duplicate messages by checking the last message content
+                    setMessages(prev => {
+                        const lastMsg = prev[prev.length - 1];
+                        
+                        if (data.status === "failed") {
+                            const failText = "Evaluation failed. Please check logs.";
+                            if (lastMsg?.content !== failText) {
+                                 return [...prev, { id: Date.now().toString(), role: "system", content: failText, timestamp: Date.now() }];
+                            }
+                        }
+                        return prev;
+                    });
                 }
-                return prev;
-            });
-        }
 
         setStatus(data.status);
         if (data.state_values) {
             setState(data.state_values);
+
             // Only sync editBenches if we are NOT in interrupted mode (or first time entering)
             // But if we are in interrupted mode, we want to keep user edits.
             // However, if the backend adds new benches (e.g. from search), we want them.
@@ -158,6 +155,26 @@ export const Eval = () => {
           setEditBenches(state.benches);
       }
   }, [status, state?.benches]);
+
+  // Sync state and params
+  useEffect(() => {
+      if (!state) return;
+
+      // Sync target model
+      if (state.target_model && !selectedModel) {
+          setSelectedModel(state.target_model);
+          
+          // Sync eval params from the target model
+          setEvalParams({
+              temperature: state.target_model.temperature ?? 0.7,
+              top_p: state.target_model.top_p ?? 1.0,
+              max_tokens: state.target_model.max_tokens ?? 2048
+          });
+      } else if (state.target_model_name && !selectedModel && availableModels.length > 0) {
+          const found = availableModels.find(m => m.name === state.target_model_name);
+          if (found) setSelectedModel(found);
+      }
+  }, [state, availableModels.length, selectedModel]);
 
   const handleStart = async (userQuery: string) => {
     if (!userQuery) return;
@@ -216,10 +233,17 @@ export const Eval = () => {
           // For now, if we are interrupted and in exec phase (or prep phase finished), we attach eval params.
           // Since we don't have explicit node name for custom interrupt, we attach params generally if they exist.
           
+          const nextModel = selectedModel ?? state?.target_model ?? null;
+          const modelForUpdate = nextModel
+              ? { ...nextModel, temperature: evalParams.temperature, top_p: evalParams.top_p, max_tokens: evalParams.max_tokens }
+              : null;
           payload.state_updates = {
               benches: editBenches,
-              eval_params: evalParams // Attach eval params
+              target_model_name: selectedModel?.name ?? state?.target_model_name,
           };
+          if (modelForUpdate) {
+              payload.state_updates.target_model = modelForUpdate;
+          }
       }
 
       await axios.post(`${apiBaseUrl}/api/workflow/resume/${threadId}`, payload);
@@ -333,18 +357,6 @@ export const Eval = () => {
       }
   };
   
-  const handleModelChange = (model: any) => {
-      // Update local state if needed, or trigger backend update
-      // For now we assume this is just visual selection before running or resuming
-      if (state) {
-          setState({ 
-              ...state, 
-              target_model_name: model.name,
-              target_model: model
-          });
-      }
-  };
-
   // Helper to determine block status
   const getBlockStatus = (block: 'search' | 'prep' | 'exec') => {
       if (status === 'idle') return 'idle';
@@ -352,7 +364,7 @@ export const Eval = () => {
       const nodes = currentNode ? [currentNode] : [];
       const isSearchActive = ["QueryUnderstandNode", "BenchSearchNode", "HumanReviewNode"].some(n => nodes.some(cn => cn.includes(n)));
       const isPrepActive = ["DatasetStructureNode", "BenchConfigRecommendNode", "BenchTaskInferNode", "DownloadNode"].some(n => nodes.some(cn => cn.includes(n)));
-      const isExecActive = ["DataFlowEvalNode"].some(n => nodes.some(cn => cn.includes(n)));
+      const isExecActive = ["PreEvalReviewNode", "DataFlowEvalNode"].some(n => nodes.some(cn => cn.includes(n)));
 
       if (status === 'completed') return 'completed';
       
@@ -366,7 +378,7 @@ export const Eval = () => {
           return "completed";
       }
       if (block === 'exec') {
-          if (isExecActive) return "running";
+          if (isExecActive) return status === "interrupted" ? "interrupted" : "running";
           if (isSearchActive || isPrepActive) return "pending";
           return "completed";
       }
@@ -618,31 +630,46 @@ export const Eval = () => {
                                                        {b.bench_name.substring(0, 2).toUpperCase()}
                                                    </div>
                                                    {status === "interrupted" ? (
-                                                       <div className="flex flex-1 items-center gap-2">
-                                                          <Input 
-                                                              placeholder="Enter benchmark name..."
-                                                              value={b.bench_name}
-                                                              onChange={(e) => {
-                                                                    const nb = [...editBenches];
-                                                                    nb[i].bench_name = e.target.value;
-                                                                    setEditBenches(nb);
-                                                               }}
-                                                               className="h-9 text-sm border-amber-100 focus-visible:ring-amber-500 bg-amber-50/30"
-                                                           />
-                                                           <Button 
-                                                               variant="ghost" 
-                                                               size="icon" 
-                                                               className="h-9 w-9 text-amber-600 hover:bg-amber-100 hover:text-amber-700"
-                                                               onClick={() => {
-                                                                   const nb = editBenches.filter((_, idx) => idx !== i);
-                                                                   setEditBenches(nb);
-                                                               }}
-                                                           >
-                                                               <X className="w-4 h-4" />
-                                                           </Button>
+                                                       <div className="flex flex-1 flex-col gap-1">
+                                                           <div className="flex items-center gap-2">
+                                                              <Input 
+                                                                  placeholder="Enter benchmark name..."
+                                                                  value={b.bench_name}
+                                                                  onChange={(e) => {
+                                                                        const nb = [...editBenches];
+                                                                        nb[i].bench_name = e.target.value;
+                                                                        setEditBenches(nb);
+                                                                   }}
+                                                                   className="h-9 text-sm border-amber-100 focus-visible:ring-amber-500 bg-amber-50/30"
+                                                               />
+                                                               <Button 
+                                                                   variant="ghost" 
+                                                                   size="icon" 
+                                                                   className="h-9 w-9 text-amber-600 hover:bg-amber-100 hover:text-amber-700"
+                                                                   onClick={() => {
+                                                                       const nb = editBenches.filter((_, idx) => idx !== i);
+                                                                       setEditBenches(nb);
+                                                                   }}
+                                                               >
+                                                                   <X className="w-4 h-4" />
+                                                               </Button>
+                                                           </div>
+                                                           {b.meta?.desc && (
+                                                               <span className="text-xs text-slate-400 pl-1 truncate" title={typeof b.meta.desc === 'string' ? b.meta.desc : (b.meta.desc ? JSON.stringify(b.meta.desc) : '')}>
+                                                                   {typeof b.meta.desc === 'string' ? b.meta.desc : (b.meta.desc ? JSON.stringify(b.meta.desc) : '')}
+                                                               </span>
+                                                           )}
                                                        </div>
                                                    ) : (
-                                                       <span className="font-mono font-medium text-sm text-slate-700">{b.bench_name}</span>
+                                                       <div className="flex flex-col">
+                                                           {/* Updated to show desc */}
+                                                           <span className="font-mono font-medium text-sm text-slate-700">{b.bench_name}</span>
+                                                           {b.meta?.desc && (
+                                                               <span className="text-xs text-slate-400 max-w-md truncate" title={typeof b.meta.desc === 'string' ? b.meta.desc : (b.meta.desc ? JSON.stringify(b.meta.desc) : '')}>
+                                                                   {typeof b.meta.desc === 'string' ? b.meta.desc : (b.meta.desc ? JSON.stringify(b.meta.desc) : '')}
+                                                               </span>
+                                                           )}
+                                                       </div>
                                                    )}
                                                </div>
                                            ))}
@@ -713,6 +740,7 @@ export const Eval = () => {
                         status={getBlockStatus('exec') as any}
                         colorTheme="emerald"
                         nodes={[
+                            { id: "PreEvalReviewNode", label: "Confirm" },
                             { id: "DataFlowEvalNode", label: "Evaluation" }
                         ]}
                    >
@@ -720,7 +748,7 @@ export const Eval = () => {
                            {/* Eval Config Section */}
                            <div className={cn(
                                "bg-emerald-50/50 p-4 rounded-xl border space-y-4 transition-all",
-                               status === "interrupted" && getBlockStatus('exec') === "pending" // Highlight if waiting for exec confirm
+                               status === "interrupted" && currentNode?.includes("PreEvalReviewNode")
                                    ? "border-amber-400 ring-2 ring-amber-100 shadow-lg shadow-amber-50" 
                                    : "border-emerald-100"
                            )}>
@@ -730,52 +758,73 @@ export const Eval = () => {
                                    </div>
                                    
                                    {/* Status Indicator */}
-                                   {status === "interrupted" && getBlockStatus('exec') === "pending" && (
+                                   {status === "interrupted" && currentNode?.includes("PreEvalReviewNode") && (
                                        <span className="text-[10px] font-bold text-amber-600 bg-amber-100 px-2 py-1 rounded animate-pulse">
                                            Waiting for Confirmation
                                        </span>
                                    )}
-
-                                   {state?.benches?.length && (
-                                       <Button size="sm" className="h-7 bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1">
-                                           <Play className="w-3 h-3" /> Run Manual Eval
-                                       </Button>
-                                   )}
                                </div>
-                               <div className="grid grid-cols-3 gap-4">
-                                   <div>
-                                       <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">Temperature</label>
+                               <div className="grid grid-cols-12 gap-x-4 gap-y-4">
+                                   <div className="col-span-12 min-w-0">
+                                       <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Target Model</label>
+                                       {availableModels && availableModels.length > 0 ? (
+                                           <select
+                                               value={(selectedModel?.name ?? state?.target_model_name ?? "") as any}
+                                               onChange={(e) => {
+                                                   const found = availableModels.find((m: any) => m?.name === e.target.value);
+                                                   if (found) setSelectedModel(found);
+                                               }}
+                                               disabled={status === "running"}
+                                               className="w-full h-9 rounded-lg border border-emerald-200 bg-white px-3 text-sm font-bold text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all disabled:opacity-50 disabled:bg-slate-50/50"
+                                           >
+                                               {availableModels.map((m: any) => (
+                                                   <option key={m.name} value={m.name}>{m.name}</option>
+                                               ))}
+                                           </select>
+                                       ) : (
+                                           <div className="h-9 flex items-center px-3 rounded-lg border border-emerald-200 bg-slate-50/50 text-sm font-bold text-slate-500 italic">
+                                               {state?.target_model_name || "No model selected"}
+                                           </div>
+                                       )}
+                                   </div>
+                                   
+                                   <div className="col-span-4 min-w-0">
+                                       <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Temperature</label>
                                        <Input 
                                            type="number" 
                                            step="0.1"
                                            min="0"
                                            max="2"
                                            value={evalParams.temperature} 
-                                           onChange={e => setEvalParams({...evalParams, temperature: parseFloat(e.target.value)})}
-                                           disabled={status !== "interrupted" && status !== "idle"} // Only editable when interrupted or idle
-                                           className="h-8 bg-white border-emerald-200 focus-visible:ring-emerald-500 text-xs font-mono"
+                                           onChange={e => setEvalParams({...evalParams, temperature: parseFloat(e.target.value) || 0})}
+                                           disabled={status === "running"}
+                                           className="h-9 bg-white border-emerald-200 rounded-lg focus-visible:ring-emerald-500/20 focus-visible:border-emerald-500 text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
                                        />
                                    </div>
-                                   <div>
-                                       <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">Top K</label>
+                                   
+                                   <div className="col-span-4 min-w-0">
+                                       <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Top P</label>
                                        <Input 
                                            type="number" 
-                                           step="1"
-                                           value={evalParams.top_k} 
-                                           onChange={e => setEvalParams({...evalParams, top_k: parseInt(e.target.value)})}
-                                           disabled={status !== "interrupted" && status !== "idle"}
-                                           className="h-8 bg-white border-emerald-200 focus-visible:ring-emerald-500 text-xs font-mono"
+                                           step="0.05"
+                                           min="0"
+                                           max="1"
+                                           value={evalParams.top_p} 
+                                           onChange={e => setEvalParams({...evalParams, top_p: parseFloat(e.target.value) || 0})}
+                                           disabled={status === "running"}
+                                           className="h-9 bg-white border-emerald-200 rounded-lg focus-visible:ring-emerald-500/20 focus-visible:border-emerald-500 text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
                                        />
                                    </div>
-                                   <div>
-                                       <label className="text-[10px] uppercase font-bold text-slate-400 mb-1 block">Max Tokens</label>
+                                   
+                                   <div className="col-span-4 min-w-0">
+                                       <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Max Tokens</label>
                                        <Input 
                                            type="number" 
                                            step="128"
                                            value={evalParams.max_tokens} 
-                                           onChange={e => setEvalParams({...evalParams, max_tokens: parseInt(e.target.value)})}
-                                           disabled={status !== "interrupted" && status !== "idle"}
-                                           className="h-8 bg-white border-emerald-200 focus-visible:ring-emerald-500 text-xs font-mono"
+                                           onChange={e => setEvalParams({...evalParams, max_tokens: parseInt(e.target.value) || 0})}
+                                           disabled={status === "running"}
+                                           className="h-9 bg-white border-emerald-200 rounded-lg focus-visible:ring-emerald-500/20 focus-visible:border-emerald-500 text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
                                        />
                                    </div>
                                </div>
@@ -785,7 +834,19 @@ export const Eval = () => {
                                {state?.benches?.map((b, i) => {
                                    const isExpanded = expandedResults.includes(i);
                                    const res = b.meta?.eval_result;
-                                   const score = res ? (res.score ?? res.accuracy ?? res.exact_match ?? Object.values(res)[0]) : null;
+                                       const pickScore = (r: any) => {
+                                           if (!r || typeof r !== 'object') return null;
+                                           for (const k of ['score','accuracy','exact_match']) {
+                                               const v = (r as any)[k];
+                                               if (typeof v === 'number') return v;
+                                               if (typeof v === 'string') return v;
+                                           }
+                                           for (const v of Object.values(r)) {
+                                               if (typeof v === 'number' || typeof v === 'string') return v;
+                                           }
+                                           return null;
+                                       };
+                                       const score = pickScore(res);
                                    
                                    return (
                                        <div key={i} className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden transition-all hover:border-emerald-200">
@@ -815,7 +876,7 @@ export const Eval = () => {
                                                        <div className="flex items-center gap-3 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100">
                                                            <span className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Score</span>
                                                            <span className="text-lg font-black text-emerald-700 font-mono">
-                                                                {typeof score === 'number' ? score.toFixed(2) : score}
+                                                                {typeof score === 'number' ? score.toFixed(2) : String(score)}
                                                            </span>
                                                        </div>
                                                    ) : (
@@ -895,8 +956,6 @@ export const Eval = () => {
                 state={state} 
                 sidebarWidth={showHistory ? 240 : 60} 
                 chatWidth={chatWidth}
-                availableModels={availableModels}
-                onModelChange={handleModelChange}
            />
        </div>
 

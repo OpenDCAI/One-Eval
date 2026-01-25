@@ -102,26 +102,30 @@ prompt_registry.register(
 prompt_registry.register(
     "bench_search.hf_query",
     """
-下面是与当前评测任务相关的信息。请你根据这些信息，给出“推荐的 benchmark 名称列表”。
+下面是与当前评测任务相关的信息。请你根据这些信息，给出“推荐的 benchmark 名称列表”以及每个 benchmark 的简短介绍。
 
 你需要返回一个 JSON，格式必须严格为：
 
 {{
-  "bench_names": [
-    "gsm8k",
-    "openai/gsm8k",
-    "HuggingFaceH4/MATH-500",
-    "mmlu",
-    "truthful_qa"
+  "bench_list": [
+    {{
+        "name": "gsm8k",
+        "desc": "Grade School Math, 小学数学应用题，考察多步推理能力"
+    }},
+    {{
+        "name": "HuggingFaceH4/MATH-500",
+        "desc": "竞赛级数学题，难度较高"
+    }}
   ]
 }}
 
 要求：
-1. "bench_names" 的值是一个字符串数组，每个元素是一个可能的 benchmark 名称。
-2. 如果你知道 HuggingFace 上的完整仓库名（例如 "openai/gsm8k"、"HuggingFaceH4/MATH-500"），优先使用完整仓库名。
-3. 如果你不确定仓库前缀，可以只给出常用简称（例如 "gsm8k"、"mmlu"），后续系统会尝试匹配。
-4. 不要包含与评测无关的数据集（例如纯预训练语料、无标注文本、通用聊天日志等）。
-5. 不要输出除上述 JSON 以外的任何内容。
+1. "bench_list" 是一个对象数组，每个对象包含 "name" (benchmark名称) 和 "desc" (简短介绍)。
+2. "desc" 字段限制在 20 字以内，简要说明该 benchmark 的主要内容或特点，方便用户快速了解。
+3. 如果你知道 HuggingFace 上的完整仓库名（例如 "openai/gsm8k"、"HuggingFaceH4/MATH-500"），优先使用完整仓库名。
+4. 如果你不确定仓库前缀，可以只给出常用简称（例如 "gsm8k"、"mmlu"），后续系统会尝试匹配。
+5. 不要包含与评测无关的数据集（例如纯预训练语料、无标注文本、通用聊天日志等）。
+6. 不要输出除上述 JSON 以外的任何内容。
 
 ----------------
 用户原始需求:

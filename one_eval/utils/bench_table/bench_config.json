@@ -1,5 +1,6 @@
 {
     "gsm8k": {
+        "desc": "小学水平的数学应用题，用于评估模型解决多步算术问题的答案准确率",
         "aliases": [
             "小学水平的数学应用题",
             "用于评估模型解决多步算术问题的答案准确率",
@@ -27,6 +28,7 @@
         "source_url": "https://huggingface.co/datasets/openai/gsm8k"
     },
     "MATH-500": {
+        "desc": "高难度竞赛级数学题的抽样子集，覆盖代数、几何、数论等",
         "aliases": [
             "高难度竞赛级数学题的抽样子集",
             "Hendrycks' MATH基准的500题快速评测版",
@@ -55,6 +57,7 @@
         "source_url": "https://huggingface.co/datasets/HuggingFaceH4/MATH-500"
     },
     "aqua-rat": {
+        "desc": "代数应用题选择题，评估模型在ABCDE选项中做选择的能力",
         "aliases": [
             "代数应用题选择题",
             "评估模型在ABCDE选项中做选择的能力",
@@ -85,6 +88,7 @@
         "source_url": "https://huggingface.co/datasets/deepmind/aqua_rat"
     },
     "mmlu": {
+        "desc": "MMLU中的数学部分，包含初等数学、高中数学等子任务",
         "aliases": [
             "MMLU中的数学部分",
             "包含初等数学、高中数学、高中统计学、抽象代数等子任务",
@@ -123,6 +127,7 @@
         "source_url": "https://huggingface.co/datasets/cais/mmlu"
     },
     "agieval-gaokao-mathqa": {
+        "desc": "中国高考数学题，评估模型在中文环境下的高级数学推理能力",
         "aliases": [
             "中国高考数学题",
             "AGIEval评测集的一部分",
@@ -150,6 +155,7 @@
         "source_url": "https://huggingface.co/datasets/dmayhem93/agieval-gaokao-mathqa"
     },
     "SVAMP": {
+        "desc": "简单算术应用题的变体集合，专门用于测试模型的鲁棒性",
         "aliases": [
             "简单算术应用题的变体集合",
             "专门用于测试模型的鲁棒性",
@@ -176,6 +182,7 @@
         "source_url": "https://huggingface.co/datasets/ChilleD/SVAMP"
     },
     "hendrycks_math": {
+        "desc": "MATH数据集，高难度数学竞赛题，要求生成自由形式的最终答案",
         "aliases": [
             "MATH数据集",
             "由Dan Hendrycks创建",
@@ -220,6 +227,7 @@
         "source_url": "https://huggingface.co/datasets/EleutherAI/hendrycks_math"
     },
     "Calc-ape210k": {
+        "desc": "ape210K数据集，大规模中文小学数学应用题",
         "aliases": [
             "ape210K数据集",
             "小学数学应用题",
@@ -248,6 +256,7 @@
         "source_url": "https://huggingface.co/datasets/MU-NLPC/Calc-ape210k"
     },
     "Calc-mawps": {
+        "desc": "MAWPS数据集，小学数学应用题，提供解题方程",
         "aliases": [
             "MAWPS数据集",
             "小学数学应用题",
@@ -335,6 +344,7 @@
         "source_url": "https://huggingface.co/datasets/chiayewken/competition_math"
     },
     "Math-QA": {
+        "desc": "MathQA数据集，英文高中数学应用题，提供程序化解题步骤",
         "aliases": [
             "MathQA数据集",
             "英文高中数学应用题",

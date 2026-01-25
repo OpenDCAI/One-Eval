@@ -20,6 +20,7 @@ from one_eval.nodes.download_node import DownloadNode
 from one_eval.nodes.dataset_keys_node import DatasetKeysNode
 from one_eval.nodes.bench_task_infer_node import BenchTaskInferNode
 from one_eval.nodes.dataflow_eval_node import DataFlowEvalNode
+from one_eval.nodes.pre_eval_review_node import PreEvalReviewNode
 
 from one_eval.utils import node_docs, validators
 from one_eval.utils.checkpoint import get_checkpointer
@@ -84,6 +85,9 @@ def build_complete_workflow(checkpointer=None):
     builder.add_node(name=node_infer.name, func=node_infer.run)
 
     # === Phase 4: Eval ===
+    node_pre_eval_review = PreEvalReviewNode()
+    builder.add_node(name=node_pre_eval_review.name, func=node_pre_eval_review.run)
+
     node_eval = DataFlowEvalNode()
     builder.add_node(name=node_eval.name, func=node_eval.run)
 
@@ -109,7 +113,7 @@ def build_complete_workflow(checkpointer=None):
     builder.add_edge(node_keys.name, node_infer.name)
 
     # Phase 3 -> Phase 4
-    builder.add_edge(node_infer.name, node_eval.name)
+    builder.add_edge(node_infer.name, node_pre_eval_review.name)
 
     # Phase 4 -> End
     builder.add_edge(node_eval.name, END)
@@ -159,7 +163,7 @@ async def run_full_pipeline(user_query: str, thread_id: str = "demo_full_run", m
         else:
             # Resume (e.g. from Human Interrupt)
             # Check if we are at interrupt
-            if snap and snap.next and "HumanReviewNode" in snap.next:
+            if snap and snap.next and ("HumanReviewNode" in snap.next or "PreEvalReviewNode" in snap.next):
                 log.info("Resuming from Human Review...")
                 # You can provide feedback here if automating, or CLI input
                 # For demo purposes, we assume acceptance

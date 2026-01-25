@@ -144,7 +144,7 @@ class BenchRegistry:
             results.append({
                 "bench_name": name,
                 "task_type": info.get("task_type", []),
-                "description": info.get("description", ""),
+                "description": info.get("description", "") or info.get("desc", ""),
                 "tags": info.get("tags", []),
                 # Include meta fields if they exist to skip detection
                 "meta": {

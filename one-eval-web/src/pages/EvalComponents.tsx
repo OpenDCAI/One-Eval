@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
     Send, Check, Loader2, AlertCircle, ChevronDown, ChevronUp, 
-    Box, Database, Bot, Maximize2, X, Save as SaveIcon, Tag
+    Database, Bot, Maximize2, X, Save as SaveIcon, Tag
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -85,6 +85,18 @@ export const BenchCard = ({ bench, activeNode, onUpdate }: { bench: Bench, activ
 
     // Helper to check if value is a plain object (not array, not null)
     const isObject = (val: any) => val != null && typeof val === 'object' && !Array.isArray(val);
+    
+    const toLabel = (val: any): string => {
+        if (val == null) return "";
+        if (typeof val === "string") return val;
+        if (typeof val === "number" || typeof val === "boolean") return String(val);
+        if (typeof val === "object") {
+            const name = (val as any).name;
+            if (typeof name === "string") return name;
+            try { return JSON.stringify(val); } catch { return String(val); }
+        }
+        return String(val);
+    };
 
     // Extract Meta Data safely
     const meta = bench.meta || {};
@@ -92,15 +104,35 @@ export const BenchCard = ({ bench, activeNode, onUpdate }: { bench: Bench, activ
     const keyMapping = safeParse(meta.key_mapping); 
     const downloadConfig = safeParse(meta.download_config); 
     const evalType = bench.eval_type || meta.bench_dataflow_eval_type; 
-    const description = meta.card_text || meta.description || "No description available.";
+    const descriptionRaw = meta.card_text ?? meta.description ?? meta.desc ?? "No description available.";
+    const description = typeof descriptionRaw === 'string' ? descriptionRaw : (descriptionRaw ? JSON.stringify(descriptionRaw) : "No description available.");
     const tags = Array.isArray(meta.tags) ? meta.tags : [];
     const availableKeys = Array.isArray(meta.keys) ? meta.keys : []; // Extracted keys from dataset
     const previewData = Array.isArray(meta.preview_data) ? meta.preview_data : []; // Preview rows
     const downloadPath = meta.download_path || meta.local_path;
-    const sampleCount = downloadConfig?.count || structure?.count || meta.count;
+    const sampleCountRaw = downloadConfig?.count || structure?.count || meta.count;
+    const sampleCount = (() => {
+        if (typeof sampleCountRaw === 'number') return sampleCountRaw;
+        if (typeof sampleCountRaw === 'string') return sampleCountRaw;
+        if (sampleCountRaw && typeof sampleCountRaw === 'object') {
+            const num = (sampleCountRaw as any).num_examples ?? (sampleCountRaw as any).count;
+            if (typeof num === 'number' || typeof num === 'string') return num;
+            return JSON.stringify(sampleCountRaw);
+        }
+        return undefined;
+    })();
 
     // Parse structure for selector
-    const structureSubsets = Array.isArray(structure?.subsets) ? structure.subsets : [];
+    const structureSubsetsRaw = Array.isArray(structure?.subsets) ? structure.subsets : [];
+    const structureSubsets = structureSubsetsRaw
+        .map((s: any) => {
+            const subsetVal = s?.subset ?? s?.name ?? s;
+            const subset = toLabel(subsetVal);
+            const splitsRaw = s?.splits ?? [];
+            const splits = Array.isArray(splitsRaw) ? splitsRaw.map(toLabel).filter(Boolean) : [];
+            return { subset, splits };
+        })
+        .filter((s: any) => s?.subset);
 
     // Init state from bench
     useEffect(() => {
@@ -108,14 +140,14 @@ export const BenchCard = ({ bench, activeNode, onUpdate }: { bench: Bench, activ
             setEditKeyMap({ ...keyMapping });
         }
         if (downloadConfig) {
-            setSelectedSubset(downloadConfig.config || "default");
-            setSelectedSplit(downloadConfig.split || "test");
+            setSelectedSubset(toLabel(downloadConfig.config) || "default");
+            setSelectedSplit(toLabel(downloadConfig.split) || "test");
         } else if (structureSubsets.length > 0) {
             // Default selection if no config exists
             const first = structureSubsets[0];
-            setSelectedSubset(first.subset);
+            setSelectedSubset(toLabel(first.subset));
             if (first.splits && first.splits.length > 0) {
-                setSelectedSplit(first.splits[0]);
+                setSelectedSplit(toLabel(first.splits[0]));
             }
         }
     }, [bench, isDetailsOpen]);
@@ -216,7 +248,7 @@ export const BenchCard = ({ bench, activeNode, onUpdate }: { bench: Bench, activ
                             {/* Download Info */}
                             {(downloadPath || sampleCount) && (
                                 <div className="pt-2 border-t border-slate-200/50 flex justify-between items-center text-[9px] text-slate-400 font-mono">
-                                    {sampleCount && <span className="flex items-center gap-1"><Database className="w-2 h-2" /> {sampleCount}</span>}
+                                    {sampleCount !== undefined && <span className="flex items-center gap-1"><Database className="w-2 h-2" /> {String(sampleCount)}</span>}
                                     {downloadPath && <span className="truncate max-w-[100px] flex items-center gap-1" title={downloadPath}><SaveIcon className="w-2 h-2" /> ...{downloadPath.slice(-12)}</span>}
                                 </div>
                             )}
@@ -295,8 +327,8 @@ export const BenchCard = ({ bench, activeNode, onUpdate }: { bench: Bench, activ
                                                         className="h-8 bg-white border border-amber-200 rounded px-2 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 w-full"
                                                     >
                                                         <option value="">Select key...</option>
-                                                        {availableKeys.map((ak: string) => (
-                                                            <option key={ak} value={ak}>{ak}</option>
+                                                        {availableKeys.map((ak: any) => (
+                                                            <option key={String(ak)} value={String(ak)}>{String(ak)}</option>
                                                         ))}
                                                     </select>
                                                 ) : (
@@ -371,7 +403,7 @@ export const BenchCard = ({ bench, activeNode, onUpdate }: { bench: Bench, activ
                                                                 : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
                                                         )}
                                                     >
-                                                        {s.subset}
+                                                        {toLabel(s.subset)}
                                                     </button>
                                                 ))}
                                             </div>
@@ -382,18 +414,18 @@ export const BenchCard = ({ bench, activeNode, onUpdate }: { bench: Bench, activ
                                             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                                                 <label className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">Split</label>
                                                 <div className="flex flex-wrap gap-2">
-                                                    {structureSubsets.find((s: any) => s.subset === selectedSubset)?.splits?.map((split: string) => (
+                                                    {structureSubsets.find((s: any) => s.subset === selectedSubset)?.splits?.map((split: any) => (
                                                         <button
-                                                            key={split}
-                                                            onClick={() => setSelectedSplit(split)}
+                                                            key={toLabel(split)}
+                                                            onClick={() => setSelectedSplit(toLabel(split))}
                                                             className={cn(
                                                                 "px-3 py-1.5 rounded-lg text-xs font-medium border transition-all",
-                                                                selectedSplit === split
+                                                                selectedSplit === toLabel(split)
                                                                     ? "bg-blue-600 text-white border-blue-600 shadow-md" 
                                                                     : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
                                                             )}
                                                         >
-                                                            {split}
+                                                            {toLabel(split)}
                                                         </button>
                                                     ))}
                                                 </div>
@@ -470,6 +502,9 @@ const EMOJIS = ["✨", "🤖", "🚀", "💡", "🔮", "✅", "🎯"];
 export const ChatPanel = ({ messages, status, onSendMessage, onConfirm, isWaitingForInput, activeNodeId, isCollapsed, onToggleCollapse }: ChatPanelProps) => {
     const [input, setInput] = React.useState("");
     const [hasApproved, setHasApproved] = React.useState(false);
+    const confirmText = activeNodeId?.includes("PreEvalReviewNode")
+        ? "Please review the target model and evaluation parameters in the Execution Phase, then approve to start evaluation."
+        : "I've prepared the benchmark configuration. Please review the highlighted parameters in the workflow blocks.";
     
     // Reset approved state
     useEffect(() => {
@@ -584,7 +619,7 @@ export const ChatPanel = ({ messages, status, onSendMessage, onConfirm, isWaitin
                                         Review Required
                                     </div>
                                     <p className="text-sm text-slate-600 mb-5 leading-relaxed">
-                                        I've prepared the benchmark configuration. Please review the highlighted parameters in the workflow blocks.
+                                        {confirmText}
                                     </p>
                                     <div className="flex gap-3">
                                         <Button size="sm" onClick={handleConfirm} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white shadow-lg shadow-amber-500/20 border-0 rounded-xl h-9">
@@ -779,12 +814,10 @@ export const WorkflowBlock = ({ title, icon: Icon, nodes, activeNodeId, status, 
 };
 
 // --- Summary Panel Component ---
-export const SummaryPanel = ({ state, sidebarWidth, chatWidth, availableModels, onModelChange }: { 
+export const SummaryPanel = ({ state, sidebarWidth, chatWidth }: { 
     state: WorkflowState | null, 
     sidebarWidth: number, 
-    chatWidth: number,
-    availableModels?: any[],
-    onModelChange?: (model: any) => void
+    chatWidth: number
 }) => {
     const [isOpen, setIsOpen] = React.useState(true);
 
@@ -820,46 +853,7 @@ export const SummaryPanel = ({ state, sidebarWidth, chatWidth, availableModels, 
                                 className="overflow-hidden"
                             >
                                 <div className="p-6 grid grid-cols-12 gap-8">
-                                    {/* Zone 1: Target Model */}
-                                    <div className="col-span-4 border-r border-slate-100 pr-8">
-                                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                                            Target Model
-                                        </h4>
-                                        <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 flex items-center gap-3 relative group">
-                                            <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center shrink-0">
-                                                <Box className="w-5 h-5" />
-                                            </div>
-                                            <div className="flex-1 min-w-0 relative">
-                                                <label className="text-[10px] text-slate-500 font-mono mb-0.5 block">Selected Model</label>
-                                                
-                                                {availableModels && availableModels.length > 0 ? (
-                                                    <select 
-                                                        value={state.target_model_name || ""}
-                                                        onChange={(e) => {
-                                                            const selected = availableModels.find((m: any) => m.name === e.target.value);
-                                                            if (selected && onModelChange) onModelChange(selected);
-                                                        }}
-                                                        className="w-full bg-transparent font-bold text-slate-900 text-sm truncate appearance-none focus:outline-none cursor-pointer pr-4"
-                                                    >
-                                                        {availableModels.map((m: any) => (
-                                                            <option key={m.name} value={m.name}>{m.name}</option>
-                                                        ))}
-                                                    </select>
-                                                ) : (
-                                                    <div className="font-bold text-slate-900 text-sm truncate" title={state.target_model_name}>
-                                                        {state.target_model_name || "N/A"}
-                                                    </div>
-                                                )}
-                                                
-                                                {availableModels && availableModels.length > 0 && (
-                                                    <ChevronDown className="w-3 h-3 text-slate-400 absolute right-0 top-1/2 mt-1 -translate-y-1/2 pointer-events-none" />
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Zone 2: Bench Cards */}
-                                    <div className="col-span-8">
+                                    <div className="col-span-12">
                                         <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
                                              Selected Benchmarks
                                         </h4>
@@ -882,8 +876,20 @@ export const SummaryPanel = ({ state, sidebarWidth, chatWidth, availableModels, 
                                                                      {/* Parse and show metric if available */}
                                                                      {(() => {
                                                                          const res = b.meta.eval_result;
-                                                                         const score = res.score ?? res.accuracy ?? res.exact_match ?? Object.values(res)[0];
-                                                                         return <span className="font-bold text-emerald-600 text-lg leading-none">{typeof score === 'number' ? score.toFixed(2) : score}</span>
+                                                                         const pickScore = (r: any) => {
+                                                                             if (!r || typeof r !== 'object') return null;
+                                                                             for (const k of ['score','accuracy','exact_match']) {
+                                                                                 const v = (r as any)[k];
+                                                                                 if (typeof v === 'number') return v;
+                                                                                 if (typeof v === 'string') return v;
+                                                                             }
+                                                                             for (const v of Object.values(r)) {
+                                                                                 if (typeof v === 'number' || typeof v === 'string') return v;
+                                                                             }
+                                                                             return null;
+                                                                         };
+                                                                         const score = pickScore(res);
+                                                                         return <span className="font-bold text-emerald-600 text-lg leading-none">{score === null ? "N/A" : (typeof score === 'number' ? score.toFixed(2) : String(score))}</span>
                                                                      })()}
                                                                 </div>
                                                             </div>
@@ -970,7 +976,9 @@ export const GalleryModal = ({ isOpen, onClose, onSelect, apiBaseUrl }: { isOpen
                                             );
                                         })}
                                     </div>
-                                    <div className="text-xs text-slate-400 line-clamp-1">{b.description}</div>
+                                    <div className="text-xs text-slate-400 line-clamp-1">
+                                        {typeof b.description === 'string' ? b.description : (b.description ? JSON.stringify(b.description) : '')}
+                                    </div>
                                 </div>
                                 <Button size="sm" variant="ghost" className="opacity-0 group-hover:opacity-100">
                                     Add
