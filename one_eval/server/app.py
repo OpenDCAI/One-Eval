@@ -398,6 +398,7 @@ class StartWorkflowRequest(BaseModel):
     target_model_path: str
     tensor_parallel_size: int = 1
     max_tokens: int = 2048
+    use_rag: bool = True
 
 class ResumeWorkflowRequest(BaseModel):
     thread_id: str
@@ -430,6 +431,7 @@ async def start_workflow(req: StartWorkflowRequest):
     initial_state = NodeState(
         user_query=req.user_query,
         target_model_name=req.target_model_name,
+        use_rag=req.use_rag,
         target_model=ModelConfig(
             model_name_or_path=req.target_model_path,
             tensor_parallel_size=req.tensor_parallel_size,

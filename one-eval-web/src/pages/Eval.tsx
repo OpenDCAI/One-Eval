@@ -69,6 +69,7 @@ export const Eval = () => {
   // Editable State (for manual modification)
   const [editBenches, setEditBenches] = useState<Bench[]>([]);
   const [availableModels, setAvailableModels] = useState<any[]>([]);
+  const [useRAG, setUseRAG] = useState(true);
 
   const apiBaseUrl = useMemo(() => localStorage.getItem("oneEval.apiBaseUrl") || "http://localhost:8000", []);
   
@@ -197,8 +198,9 @@ export const Eval = () => {
 
       const res = await axios.post(`${apiBaseUrl}/api/workflow/start`, {
         user_query: userQuery,
-        target_model_name: targetModelName, 
-        target_model_path: targetModelPath
+        target_model_name: targetModelName,
+        target_model_path: targetModelPath,
+        use_rag: useRAG
       });
       setThreadId(res.data.thread_id);
       setStatus("running");
@@ -593,6 +595,28 @@ export const Eval = () => {
                                            </div>
                                        </div>
                                    )}
+                               </div>
+                           </div>
+
+                           {/* RAG Toggle */}
+                           <div className="pl-6 border-l-2 border-violet-100 relative">
+                               <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-violet-50 border-2 border-violet-200" />
+                               <div className="flex items-center justify-between py-2">
+                                   <div className="flex items-center gap-2">
+                                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Use RAG for Benchmark Recommendation</label>
+                                   </div>
+                                   <button
+                                       onClick={() => setUseRAG(!useRAG)}
+                                       className={cn(
+                                           "relative w-11 h-6 rounded-full transition-colors duration-200",
+                                           useRAG ? "bg-violet-500" : "bg-slate-200"
+                                       )}
+                                   >
+                                       <span className={cn(
+                                           "absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow transition-transform duration-200",
+                                           useRAG && "translate-x-5"
+                                       )} />
+                                   </button>
                                </div>
                            </div>
 
