@@ -302,5 +302,6 @@ class DataFlowEvalTool:
 
         return {
             "stats": stats,
-            "detail_path": str(Path(last_step_file).absolute())
+            "detail_path": str(Path(last_step_file).absolute()),
+            "key_mapping": key_mapping,
         }

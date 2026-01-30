@@ -1,135 +1,119 @@
-import asyncio
 import os
+import json
+import asyncio
 from pathlib import Path
 from dotenv import load_dotenv
 
-from langgraph.graph import START, END
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-
-# One-Eval 核心组件
 from one_eval.core.state import NodeState, BenchInfo
-from one_eval.core.graph import GraphBuilder
+from one_eval.nodes.metric_recommend_node import MetricRecommendNode
 from one_eval.logger import get_logger
+from one_eval.core.metric_registry import load_metric_implementations
 
-# 导入节点
-from one_eval.nodes.query_understand_node import QueryUnderstandNode
-from one_eval.nodes.bench_search_node import BenchSearchNode
-from one_eval.nodes.metric_recommend_node import MetricRecommendNode  # 新增节点
-
-# 加载环境变量 (确保 OE_API_KEY 等存在)
+# 加载环境变量
 load_dotenv()
-log = get_logger("WorkflowIntegrationTest")
+log = get_logger("test_real_world_flow")
 
-def build_full_eval_workflow(checkpointer=None):
+async def run_real_world_simulation():
     """
-    构建完整的评估流水线：
-    START -> QueryUnderstand -> BenchSearch -> MetricRecommend -> END
-    """
-    builder = GraphBuilder(
-        state_model=NodeState,
-        entry_point="QueryUnderstandNode",
-    )
-
-    # === 1. Query Understand (理解用户意图) ===
-    node_query = QueryUnderstandNode()
-    builder.add_node(name=node_query.name, func=node_query.run)
-
-    # === 2. Bench Search (搜索/匹配数据集) ===
-    node_search = BenchSearchNode()
-    builder.add_node(name=node_search.name, func=node_search.run)
-
-    # === 3. Metric Recommend (核心测试点：推荐指标) ===
-    node_metric = MetricRecommendNode()
-    builder.add_node(name=node_metric.name, func=node_metric.run)
-
-    # === 定义边 (Edges) ===
-    # 线性执行流
-    builder.add_edge(START, node_query.name)
-    builder.add_edge(node_query.name, node_search.name)
-    builder.add_edge(node_search.name, node_metric.name)
-    builder.add_edge(node_metric.name, END)
-
-    # === 构建图 ===
-    graph = builder.build(checkpointer=checkpointer)
-    return graph
-
-async def run_integration_scenario():
-    """
-    运行集成测试场景
+    模拟实战场景：
+    1. 接收一个真实的评测结果文件 (JSONL)。
+    2. 模拟从文件名/路径中提取 Bench 信息。
+    3. 运行 MetricRecommendNode 生成评测指标方案。
+    4. 验证方案是否符合 GSM8K 的预期 (Numerical Match)。
     """
     print("\n" + "="*60)
-    print(" One-Eval 完整 Workflow 集成测试")
-    print("包含节点: QueryUnderstand -> BenchSearch -> MetricRecommend")
+    print(" 实战模拟: 基于真实评测结果文件的 Metric 推荐流程")
     print("="*60)
 
-    # 1. 设置 Checkpointer (模拟生产环境持久化)
-    current_file_path = Path(__file__).resolve()
-    project_root = current_file_path.parents[2] # 假设在 tests/ 或类似层级，根据实际情况调整
-    db_path = project_root / "checkpoints" / "integration_test.db"
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # 2. 构造测试 Query
-    # 这个 Query 旨在触发：Registry命中(GSM8K, HumanEval) 和 LLM分析(Medical Safety)
-    user_query = (
-        "我想做一个综合评估：\n"
-        "1. 测一下数学能力\n"
-        "2. 测一下代码能力\n"
-        )
-
-    async with AsyncSqliteSaver.from_conn_string(db_path) as checkpointer:
-        graph = build_full_eval_workflow(checkpointer=checkpointer)
+    # 1. 模拟输入文件路径
+    # 用户提供的真实路径
+    raw_file_path = r"d:\CODE\Agent-Eval\One-Eval\cache\eval_results\gsm8k_1768402034_steps\step_step1.jsonl"
+    file_path = Path(raw_file_path)
+    
+    if not file_path.exists():
+        print(f" 文件不存在: {file_path}")
+        print("   (将使用 Mock 数据继续演示逻辑)")
+        # Mock logic if file is missing locally during dev
+        bench_name_extracted = "gsm8k"
+        sample_data = {"question": "Mock Question", "answer": "Mock #### 42"}
+    else:
+        print(f"✅ 找到文件: {file_path.name}")
         
-        # 使用新的 thread_id 确保状态隔离
-        config = {"configurable": {"thread_id": "integration_test_run_001"}}
+        # 2. 从路径提取信息 (模拟 BenchSearch 或 Pipeline 上游的逻辑)
+        # 假设文件夹名或文件名包含 bench_name
+        # 路径结构: ...\gsm8k_1768402034_steps\step_step1.jsonl
+        # 提取 'gsm8k'
+        parent_dir = file_path.parent.name # gsm8k_1768402034_steps
+        bench_name_extracted = parent_dir.split('_')[0]
+        print(f"ℹ️  从路径提取数据集名称: '{bench_name_extracted}'")
         
-        # 初始状态
-        initial_state = NodeState(user_query=user_query)
+        # 读取一行样本看看
+        with open(file_path, 'r', encoding='utf-8') as f:
+            first_line = f.readline()
+            if first_line:
+                sample_data = json.loads(first_line)
+                print(f"ℹ️  样本数据预览: Q='{sample_data.get('question')[:30]}...' A='{sample_data.get('answer')[:30]}...'")
 
-        print(f"\n[Input] 用户指令:\n{user_query}\n")
+    # 3. 构造 NodeState
+    # 假设这是从上一步传递下来的状态
+    bench_info = BenchInfo(
+        bench_name=bench_name_extracted,
+        meta={
+            "source_file": str(file_path),
+            # 在真实流程中，这里可能还有 task_type, domain 等信息
+            # 但我们测试的是 Registry 的命中能力，所以先留空，看能不能靠名字命中
+        }
+    )
+    
+    state = NodeState(
+        user_query="对这个运行结果进行评测",
+        benches=[bench_info]
+    )
+
+    # 4. 初始化节点并运行
+    # 确保 metric 实现已加载
+    load_metric_implementations()
+    
+    node = MetricRecommendNode()
+    print("\n🚀 正在运行 MetricRecommendNode...")
+    
+    try:
+        result_state = await node.run(state)
+        
+        # 5. 验证结果
+        print("\n" + "-"*60)
+        print("推荐结果分析:")
         print("-" * 60)
-
-        # 3. 执行 Workflow
-        # 注意：这里会真实调用 LLM 和 Search 工具 (如果配置了的话)
-        # 如果 BenchSearchNode 无法联网，它可能会返回空或模拟数据，
-        # 为了测试 MetricRecommend，我们需要确保 State 里有 BenchInfo。
         
-        try:
-            final_state = await graph.ainvoke(initial_state, config=config)
-        except Exception as e:
-            log.error(f"Workflow 执行出错: {e}")
-            import traceback
-            traceback.print_exc()
+        plan = result_state.metric_plan.get(bench_name_extracted)
+        
+        if not plan:
+            print(f"❌ 失败: 未为 '{bench_name_extracted}' 生成任何 Metric 方案。")
             return
 
-        # 4. 结果验证与可视化
-        print("\n" + "="*60)
-        print(" Workflow 执行完成！结果分析：")
-        print("="*60)
-
-        # A. 检查 BenchSearch 的产出
-        benches = final_state.get("benches")
-        print(f"\n [BenchSearch 产出] 共找到 {len(benches)} 个数据集:")
-        for b in benches:
-            print(f"  - {b.bench_name} (Domain: {b.meta.get('domain', 'N/A')})")
-
-        # B. 检查 MetricRecommend 的产出 (重点)
-        metric_plan = final_state.get("metric_plan")
-        print(f"\n [MetricRecommend 产出] 评估指标方案:")
+        print(f"数据集: {bench_name_extracted}")
+        print(f"推荐指标数量: {len(plan)}")
         
-        if not metric_plan:
-            print("   警告: Metric Plan 为空！")
+        # 检查是否包含关键指标
+        metric_names = [m['name'] for m in plan]
+        print(f"指标列表: {metric_names}")
         
-        for bench_name, metrics in metric_plan.items():
-            print(f"\n  Dataset: [{bench_name}]")
-            for m in metrics:
-                # 格式化输出
-                prio = m.get('priority', 'secondary')
-                icon = "🌟" if prio == 'primary' else "  "
-                args = f" | args={m.get('args')}" if m.get('args') else ""
-                desc = f" | {m.get('desc')[:30]}..." if m.get('desc') else ""
-                print(f"    {icon} {m['name']:<20} [{prio}]{args}{desc}")
+        expected_metric = "numerical_match"  # GSM8K 应该用这个
+        if any(expected_metric in name for name in metric_names):
+             print(f"✅ 成功: 包含了预期指标 '{expected_metric}'")
+        else:
+             print(f"⚠️  警告: 未找到预期指标 '{expected_metric}'。可能使用了别名或配置不同。")
+             
+        # 打印详细配置
+        for m in plan:
+            print(f"  - {m['name']} (Priority: {m.get('priority')})")
+            if 'args' in m:
+                print(f"    Args: {m['args']}")
 
+    except Exception as e:
+        print(f"❌ 执行出错: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
-    # 确保 asyncio 环境
-    asyncio.run(run_integration_scenario())
+    asyncio.run(run_real_world_simulation())
