@@ -18,6 +18,7 @@ class BenchRegistry:
         if not os.path.exists(config_path):
             log.error(f"Bench config file not found: {config_path}")
             self.data = {}
+            self.lower_map = {}  # Initialize empty map even if file not found
             return
 
         with open(config_path, "r", encoding="utf-8") as f:
@@ -134,4 +135,22 @@ class BenchRegistry:
                 }
                 results.append(bench)
 
+        return results
+
+    def get_all_benches(self) -> List[Dict]:
+        """返回所有注册的 benchmark 列表 (用于 Gallery 展示)"""
+        results = []
+        for name, info in self.data.items():
+            results.append({
+                "bench_name": name,
+                "task_type": info.get("task_type", []),
+                "description": info.get("description", "") or info.get("desc", ""),
+                "tags": info.get("tags", []),
+                # Include meta fields if they exist to skip detection
+                "meta": {
+                    "structure": info.get("structure"),
+                    "key_mapping": info.get("key_mapping"),
+                    "download_config": info.get("download_config")
+                }
+            })
         return results

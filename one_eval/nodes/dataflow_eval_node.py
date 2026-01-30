@@ -7,6 +7,7 @@ from one_eval.core.node import BaseNode
 from one_eval.core.state import NodeState, ModelConfig
 from one_eval.toolkits.dataflow_eval_tool import DataFlowEvalTool
 from one_eval.logger import get_logger
+from langgraph.types import Command
 
 log = get_logger("DataFlowEvalNode")
 
@@ -26,6 +27,7 @@ class DataFlowEvalNode(BaseNode):
         self.logger = log
         # 默认输出目录
         self.output_root = os.path.join(os.getcwd(), "cache", "eval_results")
+        self._tool = DataFlowEvalTool(output_root=self.output_root)
 
     async def run(self, state: NodeState) -> NodeState:
         state.current_node = self.name
@@ -53,73 +55,79 @@ class DataFlowEvalNode(BaseNode):
                 self.logger.error("No target_model or target_model found!")
                 return state
 
-        tool = DataFlowEvalTool(output_root=self.output_root)
+        tool = self._tool
+        cursor = int(getattr(state, "eval_cursor", 0) or 0)
+        if cursor < 0:
+            cursor = 0
+        if cursor >= len(benches):
+            return state
 
-        for bench in benches:
-            # 2. 检查是否跳过
-            if bench.eval_status == "success":
-                # 检查结果文件是否存在
-                if bench.meta and bench.meta.get("eval_result"):
-                    self.logger.info(f"[{bench.bench_name}] 已评测成功，跳过")
-                    continue
-            
-            # 检查是否有必要的前置信息
-            if not bench.dataset_cache:
-                self.logger.warning(f"[{bench.bench_name}] 缺少 dataset_cache，跳过")
-                bench.eval_status = "failed"
-                continue
+        bench = benches[cursor]
 
-            if not bench.bench_dataflow_eval_type:
-                self.logger.warning(f"[{bench.bench_name}] 缺少 eval_type，跳过")
-                bench.eval_status = "failed"
-                continue
-            
-            try:
-                self.logger.info(f"[{bench.bench_name}] 开始评测... Type={bench.bench_dataflow_eval_type}")
-                bench.eval_status = "running"
-                
-                # 3. 执行评测
-                result = tool.run_eval(bench, model_config)
-                
-                # 4. 更新状态
-                if not bench.meta:
-                    bench.meta = {}
-                
-                stats = result["stats"]
-                bench.meta["eval_result"] = stats
-                bench.meta["eval_detail_path"] = result["detail_path"]
-                bench.eval_status = "success"
-                
-                # 5. 异常检测 (Zero Score Anomaly)
-                # 如果总样本数 > 0，但准确率/得分 为 0 (或 valid_samples 为 0)，可能是 Test Set 无标签
-                total_samples = stats.get("total_samples", 0)
-                accuracy = stats.get("accuracy", 0)
-                score = stats.get("score", 0)
-                valid_samples = stats.get("valid_samples", 0)
-                
-                # 简单的启发式规则：如果有样本，但得分为0
-                if total_samples > 0 and (accuracy == 0 and score == 0):
-                    is_abnormal = True
-                    reason = "Score is 0. Possibly a hidden test set without public labels."
-                    
-                    # 如果 valid_samples 也是 0，那更说明没有有效评估
-                    if valid_samples == 0:
-                        reason += " (No valid samples found for evaluation)"
-                    
-                    bench.meta["eval_abnormality"] = {
-                        "is_abnormal": True,
-                        "reason": reason,
-                        "type": "zero_score"
-                    }
-                    self.logger.warning(f"[{bench.bench_name}] Detected abnormality: {reason}")
+        if bench.eval_status == "success" and bench.meta and bench.meta.get("eval_result"):
+            self.logger.info(f"[{bench.bench_name}] 已评测成功，跳过")
+            state.eval_cursor = cursor + 1
+            if state.eval_cursor < len(benches):
+                return Command(goto=self.name)
+            return state
 
-                self.logger.info(f"[{bench.bench_name}] 评测完成。Stats: {result['stats']}")
+        if not bench.dataset_cache:
+            self.logger.warning(f"[{bench.bench_name}] 缺少 dataset_cache，跳过")
+            bench.eval_status = "failed"
+            state.eval_cursor = cursor + 1
+            if state.eval_cursor < len(benches):
+                return Command(goto=self.name)
+            return state
 
-            except Exception as e:
-                self.logger.error(f"[{bench.bench_name}] 评测失败: {e}")
-                bench.eval_status = "failed"
-                if not bench.meta:
-                    bench.meta = {}
-                bench.meta["eval_error"] = str(e)
+        if not bench.bench_dataflow_eval_type:
+            self.logger.warning(f"[{bench.bench_name}] 缺少 eval_type，跳过")
+            bench.eval_status = "failed"
+            state.eval_cursor = cursor + 1
+            if state.eval_cursor < len(benches):
+                return Command(goto=self.name)
+            return state
 
+        try:
+            self.logger.info(f"[{bench.bench_name}] 开始评测... Type={bench.bench_dataflow_eval_type}")
+            bench.eval_status = "running"
+
+            result = tool.run_eval(bench, model_config)
+
+            if not bench.meta:
+                bench.meta = {}
+
+            stats = result["stats"]
+            bench.meta["eval_result"] = stats
+            bench.meta["eval_detail_path"] = result["detail_path"]
+            bench.eval_status = "success"
+
+            total_samples = stats.get("total_samples", 0)
+            accuracy = stats.get("accuracy", 0)
+            score = stats.get("score", 0)
+            valid_samples = stats.get("valid_samples", 0)
+
+            if total_samples > 0 and (accuracy == 0 and score == 0):
+                reason = "Score is 0. Possibly a hidden test set without public labels."
+                if valid_samples == 0:
+                    reason += " (No valid samples found for evaluation)"
+
+                bench.meta["eval_abnormality"] = {
+                    "is_abnormal": True,
+                    "reason": reason,
+                    "type": "zero_score"
+                }
+                self.logger.warning(f"[{bench.bench_name}] Detected abnormality: {reason}")
+
+            self.logger.info(f"[{bench.bench_name}] 评测完成。Stats: {result['stats']}")
+
+        except Exception as e:
+            self.logger.error(f"[{bench.bench_name}] 评测失败: {e}")
+            bench.eval_status = "failed"
+            if not bench.meta:
+                bench.meta = {}
+            bench.meta["eval_error"] = str(e)
+
+        state.eval_cursor = cursor + 1
+        if state.eval_cursor < len(benches):
+            return Command(goto=self.name)
         return state

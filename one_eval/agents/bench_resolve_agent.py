@@ -119,6 +119,7 @@ class BenchResolveAgent(CustomAgent):
 
         # 第一个 Agent 推荐的 bench 名称列表
         bench_names: List[str] = state.temp_data.get("bench_names_suggested", []) or []
+        bench_descs: Dict[str, str] = state.temp_data.get("bench_descs", {}) or {}
 
         # 已有的本地 bench_info（来自 BenchNameSuggestAgent，已经把本地表匹配好）
         bench_info: Dict[str, Dict[str, Any]] = getattr(state, "bench_info", {}) or {}
@@ -133,6 +134,9 @@ class BenchResolveAgent(CustomAgent):
             if not name:
                 continue
             if name in existing_keys:
+                # 如果本地已有，尝试补全 desc (如果本地没有 desc 的话)
+                if "desc" not in bench_info[name] and name in bench_descs:
+                    bench_info[name]["desc"] = bench_descs[name]
                 continue
             names_to_resolve.append(name)
 
@@ -164,6 +168,7 @@ class BenchResolveAgent(CustomAgent):
                     "source": "hf_resolve",
                     "aliases": [name],     # 保留原始名称
                     "hf_meta": resolved,
+                    "desc": bench_descs.get(name, ""), # 注入 LLM 生成的描述
                 }
 
         # ================ Step 3: 写回 state ================

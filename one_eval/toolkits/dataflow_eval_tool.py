@@ -5,6 +5,7 @@ import time
 import traceback
 from pathlib import Path
 from typing import Dict, Any, Optional
+import re
 
 import pandas as pd
 from dataflow.operators.core_text import BenchAnswerGenerator, UnifiedBenchDatasetEvaluator
@@ -38,24 +39,45 @@ class DataFlowEvalTool:
         if self.llm_serving and self._current_model_config == config:
             return
 
-        log.info(f"Initializing LLM Serving: {config.model_name_or_path} (is_api={config.is_api})")
+        model_name_or_path = config.model_name_or_path
+        if isinstance(model_name_or_path, str) and model_name_or_path:
+            p = model_name_or_path.strip()
+            if os.name == "nt":
+                m = re.match(r"^/mnt/([a-zA-Z])/(.+)$", p)
+                if m:
+                    drive = m.group(1).upper()
+                    rest = m.group(2).replace("/", "\\")
+                    p = f"{drive}:\\{rest}"
+            else:
+                m = re.match(r"^([a-zA-Z]):\\\\(.+)$", p)
+                if m:
+                    drive = m.group(1).lower()
+                    rest = m.group(2).replace("\\", "/")
+                    p = f"/mnt/{drive}/{rest}"
+            model_name_or_path = p
+
+        log.info(f"Initializing LLM Serving: {model_name_or_path} (is_api={config.is_api})")
         
         if config.is_api:
             self.llm_serving = APILLMServing_request(
                 api_url=config.api_url,
-                model_name=config.model_name_or_path,
+                model_name=model_name_or_path,
                 api_key=config.api_key,
                 max_workers=16, # 默认并发
                 # API 模式下的 generation 参数通常在调用时传递，或者由 Serving 类处理
             )
         else:
             self.llm_serving = LocalModelLLMServing_vllm(
-                hf_model_name_or_path=config.model_name_or_path,
+                hf_model_name_or_path=model_name_or_path,
                 vllm_tensor_parallel_size=config.tensor_parallel_size,
                 vllm_max_tokens=config.max_tokens,
                 vllm_temperature=config.temperature,
                 vllm_top_p=config.top_p,
+                vllm_top_k=getattr(config, "top_k", -1),
+                vllm_repetition_penalty=getattr(config, "repetition_penalty", 1.0),
+                vllm_seed=getattr(config, "seed", None),
                 vllm_max_model_len=getattr(config, "max_model_len", None),
+                vllm_gpu_memory_utilization=getattr(config, "gpu_memory_utilization", 0.9),
                 # trust_remote_code=True, # 默认信任，State 中已移除该配置
             )
         
