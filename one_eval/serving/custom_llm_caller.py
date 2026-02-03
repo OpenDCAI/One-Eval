@@ -154,3 +154,69 @@ class CustomLLMCaller(BaseLLMCaller):
         # 默认这里只做简单的对话，不绑定工具
         # 如果需要工具，Agent 层应该显式调用 call(bind_post_tools=True)
         return await self.call(messages, bind_post_tools=False)
+
+
+class EmbeddingCaller:
+    """
+    Embedding 调用器，复用 LLM 的 API 配置。
+    用于 RAG 场景下的文本向量化。
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str,
+        model: str = "text-embedding-3-small",
+    ):
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
+        self.model = model
+        self._client = None
+
+    def _get_client(self):
+        """懒加载 OpenAI 客户端"""
+        if self._client is None:
+            from openai import OpenAI
+            self._client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+        return self._client
+
+    def get_embedding(self, texts: List[str]) -> List[List[float]]:
+        """
+        获取文本的 embedding 向量
+
+        Args:
+            texts: 文本列表
+
+        Returns:
+            embedding 向量列表
+        """
+        client = self._get_client()
+        response = client.embeddings.create(
+            model=self.model,
+            input=texts
+        )
+        # 按 index 排序确保顺序正确
+        sorted_data = sorted(response.data, key=lambda x: x.index)
+        return [item.embedding for item in sorted_data]
+
+    def get_embedding_batch(
+        self,
+        texts: List[str],
+        batch_size: int = 50
+    ) -> List[List[float]]:
+        """
+        批量获取 embedding（适用于大量文本）
+
+        Args:
+            texts: 文本列表
+            batch_size: 每批大小
+
+        Returns:
+            embedding 向量列表
+        """
+        all_embeddings = []
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i:i + batch_size]
+            batch_embeddings = self.get_embedding(batch)
+            all_embeddings.extend(batch_embeddings)
+        return all_embeddings

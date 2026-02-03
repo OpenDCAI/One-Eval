@@ -506,12 +506,13 @@ export const ChatPanel = ({ messages, status, onSendMessage, onConfirm, isWaitin
         ? "Please review the target model and evaluation parameters in the Execution Phase, then approve to start evaluation."
         : "I've prepared the benchmark configuration. Please review the highlighted parameters in the workflow blocks.";
     
-    // Reset approved state
+    // Reset approved state when entering interrupt node or status becomes interrupted
     useEffect(() => {
-        if (status === "interrupted") {
+        const isInterruptNode = activeNodeId && (activeNodeId.includes("HumanReviewNode") || activeNodeId.includes("PreEvalReviewNode"));
+        if (status === "interrupted" || isInterruptNode) {
              setHasApproved(false);
         }
-    }, [activeNodeId]);
+    }, [activeNodeId, status]);
 
     const handleConfirm = () => {
         setHasApproved(true);
@@ -605,7 +606,8 @@ export const ChatPanel = ({ messages, status, onSendMessage, onConfirm, isWaitin
                         ))}
 
                         {/* Confirmation Card */}
-                        {status === "interrupted" && !hasApproved && (
+                        {/* Plan C: Also show approve button when activeNodeId is an interrupt node (handles race condition in RAG mode) */}
+                        {(status === "interrupted" || (activeNodeId && (activeNodeId.includes("HumanReviewNode") || activeNodeId.includes("PreEvalReviewNode")))) && !hasApproved && (
                             <motion.div 
                                 initial={{ opacity: 0, scale: 0.95 }}
                                 animate={{ opacity: 1, scale: 1 }}
@@ -920,6 +922,7 @@ export const SummaryPanel = ({ state, sidebarWidth, chatWidth }: {
 };
 
 // --- Gallery Modal ---
+// 适配 bench_gallery.json 数据结构
 export const GalleryModal = ({ isOpen, onClose, onSelect, apiBaseUrl }: { isOpen: boolean, onClose: () => void, onSelect: (bench: any) => void, apiBaseUrl: string }) => {
     const [benches, setBenches] = useState<any[]>([]);
     const [search, setSearch] = useState("");
@@ -936,55 +939,103 @@ export const GalleryModal = ({ isOpen, onClose, onSelect, apiBaseUrl }: { isOpen
         }
     }, [isOpen, apiBaseUrl]);
 
-    const filtered = Array.isArray(benches) ? benches.filter(b => 
-        b && ((b.bench_name || "").toLowerCase().includes(search.toLowerCase()) || 
-        (b.description || "").toLowerCase().includes(search.toLowerCase()))
-    ) : [];
+    // 从 bench_gallery.json 获取描述和标签
+    const getDescription = (b: any): string => {
+        // 优先从 meta.description 获取
+        if (b.meta?.description) return b.meta.description;
+        // 兼容旧格式
+        if (typeof b.description === 'string') return b.description;
+        return '';
+    };
+
+    const getTags = (b: any): string[] => {
+        // 优先从 meta.tags 获取
+        if (Array.isArray(b.meta?.tags)) return b.meta.tags;
+        // 兼容旧格式 task_type
+        if (Array.isArray(b.task_type)) return b.task_type;
+        return [];
+    };
+
+    const getDisplayName = (b: any): string => {
+        // 优先从 meta.aliases 获取显示名称
+        if (Array.isArray(b.meta?.aliases) && b.meta.aliases.length > 1) {
+            return b.meta.aliases[1]; // 第二个通常是大写版本
+        }
+        return b.bench_name || '';
+    };
+
+    const getCategory = (b: any): string => {
+        return b.meta?.category || '';
+    };
+
+    const filtered = Array.isArray(benches) ? benches.filter(b => {
+        if (!b) return false;
+        const searchLower = search.toLowerCase();
+        const benchName = (b.bench_name || "").toLowerCase();
+        const description = getDescription(b).toLowerCase();
+        const tags = getTags(b).join(" ").toLowerCase();
+        const category = getCategory(b).toLowerCase();
+        return benchName.includes(searchLower) ||
+               description.includes(searchLower) ||
+               tags.includes(searchLower) ||
+               category.includes(searchLower);
+    }) : [];
 
     return (
-        <Modal 
-            isOpen={isOpen} 
-            onClose={onClose} 
-            title="Benchmark Gallery" 
+        <Modal
+            isOpen={isOpen}
+            onClose={onClose}
+            title="Benchmark Gallery"
             description="Select a benchmark to add to your evaluation."
         >
             <div className="space-y-4">
-                <Input 
-                    placeholder="Search benchmarks..." 
+                <Input
+                    placeholder="Search benchmarks..."
                     value={search}
                     onChange={e => setSearch(e.target.value)}
                     className="bg-slate-50"
                 />
-                
+
                 {isLoading ? (
                     <div className="flex justify-center py-8"><Loader2 className="animate-spin text-slate-300" /></div>
                 ) : (
                     <div className="grid grid-cols-1 gap-2 max-h-[400px] overflow-y-auto pr-2">
-                        {filtered.map(b => (
-                            <div key={b.bench_name} className="flex items-center justify-between p-3 rounded-lg border border-slate-100 hover:border-blue-200 hover:bg-blue-50/30 transition-all cursor-pointer group"
-                                onClick={() => onSelect(b)}
-                            >
-                                <div>
-                                    <div className="font-bold text-slate-700 text-sm flex items-center gap-2">
-                                        {b.bench_name}
-                                        {Array.isArray(b.task_type) && b.task_type.map((t: any, idx: number) => {
-                                            const label = typeof t === 'object' && t !== null ? (t.name || JSON.stringify(t)) : String(t);
-                                            return (
-                                                <span key={idx} className="text-[10px] bg-slate-100 text-slate-500 px-1.5 rounded" title={typeof t === 'object' ? JSON.stringify(t) : undefined}>
-                                                    {label}
+                        {filtered.map(b => {
+                            const tags = getTags(b);
+                            const category = getCategory(b);
+                            return (
+                                <div key={b.bench_name} className="flex items-center justify-between p-3 rounded-lg border border-slate-100 hover:border-blue-200 hover:bg-blue-50/30 transition-all cursor-pointer group"
+                                    onClick={() => onSelect(b)}
+                                >
+                                    <div className="flex-1 min-w-0">
+                                        <div className="font-bold text-slate-700 text-sm flex items-center gap-2 flex-wrap">
+                                            {getDisplayName(b)}
+                                            {category && (
+                                                <span className="text-[10px] bg-blue-100 text-blue-600 px-1.5 rounded">
+                                                    {category}
                                                 </span>
-                                            );
-                                        })}
+                                            )}
+                                            {tags.slice(0, 2).map((t: string, idx: number) => (
+                                                <span key={idx} className="text-[10px] bg-slate-100 text-slate-500 px-1.5 rounded">
+                                                    {t}
+                                                </span>
+                                            ))}
+                                            {tags.length > 2 && (
+                                                <span className="text-[10px] bg-slate-100 text-slate-400 px-1.5 rounded">
+                                                    +{tags.length - 2}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="text-xs text-slate-400 line-clamp-1 mt-0.5">
+                                            {getDescription(b)}
+                                        </div>
                                     </div>
-                                    <div className="text-xs text-slate-400 line-clamp-1">
-                                        {typeof b.description === 'string' ? b.description : (b.description ? JSON.stringify(b.description) : '')}
-                                    </div>
+                                    <Button size="sm" variant="ghost" className="opacity-0 group-hover:opacity-100 shrink-0 ml-2">
+                                        Add
+                                    </Button>
                                 </div>
-                                <Button size="sm" variant="ghost" className="opacity-0 group-hover:opacity-100">
-                                    Add
-                                </Button>
-                            </div>
-                        ))}
+                            );
+                        })}
                         {filtered.length === 0 && <div className="text-center text-slate-400 py-4">No benchmarks found</div>}
                     </div>
                 )}

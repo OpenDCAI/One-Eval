@@ -184,9 +184,9 @@ from one_eval.utils.deal_json import _save_state_json
 from langgraph.types import Command
 from one_eval.utils.bench_registry import BenchRegistry
 
-# Bench Registry
-BENCH_CONFIG_PATH = REPO_ROOT / "one_eval" / "utils" / "bench_table" / "bench_config.json"
-bench_registry = BenchRegistry(str(BENCH_CONFIG_PATH))
+# Bench Registry - 使用 bench_gallery.json 作为数据源
+BENCH_GALLERY_PATH = REPO_ROOT / "one_eval" / "bench_gallery.json"
+bench_registry = BenchRegistry(str(BENCH_GALLERY_PATH))
 
 # Models
 class HFConfigResponse(BaseModel):
@@ -456,44 +456,86 @@ async def run_graph_background(thread_id: str, input_state: Any, resume_command:
             log.info(f"Invoking graph for {thread_id}")
             if resume_command:
                 # If resume_command is passed, we assume state updates were handled before calling this if needed
-                # But wait, resume_workflow calls this.
-                await graph.ainvoke(resume_command, config=config)
+                result = await graph.ainvoke(resume_command, config=config)
             else:
-                await graph.ainvoke(input_state, config=config)
-            log.info(f"Graph execution finished for {thread_id}")
+                result = await graph.ainvoke(input_state, config=config)
+
+            # Check if workflow was interrupted
+            if result and "__interrupt__" in result:
+                log.info(f"Graph interrupted for {thread_id}, interrupts: {result['__interrupt__']}")
+            else:
+                log.info(f"Graph execution finished for {thread_id}")
         except Exception as e:
             log.error(f"Error executing graph for {thread_id}: {e}")
 
 @app.get("/api/workflow/status/{thread_id}")
 async def get_status(thread_id: str):
+    """
+    获取工作流状态。
+
+    解决 interrupt() 执行期间的竞态条件：
+    当 next=() 且 interrupts=[] 但有 benches 数据时，
+    可能是 interrupt() 正在执行中，需要短暂等待并重试。
+    """
+    import asyncio
+
     async with get_checkpointer(DB_PATH, mode="run") as checkpointer:
         graph = build_complete_workflow(checkpointer=checkpointer)
         config = {"configurable": {"thread_id": thread_id}}
-        
-        try:
-            snap = await graph.aget_state(config)
-        except Exception:
-            return {"thread_id": thread_id, "status": "not_found"}
 
-        if not snap or (not snap.values and not snap.next):
-             return {"thread_id": thread_id, "status": "idle"}
-        
-        # Check if interrupted
-        next_nodes = snap.next
-        current_values = snap.values
-        
-        status = "running"
-        if not next_nodes:
-            status = "completed"
-        elif "HumanReviewNode" in next_nodes or "PreEvalReviewNode" in next_nodes:
-            status = "interrupted"
+        # 最多重试3次，每次间隔100ms
+        max_retries = 3
+        retry_delay = 0.1
 
-        return {
-            "thread_id": thread_id,
-            "status": status,
-            "next_node": next_nodes,
-            "state_values": current_values
-        }
+        for attempt in range(max_retries):
+            try:
+                snap = await graph.aget_state(config)
+            except Exception as e:
+                log.error(f"Failed to get state for {thread_id}: {e}")
+                return {"thread_id": thread_id, "status": "not_found"}
+
+            if not snap or (not snap.values and not snap.next):
+                return {"thread_id": thread_id, "status": "idle"}
+
+            next_nodes = snap.next
+            current_values = snap.values or {}
+            interrupts = snap.interrupts
+
+            INTERRUPT_NODES = ("HumanReviewNode", "PreEvalReviewNode")
+
+            # 检测中断
+            is_interrupted = bool(interrupts and len(interrupts) > 0)
+            if not is_interrupted and next_nodes:
+                is_interrupted = any(node in next_nodes for node in INTERRUPT_NODES)
+
+            # 判断状态
+            if not next_nodes and not is_interrupted:
+                # next=() 且没检测到中断
+                # 检查是否在竞态窗口：有 benches 但没进入 Phase 2
+                benches = current_values.get("benches", [])
+                has_phase2_data = bool(current_values.get("eval_results"))
+
+                if benches and not has_phase2_data and attempt < max_retries - 1:
+                    log.info(f"[get_status] Race condition detected (attempt {attempt+1}), retrying in {retry_delay}s...")
+                    await asyncio.sleep(retry_delay)
+                    continue
+                status = "completed"
+            elif is_interrupted:
+                status = "interrupted"
+            else:
+                status = "running"
+
+            log.info(f"[get_status] thread_id={thread_id}, status={status}, next={next_nodes}, interrupts={len(interrupts) if interrupts else 0}")
+
+            return {
+                "thread_id": thread_id,
+                "status": status,
+                "next_node": next_nodes,
+                "state_values": current_values,
+                "interrupts": [{"value": i.value} for i in interrupts] if interrupts else []
+            }
+
+        return {"thread_id": thread_id, "status": "completed"}
 
 @app.post("/api/workflow/resume/{thread_id}")
 async def resume_workflow(req: ResumeWorkflowRequest):
@@ -618,6 +660,49 @@ def add_model(model: Dict[str, Any]):
 @app.get("/api/benches/gallery")
 def get_bench_gallery():
     return bench_registry.get_all_benches()
+
+
+class AddBenchRequest(BaseModel):
+    bench_name: str
+    type: str  # 如 "language & reasoning", "safety", "code" 等
+    description: str
+    dataset_url: Optional[str] = None
+
+
+@app.post("/api/benches/gallery")
+def add_bench_to_gallery(req: AddBenchRequest):
+    """添加新的 benchmark 到 gallery"""
+    # 构建完整的 bench 数据结构
+    bench_data = {
+        "bench_name": req.bench_name,
+        "bench_table_exist": False,  # 用户添加的默认为 False
+        "bench_source_url": req.dataset_url or f"https://huggingface.co/datasets/{req.bench_name}",
+        "bench_dataflow_eval_type": None,
+        "bench_prompt_template": None,
+        "bench_keys": [],
+        "meta": {
+            "bench_name": req.bench_name,
+            "source": "user_added",
+            "aliases": [req.bench_name],
+            "category": "General",
+            "tags": [req.type],
+            "description": req.description,
+            "hf_meta": {
+                "bench_name": req.bench_name,
+                "hf_repo": req.bench_name,
+                "card_text": "",
+                "tags": [req.type],
+                "exists_on_hf": True
+            }
+        }
+    }
+
+    success = bench_registry.add_bench(bench_data, str(BENCH_GALLERY_PATH))
+    if success:
+        return {"status": "success", "bench": bench_data}
+    else:
+        raise HTTPException(status_code=400, detail=f"Failed to add bench. It may already exist.")
+
 
 if __name__ == "__main__":
     import uvicorn
