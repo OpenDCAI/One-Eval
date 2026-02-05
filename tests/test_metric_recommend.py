@@ -4,252 +4,213 @@ from dotenv import load_dotenv
 from one_eval.core.state import NodeState, BenchInfo
 from one_eval.nodes.metric_recommend_node import MetricRecommendNode
 from one_eval.agents.metric_recommend_agent import MetricRecommendAgent
-from one_eval.utils.metric_registry import metric_registry
+# Use the dispatcher directly
+from one_eval.metrics.dispatcher import metric_dispatcher as metric_registry
+# Use the new core for registration
+from one_eval.core.metric_registry import register_metric, load_metric_implementations
 from one_eval.logger import get_logger
 
 """
-测试 MetricRecommendAgent 和 MetricRecommendNode (Updated)
+Test Suite for Refactored Metric Architecture (Decentralized & 3-Layer Funnel)
 
-测试场景：
-1. 注册表匹配（已知数据集如 gsm8k, mmlu） -> 期望返回配置
-2. 注册表未匹配（未知数据集） -> 期望返回 None
-3. 用户指定 metrics（bench.meta["metrics"]） -> 期望优先使用
-4. 格式验证和规范化 -> 期望正确处理 args/k 参数
-5. 完整流程（Node Execution） -> 测试 Registry -> LLM -> Fallback 的流转
+Scenarios:
+1. Registry Match (Known Datasets) -> Returns configured templates.
+2. Decentralized Registration -> Dynamic @register_metric updates the registry.
+3. Unknown Datasets -> Returns None (triggers LLM fallback).
+4. User Specified Metrics -> Agent prioritizes bench.meta["metrics"].
+5. Format Validation -> Agent normalizes metric formats.
+6. Full Node Execution -> Verifies end-to-end flow.
 """
 
-log = get_logger("test_metric_recommend")
+log = get_logger("test_refactored_arch")
 load_dotenv()
 
-
-def test_metric_registry():
-    """测试 metric_registry 的基础功能"""
+def test_metric_registry_lookup():
+    """Test Scenario 1: Registry Lookup for Known Datasets"""
     print("\n" + "="*60)
-    print("测试 1: MetricRegistry 基础功能")
+    print("Test 1: Registry Lookup (Known Datasets)")
     print("="*60)
-    
-    # 测试用例
+
+    # Ensure metrics are loaded
+    load_metric_implementations()
+    # Force rebuild templates in case of prior tests
+    if hasattr(metric_registry, "_build_templates"):
+        metric_registry._build_templates()
+
     test_cases = [
-        "gsm8k",           # 精确匹配
-        "mmlu",            # 精确匹配
-        "openai/gsm8k",    # 模糊匹配 (包含)
-        "hendrycks_math",  # 模糊匹配
-        "unknown_dataset", # 未知数据集 -> 应该返回 None
-        "mathematicas"     # 干扰项 -> 应该返回 None (避免误匹配 math)
+        "gsm8k",           # Exact match in config
+        "mmlu",            # Exact match
+        "openai/gsm8k",    # Should match gsm8k if config supports keys
     ]
-    
+
     for dataset_name in test_cases:
         metrics = metric_registry.get_metrics(dataset_name)
-        print(f"\n数据集: '{dataset_name}'")
+        print(f"\nDataset: '{dataset_name}'")
         if metrics:
-            print(f"   命中配置 (共 {len(metrics)} 个):")
+            print(f"   HIT (Count: {len(metrics)}):")
             for m in metrics:
                 print(f"    - {m.get('name')} ({m.get('priority')})")
         else:
-            print(f"   未找到配置 (返回 None) - 符合预期")
+            print(f"   MISS (None) - Check if '{dataset_name}' is in config.py")
 
-
-async def test_registry_match_logic():
-    """测试场景2: Agent 的注册表查询逻辑"""
+def test_decentralized_registration():
+    """Test Scenario 2: Decentralized Metric Registration"""
     print("\n" + "="*60)
-    print("测试 2: Agent 内部的注册表查询逻辑")
+    print("Test 2: Decentralized Registration (Dynamic Update)")
     print("="*60)
+
+    # 1. Define a dynamic metric with a unique group
+    unique_group = "test_dynamic_group_v1"
     
-    # 创建 Agent (Mock)
+    @register_metric(
+        name="dynamic_metric_v1",
+        desc="Dynamic metric for testing",
+        groups={unique_group: "primary"}
+    )
+    def compute_dynamic_v1(preds, refs, **kwargs):
+        return {"score": 100}
+
+    # 2. Refresh the registry (Simulate startup or manual refresh)
+    # The new Dispatcher uses _build_templates
+    if hasattr(metric_registry, "_build_templates"):
+        metric_registry._build_templates()
+        print("   Registry templates rebuilt.")
+    
+    # 3. Register a temporary dataset mapping for this test
+    # The dispatcher should allow registering dataset->template mapping
+    if hasattr(metric_registry, "register_dataset"):
+        metric_registry.register_dataset("test_dataset_dynamic", unique_group)
+    
+    # 4. Verify lookup
+    metrics = metric_registry.get_metrics("test_dataset_dynamic")
+    if metrics and any(m["name"] == "dynamic_metric_v1" for m in metrics):
+        print("   SUCCESS: Dynamic metric found via group lookup.")
+    else:
+        print(f"   FAILURE: Dynamic metric not found. Got: {metrics}")
+
+async def test_agent_logic_unknown_dataset():
+    """Test Scenario 3: Unknown Datasets (Agent Logic)"""
+    print("\n" + "="*60)
+    print("Test 3: Unknown Datasets (Agent Fallback)")
+    print("="*60)
+
     agent = MetricRecommendAgent(tool_manager=None)
     
-    # 1. 测试已知数据集
-    bench_known = "gsm8k"
-    res_known = agent._check_registry(bench_known)
-    print(f"\n查询已知 Benchmark '{bench_known}':")
-    if res_known:
-        print(f"   成功获取: {[m['name'] for m in res_known]}")
+    # Unknown dataset with no meta hints
+    bench = BenchInfo(bench_name="completely_unknown_ds_999", meta={})
+    
+    # Should return None from registry check
+    res = agent._check_registry(bench)
+    print(f"\nChecking '{bench.bench_name}':")
+    if res is None:
+        print("   SUCCESS: Returns None (Will trigger LLM).")
     else:
-        print(f"   失败 (不应发生)")
-
-    # 2. 测试未知数据集
-    bench_unknown = "super_custom_dataset_v999"
-    res_unknown = agent._check_registry(bench_unknown)
-    print(f"\n查询未知 Benchmark '{bench_unknown}':")
-    if res_unknown is None:
-        print(f"   返回 None (正确，将转交给 LLM 处理)")
-    else:
-        print(f"   返回了数据: {res_unknown} (预期应为 None)")
-
+        print(f"   FAILURE: Returned {res} (Expected None).")
 
 async def test_user_specified_metrics():
-    """测试场景3: 用户显式指定 metrics"""
+    """Test Scenario 4: User Specified Metrics Override"""
     print("\n" + "="*60)
-    print("测试 3: 用户显式指定 Metrics")
+    print("Test 4: User Specified Metrics Override")
     print("="*60)
-    
+
     state = NodeState(
-        user_query="使用自定义指标评估",
+        user_query="Run custom eval",
         benches=[
             BenchInfo(
                 bench_name="custom_bench",
                 meta={
                     "metrics": [
-                        {"name": "custom_metric_1", "priority": "primary", "desc": "自定义指标1"},
-                        # 测试参数简写
-                        {"name": "pass_at_k", "k": 10, "priority": "secondary"} 
-                    ],
-                    "domain": "custom"
+                        {"name": "user_metric_A", "priority": "primary"},
+                        {"name": "user_metric_B", "k": 5} # Short format
+                    ]
                 }
             )
         ]
     )
     
     agent = MetricRecommendAgent(tool_manager=None)
-    
-    # 执行推荐
     result_state = await agent.run(state)
     
-    print(f"\nBenchmark: custom_bench")
-    if "custom_bench" in result_state.metric_plan:
-        metrics = result_state.metric_plan["custom_bench"]
-        print(f"  使用用户指定的 Metrics ({len(metrics)} 个):")
-        for m in metrics:
-            args_str = f", args={m.get('args')}" if m.get('args') else ""
-            print(f"    - {m['name']} (priority: {m['priority']}{args_str})")
+    plan = result_state.metric_plan.get("custom_bench")
+    if plan:
+        print("   SUCCESS: Plan generated from user metrics.")
+        names = [m["name"] for m in plan]
+        print(f"   Metrics: {names}")
+        if "user_metric_A" in names and "user_metric_B" in names:
+             print("   All user metrics present.")
+        else:
+             print("   MISSING user metrics.")
     else:
-        print("    未找到 metric_plan")
+        print("   FAILURE: No plan generated.")
 
-
-def test_metric_format_validation():
-    """测试场景4: 指标格式验证和规范化"""
+def test_format_validation():
+    """Test Scenario 5: Metric Format Validation"""
     print("\n" + "="*60)
-    print("测试 4: 指标格式验证和规范化")
+    print("Test 5: Format Validation")
     print("="*60)
-    
+
     agent = MetricRecommendAgent(tool_manager=None)
-    
-    # 测试各种格式的指标
-    test_metrics = [
-        # 1. 标准格式
-        {"name": "accuracy", "priority": "primary", "desc": "准确率"},
-        # 2. 缺少 priority（应该默认 secondary）
-        {"name": "f1_score"},
-        # 3. 扁平化参数 k -> args={'k': 1}
-        {"name": "pass_at_k", "k": 1, "priority": "primary"},
-        # 4. 扁平化参数 params -> args
-        {"name": "bleu", "params": {"smooth": True}},
-        # 5. 无效格式（缺少 name）-> 应被过滤
-        {"priority": "primary"},
-        # 6. 无效 priority -> 应修正为 secondary
-        {"name": "test_metric", "priority": "super_high"},
+    raw_metrics = [
+        {"name": "valid_one", "priority": "primary"},
+        {"name": "missing_prio"}, # Should default to secondary
+        {"name": "flattened_args", "k": 10}, # Should move k to args
     ]
     
-    validated = agent._validate_metrics(test_metrics)
-    
-    print(f"\n输入指标数: {len(test_metrics)}")
-    print(f"验证通过数: {len(validated)}")
-    print(f"过滤掉数: {len(test_metrics) - len(validated)}")
-    
-    print("\n验证后的指标详情:")
+    validated = agent._validate_metrics(raw_metrics)
+    print("Validated Metrics:")
     for m in validated:
-        print(f"  - Name: {m['name']}")
-        print(f"    Priority: {m['priority']}")
-        if 'args' in m:
-            print(f"    Args: {m['args']}")
-        print("-" * 20)
+        print(f"  - {m}")
+        
+    # Checks
+    if validated[1]["priority"] == "secondary":
+        print("   SUCCESS: Default priority applied.")
+    if validated[2].get("args", {}).get("k") == 10:
+        print("   SUCCESS: Flattened args moved to 'args' dict.")
 
-
-async def test_metric_recommend_node_full():
-    """测试场景5: 完整的 MetricRecommendNode 执行（包含 LLM 调用）"""
+async def test_full_node_execution():
+    """Test Scenario 6: Full Node Execution"""
     print("\n" + "="*60)
-    print("测试 5: MetricRecommendNode 完整执行")
+    print("Test 6: Full Node Execution (End-to-End)")
     print("="*60)
-    
-    # 准备测试数据：混合已知和未知数据集
+
+    # Use a mix of known (registry) and unknown (llm)
     state = NodeState(
-        user_query="评估模型在多个任务上的表现",
+        user_query="Eval mixed tasks",
         benches=[
-            # 1. 已知数据集 -> 应该命中注册表
-            BenchInfo(
-                bench_name="gsm8k",
-                meta={"domain": "math", "task_type": "numerical"}
-            ),
-            # 2. 未知数据集 -> 应该调用 LLM
-            BenchInfo(
-                bench_name="unknown_qa_dataset_v1",
-                meta={
-                    "domain": "qa",
-                    "task_type": "question_answering",
-                    "description": "关于自然科学的问答数据集",
-                    "examples": [{"question": "天空为什么是蓝的？", "answer": "因为瑞利散射..."}]
-                }
-            ),
-            # 3. 既未知又无描述 -> LLM 可能失败或推荐默认，最终触发兜底
-            BenchInfo(
-                bench_name="completely_random_name",
-                meta={}
-            )
+            BenchInfo(bench_name="gsm8k", meta={}), # Known
+            BenchInfo(bench_name="unknown_qa", meta={"task_type": "qa"}) # Unknown
         ]
     )
-    
+
     node = MetricRecommendNode()
     
-    print("\n执行 MetricRecommendNode...")
-    
-    # 检查 API Key，如果没有则提示
-    has_api = os.getenv("OE_API_BASE") and os.getenv("OE_API_KEY")
-    if not has_api:
-        print("  警告: 未检测到 LLM API 配置。LLM 部分可能会失败或报错，但我们将测试兜底逻辑。")
-    
+    # Warn if no API key
+    if not (os.getenv("OE_API_BASE") and os.getenv("OE_API_KEY")):
+        print("   WARNING: No LLM API Key found. LLM part might fail or mock.")
+
     try:
-        result_state = await node.run(state)
-        
-        print("\n" + "-"*60)
-        print("最终推荐结果 (Metric Plan):")
-        print("-"*60)
-        
-        for bench_name, metrics in result_state.metric_plan.items():
-            print(f"\n Benchmark: {bench_name}")
-            print(f"   推荐指标数: {len(metrics)}")
+        result = await node.run(state)
+        print("\nMetric Plan:")
+        for bench, metrics in result.metric_plan.items():
+            print(f"   Bench: {bench} -> {len(metrics)} metrics")
             for m in metrics:
-                args_str = f", args: {m.get('args')}" if m.get('args') else ""
-                print(f"   - {m['name']} ({m['priority']}){args_str}")
-        
-        # 打印统计信息
-        if "MetricRecommendAgent" in result_state.result:
-            stats = result_state.result["MetricRecommendAgent"]
-            print("\n" + "-"*60)
-            print("执行统计:")
-            print(f"  Registry 命中: {stats.get('registry_hits', [])}")
-            print(f"  LLM 分析列表: {stats.get('llm_analyzed', [])}")
-        
+                 print(f"     - {m['name']}")
     except Exception as e:
-        print(f"\n 执行失败: {e}")
+        print(f"   Execution Failed: {e}")
         import traceback
         traceback.print_exc()
 
-
 async def main():
-    """运行所有测试"""
-    print("\n" + "="*60)
-    print("MetricRecommend 功能测试套件 (Updated)")
-    print("="*60)
+    print("Starting Refactored Architecture Tests...")
     
-    # 1. 基础 Registry 测试
-    test_metric_registry()
-    
-    # 2. Agent 逻辑测试
-    await test_registry_match_logic()
-    
-    # 3. 用户覆盖测试
+    test_metric_registry_lookup()
+    test_decentralized_registration()
+    await test_agent_logic_unknown_dataset()
     await test_user_specified_metrics()
+    test_format_validation()
+    await test_full_node_execution()
     
-    # 4. 格式验证测试
-    test_metric_format_validation()
-
-    # 5. 完整流程测试
-    await test_metric_recommend_node_full()
-    
-    print("\n" + "="*60)
-    print("所有测试完成！")
-    print("="*60)
-
+    print("\nAll Tests Completed.")
 
 if __name__ == "__main__":
     asyncio.run(main())

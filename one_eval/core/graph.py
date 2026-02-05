@@ -4,6 +4,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from one_eval.toolkits.tool_manager import get_tool_manager
 from typing import Optional, Callable, Dict, List, Tuple, Any
 from langchain_core.runnables import RunnableConfig
+from langchain_core.runnables.config import var_child_runnable_config
 import asyncio
 
 class GraphBuilder(GenericGraphBuilder):
@@ -91,6 +92,12 @@ class GraphBuilder(GenericGraphBuilder):
         父类的包装器只接受 `state`，会导致 TypeError。
         """
         async def wrapped_node(state, config: RunnableConfig = None):
+            token = None
+            if config is not None:
+                try:
+                    token = var_child_runnable_config.set(config)
+                except Exception:
+                    token = None
             # 注册工具
             self._register_tools_for_role(role, state)
             
@@ -104,7 +111,7 @@ class GraphBuilder(GenericGraphBuilder):
                     return node_func(state, config)
             except TypeError as e:
                 # 如果是因为参数过多导致的错误，尝试只传 state
-                # 注意：这里需要小心区分是“函数内部的TypeError”还是“参数匹配的TypeError”
+                # 注意：这里需要小心区分是“函数内部的TypeError”还是“参数匹配的TypeError"
                 # 简单起见，我们假设用户的大部分节点只接受 state
                 if "argument" in str(e): 
                     if asyncio.iscoroutinefunction(node_func):
@@ -112,6 +119,12 @@ class GraphBuilder(GenericGraphBuilder):
                     else:
                         return node_func(state)
                 raise e # 抛出真正的逻辑错误
+            finally:
+                if token is not None:
+                    try:
+                        var_child_runnable_config.reset(token)
+                    except Exception:
+                        pass
         
         return wrapped_node
 

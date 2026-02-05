@@ -1,12 +1,11 @@
 import asyncio
+import sys
+import os
 from pathlib import Path
 import json
 import time
-from dataclasses import asdict, is_dataclass
-
 from langgraph.graph import START, END
 from langgraph.types import Command
-
 from one_eval.core.state import NodeState, ModelConfig
 from one_eval.core.graph import GraphBuilder
 
@@ -20,27 +19,18 @@ from one_eval.nodes.download_node import DownloadNode
 from one_eval.nodes.dataset_keys_node import DatasetKeysNode
 from one_eval.nodes.bench_task_infer_node import BenchTaskInferNode
 from one_eval.nodes.dataflow_eval_node import DataFlowEvalNode
-from one_eval.nodes.pre_eval_review_node import PreEvalReviewNode
 from one_eval.nodes.metric_recommend_node import MetricRecommendNode
-from one_eval.nodes.score_calc_node import ScoreCalcNode
 
 from one_eval.utils import node_docs, validators
 from one_eval.utils.checkpoint import get_checkpointer
 from one_eval.utils.deal_json import _save_state_json, _restore_state_from_snap
 from one_eval.logger import get_logger
 
-log = get_logger("OneEvalWorkflow-All")
-
-
-def _route_after_eval(state: NodeState) -> str:
-    benches = getattr(state, "benches", None) or []
-    cursor = int(getattr(state, "eval_cursor", 0) or 0)
-    if cursor < len(benches):
-        return "DataFlowEvalNode"
-    return "MetricRecommendNode"
+log = get_logger("OneEvalWorkflow-All + metric_recommend")
 
 
 def build_complete_workflow(checkpointer=None):
+
     """
     Complete OneEval Workflow:
     
@@ -55,12 +45,9 @@ def build_complete_workflow(checkpointer=None):
     
     Phase 4: Evaluation
     → DataFlowEvalNode
-
+    
     Phase 5: Metric Recommend
-    → MetricRecommendNode
-
-    Phase 6: Score Calc
-    → ScoreCalcNode → END
+    → MetricRecommendNode → END
     """
     builder = GraphBuilder(
         state_model=NodeState,
@@ -101,19 +88,11 @@ def build_complete_workflow(checkpointer=None):
     builder.add_node(name=node_infer.name, func=node_infer.run)
 
     # === Phase 4: Eval ===
-    node_pre_eval_review = PreEvalReviewNode()
-    builder.add_node(name=node_pre_eval_review.name, func=node_pre_eval_review.run)
-
     node_eval = DataFlowEvalNode()
-    builder.add_node(name=node_eval.name, func=node_eval.run)
-
-    # === Phase 5: Metric Recommend ===
     node_metric = MetricRecommendNode()
-    builder.add_node(name=node_metric.name, func=node_metric.run)
 
-    # === Phase 6: Score Calc ===
-    node_score = ScoreCalcNode()
-    builder.add_node(name=node_score.name, func=node_score.run)
+    builder.add_node(name=node_eval.name, func=node_eval.run)
+    builder.add_node(name=node_metric.name, func=node_metric.run)
 
     # === Edges ===
     # Phase 1
@@ -137,12 +116,11 @@ def build_complete_workflow(checkpointer=None):
     builder.add_edge(node_keys.name, node_infer.name)
 
     # Phase 3 -> Phase 4
-    builder.add_edge(node_infer.name, node_pre_eval_review.name)
+    builder.add_edge(node_infer.name, node_eval.name)
 
-    # Phase 4 -> Phase 5 -> Phase 6 -> End
-    builder.add_conditional_edge(node_eval.name, _route_after_eval)
-    builder.add_edge(node_metric.name, node_score.name)
-    builder.add_edge(node_score.name, END)
+    # Phase 4 -> Metric Recommend -> End
+    builder.add_edge(node_eval.name, node_metric.name)
+    builder.add_edge(node_metric.name, END)
 
     return builder.build(checkpointer=checkpointer)
 
@@ -189,7 +167,7 @@ async def run_full_pipeline(user_query: str, thread_id: str = "demo_full_run", m
         else:
             # Resume (e.g. from Human Interrupt)
             # Check if we are at interrupt
-            if snap and snap.next and ("HumanReviewNode" in snap.next or "PreEvalReviewNode" in snap.next):
+            if snap and snap.next and "HumanReviewNode" in snap.next:
                 log.info("Resuming from Human Review...")
                 # You can provide feedback here if automating, or CLI input
                 # For demo purposes, we assume acceptance
@@ -212,12 +190,12 @@ if __name__ == "__main__":
     # Example usage
     import sys
     
-    query = "我想评估我的模型在MATH数据集上的表现"
+    query = "我想评估我的模型在文本类reasoning上的表现"
     if len(sys.argv) > 1:
         query = sys.argv[1]
         
     asyncio.run(run_full_pipeline(
         user_query=query,
-        thread_id="demo_run_hyh_21", 
+        thread_id="demo_full_01", 
         mode="run"
     ))

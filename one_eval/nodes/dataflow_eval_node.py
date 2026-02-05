@@ -67,24 +67,18 @@ class DataFlowEvalNode(BaseNode):
         if bench.eval_status == "success" and bench.meta and bench.meta.get("eval_result"):
             self.logger.info(f"[{bench.bench_name}] 已评测成功，跳过")
             state.eval_cursor = cursor + 1
-            if state.eval_cursor < len(benches):
-                return Command(goto=self.name)
             return state
 
         if not bench.dataset_cache:
             self.logger.warning(f"[{bench.bench_name}] 缺少 dataset_cache，跳过")
             bench.eval_status = "failed"
             state.eval_cursor = cursor + 1
-            if state.eval_cursor < len(benches):
-                return Command(goto=self.name)
             return state
 
         if not bench.bench_dataflow_eval_type:
             self.logger.warning(f"[{bench.bench_name}] 缺少 eval_type，跳过")
             bench.eval_status = "failed"
             state.eval_cursor = cursor + 1
-            if state.eval_cursor < len(benches):
-                return Command(goto=self.name)
             return state
 
         try:
@@ -99,6 +93,61 @@ class DataFlowEvalNode(BaseNode):
             stats = result["stats"]
             bench.meta["eval_result"] = stats
             bench.meta["eval_detail_path"] = result["detail_path"]
+
+            # === Pass Key Mapping to MetricRunner ===
+            final_key_mapping = result.get("key_mapping", {})
+            eval_type = bench.bench_dataflow_eval_type
+
+            # 1. 确定 Pred Key (预测列)
+            # 逻辑：优先查看映射中是否指定了 'input_pred_key'，如果没有，则默认为 'generated_ans'
+            # 这兼容了 Pipeline 中生成的结果，也兼容了用户手动指定列名的情况
+            default_pred_key = "generated_ans"
+            mapped_pred_key = final_key_mapping.get("input_pred_key")
+            pred_key = mapped_pred_key if mapped_pred_key else default_pred_key
+
+            # 2. 确定 Ref Key (参考答案列)
+            ref_key = None
+
+            if eval_type == "key2_qa":
+                # 问答（单参考）：取 target
+                ref_key = final_key_mapping.get("input_target_key")
+
+            elif eval_type == "key2_q_ma":
+                # 问答（多参考）：取 targets
+                ref_key = final_key_mapping.get("input_targets_key")
+
+            elif eval_type == "key3_q_choices_a":
+                # 单选：取 label (A/B/C)
+                ref_key = final_key_mapping.get("input_label_key")
+                # 选择题优先用 ll-choice 的预测列
+                pred_key = "eval_pred"
+
+            elif eval_type == "key3_q_choices_as":
+                # 多选：取 labels 集合
+                ref_key = final_key_mapping.get("input_labels_key")
+                pred_key = "eval_pred"
+
+            elif eval_type == "key3_q_a_rejected":
+                # 偏好对比：通常将 "better" 视为正例 (Positive Reference)
+                # 注意：MetricRunner 可能还需要 rejected_key，但通常 ref_key 指向 ground truth
+                ref_key = final_key_mapping.get("input_better_key")
+
+            elif eval_type == "key1_text_score":
+                # 文本评分 (PPL)：属于无监督评估，没有 Ref
+                # 特殊情况：此时我们要评估的对象(pred)其实就是输入的 text 列
+                ref_key = None
+                # 如果映射里指定了 input_text_key，它就是我们要评估的内容
+                if final_key_mapping.get("input_text_key"):
+                    pred_key = final_key_mapping.get("input_text_key")
+
+            # 3. 写入 Meta
+            if ref_key:
+                bench.meta["ref_key"] = ref_key
+                self.logger.info(f"[{bench.bench_name}] Set ref_key='{ref_key}' based on type '{eval_type}'")
+
+            bench.meta["pred_key"] = pred_key
+            self.logger.info(f"[{bench.bench_name}] Set pred_key='{pred_key}'")
+
             bench.eval_status = "success"
 
             total_samples = stats.get("total_samples", 0)
@@ -128,6 +177,4 @@ class DataFlowEvalNode(BaseNode):
             bench.meta["eval_error"] = str(e)
 
         state.eval_cursor = cursor + 1
-        if state.eval_cursor < len(benches):
-            return Command(goto=self.name)
         return state
