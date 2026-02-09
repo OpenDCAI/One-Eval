@@ -670,7 +670,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--output",
-        default="one_eval/bench_gallery.json",
+        default="one_eval/utils/bench_table/bench_gallery.json",
         help="Path to output bench_gallery.json"
     )
     parser.add_argument(

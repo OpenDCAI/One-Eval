@@ -185,7 +185,7 @@ from langgraph.types import Command
 from one_eval.utils.bench_registry import BenchRegistry
 
 # Bench Registry - 使用 bench_gallery.json 作为数据源
-BENCH_GALLERY_PATH = REPO_ROOT / "one_eval" / "bench_gallery.json"
+BENCH_GALLERY_PATH = REPO_ROOT / "one_eval" / "utils" / "bench_table" / "bench_gallery.json"
 bench_registry = BenchRegistry(str(BENCH_GALLERY_PATH))
 
 # Models
