@@ -32,8 +32,7 @@ class DownloadNode(BaseNode):
             self.logger.warning("[DownloadNode] state.benches 为空，跳过下载。")
             return state
 
-        # 默认 cache 根目录
-        default_cache_root = Path(os.getcwd()) / "cache"
+        default_cache_root = Path(__file__).resolve().parents[2] / "cache"
         if not default_cache_root.exists():
             default_cache_root.mkdir(parents=True, exist_ok=True)
 
@@ -94,6 +93,20 @@ class DownloadNode(BaseNode):
                     bench.dataset_cache = str(output_path)
                     bench.download_status = "success"
                     continue
+                
+                safe_bench = str(getattr(bench, "bench_name", "") or "").replace("/", "__")
+                if safe_bench:
+                    exact = list(default_cache_root.glob(f"*__{safe_bench}__{config_name}__{split_name}.jsonl"))
+                    candidates = exact or list(default_cache_root.glob(f"*__{safe_bench}__{config_name}__*.jsonl")) or list(default_cache_root.glob(f"*__{safe_bench}__*.jsonl"))
+                    candidates = [p for p in candidates if p.exists() and p.stat().st_size > 0]
+                    if candidates:
+                        chosen = max(candidates, key=lambda p: p.stat().st_mtime)
+                        self.logger.info(f"[{hf_repo}] 复用已存在缓存文件: {chosen}")
+                        bench.dataset_cache = str(chosen)
+                        bench.download_status = "success"
+                        if bench.meta and isinstance(bench.meta, dict):
+                            bench.meta.pop("download_error", None)
+                        continue
 
                 # 3. 下载
                 ok = False

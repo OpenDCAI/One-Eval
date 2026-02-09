@@ -12,9 +12,11 @@ import { cn } from "@/lib/utils";
 export interface Bench {
   bench_name: string;
   eval_type?: string;
+  bench_dataflow_eval_type?: string;
   meta?: any;
   eval_status?: string;
   download_status?: string;
+  dataset_cache?: string;
 }
 
 export interface WorkflowState {
@@ -66,8 +68,9 @@ const Modal = ({ isOpen, onClose, title, description, children, footer }: { isOp
 };
 
 // --- Bench Card Component ---
-export const BenchCard = ({ bench, activeNode, onUpdate }: { bench: Bench, activeNode: string | null, onUpdate?: (updatedBench: Bench) => void }) => {
+export const BenchCard = ({ bench, activeNode, onUpdate, onRetryDownload }: { bench: Bench, activeNode: string | null, onUpdate?: (updatedBench: Bench) => void, onRetryDownload?: (params: { bench_name: string, config?: string, split?: string }) => Promise<void> }) => {
     const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+    const [isRetrying, setIsRetrying] = useState(false);
     
     // Local state for editing in modal
     const [editKeyMap, setEditKeyMap] = useState<Record<string, string>>({});
@@ -174,6 +177,8 @@ export const BenchCard = ({ bench, activeNode, onUpdate }: { bench: Bench, activ
         setIsDetailsOpen(false);
     };
 
+    const downloadError = typeof meta?.download_error === "string" ? meta.download_error : (meta?.download_error ? JSON.stringify(meta.download_error) : "");
+
     // Determine status color
     const statusColor = bench.download_status === "success" ? "bg-green-50 text-green-600" : "bg-slate-50 text-slate-400";
     
@@ -196,14 +201,37 @@ export const BenchCard = ({ bench, activeNode, onUpdate }: { bench: Bench, activ
                     hasData ? "hover:shadow-md cursor-pointer hover:border-blue-200" : "cursor-default"
                 )}
             >
-                <div className="flex justify-between mb-2 shrink-0">
+                <div className="flex justify-between mb-2 shrink-0 gap-2">
                     <span className="text-sm font-bold text-slate-700 truncate pr-2" title={bench.bench_name}>{bench.bench_name}</span>
-                    <span className={cn(
-                        "text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider h-fit whitespace-nowrap",
-                        statusColor
-                    )}>
-                        {bench.download_status || "Pending"}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                        {bench.download_status === "failed" && onRetryDownload && (
+                            <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-6 px-2 text-[10px] gap-1"
+                                disabled={isRetrying}
+                                onClick={async (e) => {
+                                    e.stopPropagation();
+                                    setIsRetrying(true);
+                                    try {
+                                        const dl = bench.meta?.download_config || {};
+                                        await onRetryDownload({ bench_name: bench.bench_name, config: dl.config, split: dl.split });
+                                    } finally {
+                                        setIsRetrying(false);
+                                    }
+                                }}
+                            >
+                                <Loader2 className={cn("w-3 h-3", isRetrying ? "animate-spin" : "")} />
+                                Retry
+                            </Button>
+                        )}
+                        <span className={cn(
+                            "text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider h-fit whitespace-nowrap",
+                            statusColor
+                        )}>
+                            {bench.download_status || "Pending"}
+                        </span>
+                    </div>
                 </div>
                 
                 {/* Type & Tags */}
@@ -295,6 +323,23 @@ export const BenchCard = ({ bench, activeNode, onUpdate }: { bench: Bench, activ
                         footer={
                             <>
                                 <Button variant="ghost" onClick={() => setIsDetailsOpen(false)}>Cancel</Button>
+                                {bench.download_status === "failed" && onRetryDownload && (
+                                    <Button
+                                        variant="outline"
+                                        disabled={isRetrying}
+                                        onClick={async () => {
+                                            setIsRetrying(true);
+                                            try {
+                                                await onRetryDownload({ bench_name: bench.bench_name, config: selectedSubset, split: selectedSplit });
+                                            } finally {
+                                                setIsRetrying(false);
+                                            }
+                                        }}
+                                        className="gap-2"
+                                    >
+                                        <Loader2 className={cn("w-4 h-4", isRetrying ? "animate-spin" : "")} /> Retry Download
+                                    </Button>
+                                )}
                                 <Button onClick={handleSave} className="bg-blue-600 hover:bg-blue-700 text-white gap-2">
                                     <SaveIcon className="w-4 h-4" /> Save Configuration
                                 </Button>
@@ -302,6 +347,12 @@ export const BenchCard = ({ bench, activeNode, onUpdate }: { bench: Bench, activ
                         }
                     >
                         <div className="space-y-8">
+                            {bench.download_status === "failed" && (
+                                <div className="bg-red-50/50 p-4 rounded-xl border border-red-100">
+                                    <div className="text-xs font-bold text-red-700 mb-1">Download Failed</div>
+                                    {downloadError && <div className="text-xs text-red-600 font-mono whitespace-pre-wrap">{downloadError}</div>}
+                                </div>
+                            )}
                             
                             {/* 1. Key Mapping Section (Editable) */}
                             {Object.keys(editKeyMap).length > 0 && (

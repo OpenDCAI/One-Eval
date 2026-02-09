@@ -60,17 +60,22 @@ class HFDownloadTool:
         log.info(f"开始下载并转换: repo={repo_id} config={config_name} split={split} -> {out_path}")
 
         try:
-            # 尝试加载
-            # 注意: trust_remote_code=True 可能会有安全风险，但在评测场景通常是必要的
-            ds = load_dataset(
-                repo_id,
-                config_name,
-                split=split,
-                revision=revision,
-                token=self.hf_token,
-                cache_dir=self.cache_dir,
-                trust_remote_code=True,
-            )
+            kwargs: Dict[str, Any] = {
+                "split": split,
+                "revision": revision,
+                "token": self.hf_token,
+                "cache_dir": self.cache_dir,
+            }
+            try:
+                ds = load_dataset(repo_id, config_name, trust_remote_code=True, **kwargs)
+            except TypeError:
+                ds = load_dataset(repo_id, config_name, **kwargs)
+            except Exception as e:
+                msg = str(e)
+                if "trust_remote_code" in msg:
+                    ds = load_dataset(repo_id, config_name, **kwargs)
+                else:
+                    raise
         except Exception as e:
             error_msg = f"load_dataset 失败: {e}"
             log.error(error_msg)
