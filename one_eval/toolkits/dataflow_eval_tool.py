@@ -73,7 +73,11 @@ class DataFlowEvalTool:
                 vllm_max_tokens=config.max_tokens,
                 vllm_temperature=config.temperature,
                 vllm_top_p=config.top_p,
+                vllm_top_k=getattr(config, "top_k", -1),
+                vllm_repetition_penalty=getattr(config, "repetition_penalty", 1.0),
+                vllm_seed=getattr(config, "seed", None),
                 vllm_max_model_len=getattr(config, "max_model_len", None),
+                vllm_gpu_memory_utilization=getattr(config, "gpu_memory_utilization", 0.9),
                 # trust_remote_code=True, # 默认信任，State 中已移除该配置
             )
         
@@ -298,5 +302,6 @@ class DataFlowEvalTool:
 
         return {
             "stats": stats,
-            "detail_path": str(Path(last_step_file).absolute())
+            "detail_path": str(Path(last_step_file).absolute()),
+            "key_mapping": key_mapping,
         }

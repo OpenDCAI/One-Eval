@@ -31,11 +31,15 @@ class ModelConfig:
     # Generation parameters
     temperature: float = 0.0
     top_p: float = 1.0
+    top_k: int = -1
+    repetition_penalty: float = 1.0
     max_tokens: int = 2048
+    seed: Optional[int] = None
     
     # Local model parameters
     tensor_parallel_size: int = 1
     max_model_len: Optional[int] = None
+    gpu_memory_utilization: float = 0.9
 
 
 @dataclass
@@ -60,6 +64,8 @@ class NodeState(MainState):
 
     # === 数据与评测基准 ===
     benches: List[BenchInfo] = field(default_factory=list)
+
+    eval_cursor: int = 0
 
     # === 评测规划与结果 ===
     key_plan: Dict[str, Any] = field(default_factory=dict)   # 输入输出字段映射

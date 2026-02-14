@@ -288,6 +288,7 @@ prompt_registry.register(
 1. 仅输出一个 JSON 字典，Key 为 Benchmark 名称。
 2. 不要包含 Markdown 标记。
 3. 确保 JSON 可解析。
+4. **数量不限**：请尽可能多地推荐适合的指标（尤其是 secondary 辅助指标），不要局限于 3 个。只要有评估价值都可以列出。
 
 ### JSON 示例
 {{

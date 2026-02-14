@@ -399,6 +399,12 @@ class StartWorkflowRequest(BaseModel):
     target_model_path: str
     tensor_parallel_size: int = 1
     max_tokens: int = 2048
+    temperature: float = 0.0
+    top_p: float = 1.0
+    top_k: int = -1
+    repetition_penalty: float = 1.0
+    max_model_len: Optional[int] = None
+    gpu_memory_utilization: float = 0.9
 
 class ResumeWorkflowRequest(BaseModel):
     thread_id: str
@@ -418,6 +424,18 @@ class RerunExecutionRequest(BaseModel):
     bench_name: Optional[str] = None
     state_updates: Optional[Dict[str, Any]] = None
     goto_confirm: bool = True
+
+class ManualBenchRequest(BaseModel):
+    bench_name: str
+    dataset_cache: str
+    bench_dataflow_eval_type: str
+    meta: Optional[Dict[str, Any]] = None
+
+class ManualStartRequest(BaseModel):
+    user_query: str = "manual eval"
+    target_model_name: Optional[str] = None
+    target_model: Dict[str, Any]
+    benches: List[ManualBenchRequest]
 
 class WorkflowStatusResponse(BaseModel):
     thread_id: str
@@ -446,7 +464,13 @@ async def start_workflow(req: StartWorkflowRequest):
         target_model=ModelConfig(
             model_name_or_path=req.target_model_path,
             tensor_parallel_size=req.tensor_parallel_size,
-            max_tokens=req.max_tokens
+            max_tokens=req.max_tokens,
+            temperature=req.temperature,
+            top_p=req.top_p,
+            top_k=req.top_k,
+            repetition_penalty=req.repetition_penalty,
+            max_model_len=req.max_model_len,
+            gpu_memory_utilization=req.gpu_memory_utilization,
         )
     )
     
@@ -529,9 +553,13 @@ async def resume_workflow(req: ResumeWorkflowRequest):
                     api_key=tm.get("api_key"),
                     temperature=float(tm.get("temperature", 0.0) or 0.0),
                     top_p=float(tm.get("top_p", 1.0) or 1.0),
+                    top_k=int(tm.get("top_k", -1) if tm.get("top_k", -1) is not None else -1),
+                    repetition_penalty=float(tm.get("repetition_penalty", 1.0) or 1.0),
                     max_tokens=int(tm.get("max_tokens", 2048) or 2048),
+                    seed=(int(tm["seed"]) if tm.get("seed") is not None else None),
                     tensor_parallel_size=int(tm.get("tensor_parallel_size", 1) or 1),
                     max_model_len=tm.get("max_model_len"),
+                    gpu_memory_utilization=float(tm.get("gpu_memory_utilization", 0.9) or 0.9),
                 )
             except Exception as e:
                 log.error(f"Failed to parse target_model update: {e}")
@@ -593,9 +621,13 @@ async def rerun_execution(thread_id: str, req: RerunExecutionRequest):
                         api_key=tm.get("api_key"),
                         temperature=float(tm.get("temperature", 0.0) or 0.0),
                         top_p=float(tm.get("top_p", 1.0) or 1.0),
+                        top_k=int(tm.get("top_k", -1) if tm.get("top_k", -1) is not None else -1),
+                        repetition_penalty=float(tm.get("repetition_penalty", 1.0) or 1.0),
                         max_tokens=int(tm.get("max_tokens", 2048) or 2048),
+                        seed=(int(tm["seed"]) if tm.get("seed") is not None else None),
                         tensor_parallel_size=int(tm.get("tensor_parallel_size", 1) or 1),
                         max_model_len=tm.get("max_model_len"),
+                        gpu_memory_utilization=float(tm.get("gpu_memory_utilization", 0.9) or 0.9),
                     )
                 except Exception as e:
                     log.error(f"Failed to parse target_model update: {e}")
@@ -634,11 +666,80 @@ async def rerun_execution(thread_id: str, req: RerunExecutionRequest):
                 for k in ("eval_result", "eval_detail_path", "eval_error", "eval_abnormality"):
                     b.meta.pop(k, None)
 
-        await graph.aupdate_state(config, {"benches": benches_list})
+        await graph.aupdate_state(config, {"benches": benches_list, "eval_cursor": 0})
 
     goto_node = "PreEvalReviewNode" if req.goto_confirm else "DataFlowEvalNode"
     asyncio.create_task(run_graph_background(thread_id, None, resume_command=Command(goto=goto_node)))
     return {"ok": True, "status": "queued", "goto": goto_node}
+
+@app.post("/api/workflow/manual_start")
+async def manual_start(req: ManualStartRequest):
+    thread_id = str(uuid.uuid4())
+
+    tm = req.target_model or {}
+    model_name_or_path = (
+        tm.get("model_name_or_path")
+        or tm.get("path")
+        or tm.get("model_path")
+        or tm.get("hf_model_name_or_path")
+    )
+    if not model_name_or_path:
+        raise HTTPException(status_code=400, detail="target_model missing model_name_or_path/path")
+
+    model_cfg = ModelConfig(
+        model_name_or_path=str(model_name_or_path),
+        is_api=bool(tm.get("is_api", False)),
+        api_url=tm.get("api_url"),
+        api_key=tm.get("api_key"),
+        temperature=float(tm.get("temperature", 0.0) or 0.0),
+        top_p=float(tm.get("top_p", 1.0) or 1.0),
+        top_k=int(tm.get("top_k", -1) if tm.get("top_k", -1) is not None else -1),
+        repetition_penalty=float(tm.get("repetition_penalty", 1.0) or 1.0),
+        max_tokens=int(tm.get("max_tokens", 2048) or 2048),
+        seed=(int(tm["seed"]) if tm.get("seed") is not None else None),
+        tensor_parallel_size=int(tm.get("tensor_parallel_size", 1) or 1),
+        max_model_len=tm.get("max_model_len"),
+        gpu_memory_utilization=float(tm.get("gpu_memory_utilization", 0.9) or 0.9),
+    )
+
+    benches: List[BenchInfo] = []
+    for b in req.benches:
+        meta = b.meta or {}
+        benches.append(
+            BenchInfo(
+                bench_name=b.bench_name,
+                bench_dataflow_eval_type=b.bench_dataflow_eval_type,
+                meta=meta,
+                dataset_cache=b.dataset_cache,
+                download_status="success" if b.dataset_cache else None,
+                eval_status="pending",
+            )
+        )
+
+    initial_state = NodeState(
+        user_query=req.user_query,
+        target_model_name=req.target_model_name or str(model_name_or_path),
+        target_model=model_cfg,
+        benches=benches,
+        eval_cursor=0,
+    )
+
+    async with get_checkpointer(DB_PATH, mode="run") as checkpointer:
+        graph = build_complete_workflow(checkpointer=checkpointer)
+        config = {"configurable": {"thread_id": thread_id}}
+        await graph.aupdate_state(
+            config,
+            {
+                "user_query": initial_state.user_query,
+                "target_model_name": initial_state.target_model_name,
+                "target_model": initial_state.target_model,
+                "benches": initial_state.benches,
+                "eval_cursor": 0,
+            },
+        )
+
+    asyncio.create_task(run_graph_background(thread_id, None, resume_command=Command(goto="DataFlowEvalNode")))
+    return {"thread_id": thread_id, "status": "started"}
 
 def _bench_download_sync(bench: Dict[str, Any], *, repo_root: Path, overrides: Dict[str, Any], max_retries: int = 3) -> Dict[str, Any]:
     meta = bench.get("meta") or {}
