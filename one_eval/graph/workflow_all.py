@@ -23,6 +23,7 @@ from one_eval.nodes.dataflow_eval_node import DataFlowEvalNode
 from one_eval.nodes.pre_eval_review_node import PreEvalReviewNode
 from one_eval.nodes.metric_recommend_node import MetricRecommendNode
 from one_eval.nodes.score_calc_node import ScoreCalcNode
+from one_eval.nodes.report_gen_node import ReportGenNode
 
 from one_eval.utils import node_docs, validators
 from one_eval.utils.checkpoint import get_checkpointer
@@ -60,7 +61,10 @@ def build_complete_workflow(checkpointer=None):
     → MetricRecommendNode
 
     Phase 6: Score Calc
-    → ScoreCalcNode → END
+    → ScoreCalcNode
+
+    Phase 7: Report Generation
+    → ReportGenNode → END
     """
     builder = GraphBuilder(
         state_model=NodeState,
@@ -115,6 +119,9 @@ def build_complete_workflow(checkpointer=None):
     node_score = ScoreCalcNode()
     builder.add_node(name=node_score.name, func=node_score.run)
 
+    node_report = ReportGenNode()
+    builder.add_node(name=node_report.name, func=node_report.run)
+
     # === Edges ===
     # Phase 1
     builder.add_edge(START, node_query.name)
@@ -142,7 +149,8 @@ def build_complete_workflow(checkpointer=None):
     # Phase 4 -> Phase 5 -> Phase 6 -> End
     builder.add_conditional_edge(node_eval.name, _route_after_eval)
     builder.add_edge(node_metric.name, node_score.name)
-    builder.add_edge(node_score.name, END)
+    builder.add_edge(node_score.name, node_report.name)
+    builder.add_edge(node_report.name, END)
 
     return builder.build(checkpointer=checkpointer)
 

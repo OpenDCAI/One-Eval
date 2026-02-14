@@ -1,15 +1,13 @@
 from typing import List, Any, Dict, Optional
 import random
 import os
+import logging
 import asyncio
 import json
 from one_eval.core.metric_registry import register_metric, MetricCategory
 from one_eval.logger import get_logger
 from one_eval.serving.custom_llm_caller import CustomLLMCaller
 from langchain_core.messages import HumanMessage, SystemMessage
-from dotenv import load_dotenv
-
-load_dotenv()
 log = get_logger(__name__)
 
 # Mock State for CustomLLMCaller to satisfy initialization requirements
@@ -146,7 +144,8 @@ def compute_case_study_analyst(preds: List[Any], refs: List[Any], **kwargs) -> D
             HumanMessage(content=user_content)
         ]
         
-        # Use bind_post_tools=False for raw API call (faster, no tools)
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
         response = await caller.call(messages, bind_post_tools=False)
         return response.content
 
@@ -217,8 +216,8 @@ def compute_metric_summary_analyst(preds: List[Any], refs: List[Any], **kwargs) 
         
     # 2. 准备 LLM 调用
     model_name = kwargs.get("model_name", "gpt-4o")
-    api_key = kwargs.get("api_key") or os.environ.get("OE_API_KEY")
-    base_url = kwargs.get("base_url") or os.environ.get("OE_API_BASE")
+    api_key = kwargs.get("api_key") or os.environ.get("OE_API_KEY", "sk-xxx")
+    base_url = kwargs.get("base_url") or os.environ.get("OE_API_BASE", "http://123.129.219.111:3000/v1")
     
     # Try to retrieve real state from kwargs (if passed by caller)
     real_state = kwargs.get("state", None)
@@ -276,6 +275,8 @@ Output the report in Markdown format.
             HumanMessage(content=user_prompt)
         ]
         
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("httpcore").setLevel(logging.WARNING)
         response = await caller.call(messages, bind_post_tools=False)
         return response.content
 
@@ -306,82 +307,3 @@ Output the report in Markdown format.
             "score": 0.0, 
             "error": f"LLM analysis failed: {str(e)}"
         }
-
-# if __name__ == "__main__":
-#     import sys
-#     import os
-    
-#     # Ensure project root is in path
-#     current_dir = os.path.dirname(os.path.abspath(__file__)) 
-#     project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
-#     if project_root not in sys.path:
-#         sys.path.insert(0, project_root)
-
-#     # Real-World Demo (No Mocks)
-#     def run_real_demo():
-#         print("\n=== Real-World Demo: CaseStudyAnalyst (Production Flow) ===\n")
-        
-#         # 1. 构造真实的 GSM8K 风格数据 (Math Word Problems)
-#         # Context: "A shop sells apples for $2 and oranges for $3. Alice buys 5 apples and 3 oranges."
-#         # Correct Answer: 5*2 + 3*3 = 10 + 9 = 19.
-        
-#         refs = ["19"] * 5
-        
-#         preds = [
-#             # Case 1: Correct
-#             "Alice buys 5 apples ($10) and 3 oranges ($9). Total is 19.", 
-            
-#             # Case 2: Calculation Error (Logic correct, arithmetic wrong)
-#             "5 apples cost 5*2=10. 3 oranges cost 3*3=6. Total is 10+6=16.", 
-            
-#             # Case 3: Semantic/Logic Error (Confused unit prices)
-#             "Apples are $3 and oranges are $2. So 5*3 + 3*2 = 15 + 6 = 21.",
-            
-#             # Case 4: Hallucination/Irrelevant
-#             "The weather is nice today. I think the answer might be 20.",
-            
-#             # Case 5: Correct
-#             "19"
-#         ]
-        
-#         print(f"[Data] Loaded {len(preds)} samples. (Expect mix of correct and errors)")
-        
-#         # 2. 定义明确的用户需求
-#         instruction = (
-#             "请详细分析这些错误样本（Negative Cases）。"
-#             "我特别想知道：模型是简单的计算错误（Calculation Error），"
-#             "还是在这个应用题的语义理解（Semantic Understanding）上出了问题？"
-#             "请引用具体的错误回复片段来佐证你的分析。"
-#         )
-#         print(f"\n[User Instruction]\n{instruction}\n")
-        
-#         # 3. 真实调用
-        
-#         print("[System] Executing compute_case_study_analyst (Calling Real LLM)...")
-        
-#         # 直接调用，不 Mock 任何东西
-#         result = compute_case_study_analyst(
-#             preds=preds, 
-#             refs=refs, 
-#             sample_size=3,              # 抽样 3 个
-#             target_group="negative",    # 只看错题
-#             instruction=instruction,
-#             model_name="gpt-4o",        # 指定模型
-#             # api_key="sk-..."          # 如果环境变量没配，可以在这里硬编码测试
-#         )
-        
-#         print("\n" + "="*40)
-#         print("         ANALYSIS RESULT         ")
-#         print("="*40)
-        
-#         if result.get("error"):
-#             print(f"❌ Execution Failed: {result['error']}")
-#         else:
-#             print(f"✅ Score: {result.get('score')}")
-#             print(f"📍 Sampled Indices: {result.get('details')}")
-#             print("\n📝 [LLM Analysis Report]:\n")
-#             print(result.get("analysis"))
-#             print("\n" + "-"*40)
-
-#     # Run directly (Sync)
-#     run_real_demo()

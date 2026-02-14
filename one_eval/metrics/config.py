@@ -3,8 +3,13 @@ from typing import Dict, List
 
 # --- Reusable Metric Suites (Names Only) ---
 
+<<<<<<< HEAD
 _SUITE_NUMERICAL = ["numerical_match", "strict_match", "extraction_rate"]
 _SUITE_SYMBOLIC = ["symbolic_match", "strict_match", "extraction_rate"]
+=======
+_SUITE_NUMERICAL = ["numerical_match", "extraction_rate"]
+_SUITE_SYMBOLIC = ["math_verify", "extraction_rate"]
+>>>>>>> hyh_0214
 _SUITE_CHOICE = ["choice_accuracy", "extraction_rate"]
 _SUITE_CODE = ["pass_at_k", "code_similarity", "soft_code_execution"]
 _SUITE_GEN_BLEU = ["bleu", "chrf"]

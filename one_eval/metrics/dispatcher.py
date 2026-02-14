@@ -41,6 +41,15 @@ class MetricDispatcher:
         clean_key = re.sub(r'_+', '_', clean_key).strip('_')
         return f"_{clean_key}_"
 
+    def get_default_priority(self, metric_name: str) -> str:
+        diagnostic = {
+            "extraction_rate",
+            "format_compliance",
+            "case_study_analyst",
+            "metric_summary_analyst",
+        }
+        return "diagnostic" if metric_name in diagnostic else "secondary"
+
     def _inflate_metrics(self, metric_names: List[str]) -> List[Dict[str, Any]]:
         """
         将简单的指标名称列表膨胀为带有默认优先级的配置字典。
@@ -50,15 +59,8 @@ class MetricDispatcher:
         3. 其他 -> secondary
         """
         result = []
-        DIAGNOSTIC_KEYWORDS = {"extraction_rate", "format_compliance"}
-        
         for idx, name in enumerate(metric_names):
-            priority = "secondary"
-            if idx == 0:
-                priority = "primary"
-            elif name in DIAGNOSTIC_KEYWORDS:
-                priority = "diagnostic"
-            
+            priority = "primary" if idx == 0 else self.get_default_priority(name)
             result.append({
                 "name": name,
                 "priority": priority

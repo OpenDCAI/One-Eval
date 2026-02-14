@@ -1,5 +1,4 @@
 from typing import List, Any, Dict
-from one_eval.core.metric_registry import register_metric, MetricCategory
 try:
     from sympy import parse_expr, simplify
     from sympy.parsing.sympy_parser import standard_transformations, implicit_multiplication_application
@@ -7,12 +6,6 @@ try:
 except ImportError:
     HAS_SYMPY = False
 
-@register_metric(
-    name="symbolic_match",
-    desc="SymPy / LaTeX 等价性校验",
-    usage="代数推导/高等数学",
-    categories=[MetricCategory.QA_SINGLE]
-)
 def compute_symbolic_match(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
     if not HAS_SYMPY:
         return {"score": 0.0, "error": "sympy not installed. Please pip install sympy."}

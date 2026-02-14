@@ -25,35 +25,35 @@ class MetricPromptGenerator:
         {
             "condition": "生成式：单参考答案 (key2_qa): keys=[question,target]",
             "rules": [
-                "默认 -> `exact_match`(primary) + `extraction_rate`(diagnostic)，必要时补 `f1`(secondary)。",
-                "若答案是数值/算术 -> `numerical_match`(primary)；若含 LaTeX/符号推导 -> `symbolic_match`(primary) + `strict_match`(secondary)。",
-                "若是摘要/翻译类 -> `rouge_l` 或 `bleu` 作为主指标。"
+                "仅选择 1 个主指标，其余尽可能多推荐可执行的辅/诊断指标。",
+                "优先结合样例输出的格式特征（数值/符号/长文本）选择指标。",
+                "若多种指标都可能适用，请说明取舍依据。"
             ],
         },
         {
             "condition": "生成式：多参考答案 (key2_q_ma): keys=[question,targets[]]",
             "rules": [
-                "使用与单参考相同的指标族，但 evaluator 需支持多参考（多 gold）聚合。",
-                "默认仍建议加 `extraction_rate` 监控答案提取/对齐成功率。"
+                "选择能支持多参考聚合的指标；优先从库中挑选最能反映任务目标的主指标。",
+                "除主指标外，尽可能多推荐可执行的辅/诊断指标。"
             ],
         },
         {
             "condition": "选择题：单正确 (key3_q_choices_a): keys=[question,choices[],label]",
             "rules": [
-                "使用 `choice_accuracy`(primary)；诊断可加 `missing_answer_rate`。",
-                "二分类/多分类可选 `auc_roc`(primary) + `accuracy`(secondary)。"
+                "从指标库中选择最能反映选择题正确性的主指标，并说明原因。",
+                "除主指标外，尽可能多推荐可执行的辅/诊断指标。"
             ],
         },
         {
             "condition": "选择题：多正确 (key3_q_choices_as): keys=[question,choices[],labels[]]",
             "rules": [
-                "优先选择支持多标签/多选规则的实现；当前 registry 以 `choice_accuracy`/`missing_answer_rate` 占位，具体聚合规则由 evaluator 定义。"
+                "选择支持多选/多标签的指标作为主指标，并尽可能多补充诊断项。"
             ],
         },
         {
             "condition": "偏好/排序：成对比较 (key3_q_a_rejected): keys=[question,better,rejected]",
             "rules": [
-                "使用 `win_rate_against_baseline`(primary)，含义为 pairwise preference 的取胜率。"
+                "选择能反映偏好/排序稳定性的主指标，并尽可能多补充诊断指标。"
             ],
         },
     ]
