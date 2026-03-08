@@ -15,6 +15,10 @@ import {
   RefreshCw,
   Loader2,
   Plus,
+  Bot,
+  MessageSquare,
+  FlaskConical,
+  FileSearch,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,7 +30,7 @@ import { cn } from "@/lib/utils";
 // Types - 匹配 bench_gallery.json 的数据结构
 // ============================================================================
 
-type BenchCategory = "Math" | "Reasoning" | "Knowledge" | "Safety" | "Coding" | "General";
+type BenchCategory = "Math" | "Reasoning" | "Knowledge & QA" | "Safety & Alignment" | "Coding" | "Agents & Tools" | "Instruction & Chat" | "Long Context & RAG" | "Domain-Specific";
 
 // bench_gallery.json 中的 HF 元数据
 type HfMeta = {
@@ -101,7 +105,6 @@ type BenchItem = {
     category: BenchCategory;
     tags: string[];
     description: string;
-    sampleCount?: number;
     datasetUrl?: string;
     datasetKeys?: string[];
   };
@@ -115,12 +118,15 @@ type BenchItem = {
 
 const CATEGORIES: Array<{ id: BenchCategory | "All"; label: string }> = [
   { id: "All", label: "All" },
-  { id: "Math", label: "Math" },
+  { id: "Knowledge & QA", label: "Knowledge & QA" },
   { id: "Reasoning", label: "Reasoning" },
-  { id: "Knowledge", label: "Knowledge" },
-  { id: "Safety", label: "Safety" },
+  { id: "Math", label: "Math" },
   { id: "Coding", label: "Coding" },
-  { id: "General", label: "General" },
+  { id: "Long Context & RAG", label: "Long Context & RAG" },
+  { id: "Instruction & Chat", label: "Instruction & Chat" },
+  { id: "Agents & Tools", label: "Agents & Tools" },
+  { id: "Safety & Alignment", label: "Safety & Alignment" },
+  { id: "Domain-Specific", label: "Domain-Specific" },
 ];
 
 // ============================================================================
@@ -133,12 +139,20 @@ function getBenchIcon(category: BenchCategory) {
       return { Icon: BookOpen, bg: "bg-emerald-50", fg: "text-emerald-600" };
     case "Reasoning":
       return { Icon: Brain, bg: "bg-indigo-50", fg: "text-indigo-600" };
-    case "Knowledge":
+    case "Knowledge & QA":
       return { Icon: GraduationCap, bg: "bg-sky-50", fg: "text-sky-600" };
-    case "Safety":
+    case "Safety & Alignment":
       return { Icon: ShieldCheck, bg: "bg-amber-50", fg: "text-amber-700" };
     case "Coding":
       return { Icon: Code2, bg: "bg-violet-50", fg: "text-violet-600" };
+    case "Agents & Tools":
+      return { Icon: Bot, bg: "bg-rose-50", fg: "text-rose-600" };
+    case "Instruction & Chat":
+      return { Icon: MessageSquare, bg: "bg-pink-50", fg: "text-pink-600" };
+    case "Long Context & RAG":
+      return { Icon: FileSearch, bg: "bg-cyan-50", fg: "text-cyan-600" };
+    case "Domain-Specific":
+      return { Icon: FlaskConical, bg: "bg-orange-50", fg: "text-orange-600" };
     default:
       return { Icon: Tag, bg: "bg-slate-50", fg: "text-slate-600" };
   }
@@ -156,7 +170,7 @@ function transformBenchGalleryItem(item: BenchGalleryItem): BenchItem {
     id: item.bench_name,
     name: displayName,
     meta: {
-      category: meta.category || "General",
+      category: meta.category || "Knowledge & QA",
       tags: meta.tags || [],
       description: meta.description || "",
       datasetUrl: item.bench_source_url,
@@ -190,16 +204,20 @@ function saveGalleryBenches(items: BenchItem[]) {
 // Component
 // ============================================================================
 
-// Bench 类型选项
+// Bench 类型选项（对应新分类）
 const BENCH_TYPES = [
-  "language & reasoning",
-  "safety",
-  "code",
-  "math",
   "knowledge",
+  "language & reasoning",
+  "math",
+  "coding",
   "information retrieval & RAG",
+  "instruction-following",
+  "conversation & chatbots",
   "agents & tools use",
-  "multimodal",
+  "safety",
+  "bias & ethics",
+  "domain-specific",
+  "multilingual",
   "other",
 ];
 
@@ -217,7 +235,7 @@ export const Gallery = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [addForm, setAddForm] = useState({
     bench_name: "",
-    type: "language & reasoning",
+    type: "knowledge",
     description: "",
     dataset_url: "",
   });
@@ -315,7 +333,7 @@ export const Gallery = () => {
       // 成功后刷新列表并关闭弹窗
       await fetchBenches();
       setIsAddModalOpen(false);
-      setAddForm({ bench_name: "", type: "language & reasoning", description: "", dataset_url: "" });
+      setAddForm({ bench_name: "", type: "knowledge", description: "", dataset_url: "" });
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to add bench");
     } finally {
@@ -420,11 +438,6 @@ export const Gallery = () => {
                           <div className="text-xs text-slate-500 mt-0.5">{bench.meta.category}</div>
                         </div>
                       </div>
-                      {bench.meta.sampleCount != null && (
-                        <div className="px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs font-mono text-slate-500">
-                          {bench.meta.sampleCount.toLocaleString()} samples
-                        </div>
-                      )}
                     </div>
 
                     <div className="flex flex-wrap gap-2 mt-4">
@@ -557,24 +570,6 @@ export const Gallery = () => {
                             .split(",")
                             .map((t) => t.trim())
                             .filter(Boolean),
-                        },
-                      })
-                    }
-                    className="border-slate-200"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Sample Count</Label>
-                  <Input
-                    type="number"
-                    value={activeBench.meta.sampleCount ?? ""}
-                    onChange={(e) =>
-                      handleUpdateBench({
-                        ...activeBench,
-                        meta: {
-                          ...activeBench.meta,
-                          sampleCount: e.target.value ? Number(e.target.value) : undefined,
                         },
                       })
                     }
