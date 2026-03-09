@@ -37,7 +37,5 @@ word2number>=1.1
 # Install separately with matching CUDA version if needed.
 # vllm>=0.3.0
 
-# --- Project Dependencies (installed separately) ---
-# dataflow (open-dataflow) must be installed from source before running.
-# See README for instructions.
-# open-dataflow
+# --- Project Dependencies ---
+open-dataflow
