@@ -4,19 +4,36 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "one-eval"
-description = "A evaluation framework for LLM models"
-version = "0.0.0"
+description = "An agentic evaluation framework for LLM models"
+version = "0.1.0"
 authors = [
     { name = "scuuy", email = "scuuy05@gmail.com" }
 ]
 readme = "README.md"
-license = { file = "LICENSE" }
+license = {text = "Apache-2.0"}
 classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3 :: Only",
     "Operating System :: OS Independent",
 ]
+keywords = ["evaluation", "LLM", "benchmark", "agent", "langgraph"]
 requires-python = ">=3.10"
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = "requirements.txt"}
+
+[project.optional-dependencies]
+# Local model serving (requires matching CUDA version, install separately)
+vllm = ["vllm>=0.3.0"]
 
 [project.urls]
 "Homepage" = "https://github.com/OpenDCAI/One-Eval"

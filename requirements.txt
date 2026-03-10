@@ -1,44 +1,48 @@
 # One-Eval Requirements
 
 # --- Core AI & Agent Framework ---
-langchain>=0.1.0
 langchain-core>=0.1.0
 langchain-openai>=0.0.5
-langgraph>=0.0.10
-langgraph-checkpoint-sqlite
+langgraph>=0.2.0
+langgraph-checkpoint-sqlite>=2.0.0
 pydantic>=2.0.0
 
 # --- Data Processing & HuggingFace ---
-huggingface_hub>=0.20.0
+huggingface-hub>=0.20.0
 datasets>=2.16.0
 pandas>=2.0.0
 numpy>=1.24.0
 
+# --- ML / Metrics ---
+scikit-learn>=1.3.0
+scipy>=1.11.0
+rouge-score>=0.1.2
+sacrebleu>=2.3.0
+
 # --- LLM Client & Serving ---
 openai>=1.0.0
-# vllm is required for local model serving. 
-# It is recommended to install it with specific CUDA version if needed.
-vllm>=0.3.0
+
+# --- Web / Server ---
+fastapi>=0.100.0
+uvicorn>=0.23.0
+httpx>=0.24.0
+requests>=2.31.0
 
 # --- Utilities ---
-tqdm
+tqdm>=4.65.0
+word2number>=1.1
+
+# --- Optional: Local Model Serving ---
+# vllm is required for local model serving.
+# Install separately with matching CUDA version if needed.
+# vllm>=0.3.0
+
+# --- Project Dependencies ---
+open-dataflow
 aiohttp
-
-# --- Server & HTTP ---
-fastapi
-uvicorn
-requests
-httpx
-
-# --- Metrics & Math ---
-scikit-learn
-scipy
-math-verify
-
-# --- Configuration ---
-python-dotenv
-
+sacrebleu
+rouge_score
+openpyxl
 # --- Project Dependencies ---
 # These libraries are assumed to be installed from local sources or private PyPI
 # open-dataflow>=0.1.0
-# dataflow-agent>=0.1.0

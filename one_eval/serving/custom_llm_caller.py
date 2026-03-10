@@ -1,14 +1,36 @@
 # one_eval/serving/custom_llm_caller.py
 from __future__ import annotations
 import httpx
-from typing import List, Dict, Any
+from abc import ABC, abstractmethod
+from typing import List, Dict, Any, Optional
 from langchain_core.messages import BaseMessage, AIMessage
 from langchain_openai import ChatOpenAI
 
-from dataflow_agent.llm_callers.base import BaseLLMCaller
 from one_eval.logger import get_logger
 
 log = get_logger("CustomLLMCaller")
+
+
+class BaseLLMCaller(ABC):
+    def __init__(
+        self,
+        state: Any,
+        model_name: Optional[str] = None,
+        temperature: float = 0.0,
+        max_tokens: int = 4096,
+        tool_mode: str = "auto",
+        tool_manager: Optional[Any] = None,
+    ):
+        self.state = state
+        self.model_name = model_name or getattr(state.request, "model", None)
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.tool_mode = tool_mode
+        self.tool_manager = tool_manager
+
+    @abstractmethod
+    async def call(self, messages: List[BaseMessage], bind_post_tools: bool = False) -> AIMessage:
+        pass
 
 
 class CustomLLMCaller(BaseLLMCaller):

@@ -21,7 +21,7 @@
           "crmarena",
           "CRMArena"
         ],
-        "category": "General",
+        "category": "Agents & Tools",
         "tags": [
           "agents & tools use"
         ],
@@ -98,7 +98,7 @@
           "crmarena-pro",
           "CRMArena-Pro"
         ],
-        "category": "General",
+        "category": "Agents & Tools",
         "tags": [
           "agents & tools use"
         ],
@@ -197,7 +197,7 @@
           "gaia",
           "GAIA"
         ],
-        "category": "General",
+        "category": "Agents & Tools",
         "tags": [
           "agents & tools use"
         ],
@@ -307,7 +307,7 @@
           "scigym",
           "SciGym"
         ],
-        "category": "General",
+        "category": "Agents & Tools",
         "tags": [
           "agents & tools use",
           "domain-specific"
@@ -373,10 +373,9 @@
           "acpbench",
           "ACPBench"
         ],
-        "category": "Reasoning",
+        "category": "Agents & Tools",
         "tags": [
-          "agents & tools use",
-          "language & reasoning"
+          "agents & tools use"
         ],
         "description": "A benchmark for evaluating the reasoning tasks in the field of planning. The benchmark consists of 7 reasoning tasks over 13 planning domains.",
         "hf_meta": {
@@ -384,8 +383,7 @@
           "hf_repo": "ibm-research/acp_bench",
           "card_text": "A benchmark for evaluating the reasoning tasks in the field of planning. The benchmark consists of 7 reasoning tasks over 13 planning domains.",
           "tags": [
-            "agents & tools use",
-            "language & reasoning"
+            "agents & tools use"
           ],
           "exists_on_hf": true
         },
@@ -750,7 +748,7 @@
           "global-mmlu",
           "Global MMLU"
         ],
-        "category": "Safety",
+        "category": "Safety & Alignment",
         "tags": [
           "bias & ethics"
         ],
@@ -1402,7 +1400,7 @@
           "civil-comments",
           "Civil Comments"
         ],
-        "category": "Safety",
+        "category": "Safety & Alignment",
         "tags": [
           "bias & ethics"
         ],
@@ -2045,7 +2043,7 @@
           "wildchat",
           "WildChat"
         ],
-        "category": "General",
+        "category": "Instruction & Chat",
         "tags": [
           "conversation & chatbots"
         ],
@@ -2110,7 +2108,7 @@
           "mixeval",
           "MixEval"
         ],
-        "category": "General",
+        "category": "Instruction & Chat",
         "tags": [
           "conversation & chatbots"
         ],
@@ -2197,7 +2195,7 @@
           "mt-bench",
           "MT-Bench"
         ],
-        "category": "General",
+        "category": "Instruction & Chat",
         "tags": [
           "conversation & chatbots"
         ],
@@ -2270,7 +2268,7 @@
           "wildbench",
           "Wildbench"
         ],
-        "category": "General",
+        "category": "Instruction & Chat",
         "tags": [
           "conversation & chatbots"
         ],
@@ -2357,7 +2355,7 @@
           "lab-bench-language-agent-biology-benchmark",
           "LAB-Bench (Language Agent Biology Benchmark)"
         ],
-        "category": "General",
+        "category": "Domain-Specific",
         "tags": [
           "domain-specific"
         ],
@@ -2493,7 +2491,7 @@
           "cupcase",
           "CUPCase"
         ],
-        "category": "General",
+        "category": "Domain-Specific",
         "tags": [
           "domain-specific"
         ],
@@ -2568,7 +2566,7 @@
           "medconceptsqa",
           "MedConceptsQA"
         ],
-        "category": "General",
+        "category": "Domain-Specific",
         "tags": [
           "domain-specific"
         ],
@@ -2850,8 +2848,9 @@
           "eq-bench",
           "EQ-Bench"
         ],
-        "category": "General",
+        "category": "Instruction & Chat",
         "tags": [
+          "conversation & chatbots",
           "empathy"
         ],
         "description": "Assesses the ability of LLMs to understand complex emotions and social interactions by asking them to predict the intensity of emotional states of characters in a dialogue.",
@@ -2860,6 +2859,7 @@
           "hf_repo": "pbevan11/EQ-Bench",
           "card_text": "Assesses the ability of LLMs to understand complex emotions and social interactions by asking them to predict the intensity of emotional states of characters in a dialogue.",
           "tags": [
+            "conversation & chatbots",
             "empathy"
           ],
           "exists_on_hf": true
@@ -2914,7 +2914,7 @@
           "wice",
           "WiCE"
         ],
-        "category": "General",
+        "category": "Long Context & RAG",
         "tags": [
           "information retrieval & RAG"
         ],
@@ -2990,7 +2990,7 @@
           "contextualbench",
           "ContextualBench"
         ],
-        "category": "General",
+        "category": "Long Context & RAG",
         "tags": [
           "information retrieval & RAG"
         ],
@@ -3119,7 +3119,7 @@
           "nolima",
           "NoLiMa"
         ],
-        "category": "General",
+        "category": "Long Context & RAG",
         "tags": [
           "information retrieval & RAG"
         ],
@@ -3180,7 +3180,7 @@
           "wixqa",
           "WixQA"
         ],
-        "category": "General",
+        "category": "Long Context & RAG",
         "tags": [
           "information retrieval & RAG"
         ],
@@ -3285,11 +3285,10 @@
           "frames-factuality-retrieval-and-reasoning-measurement-set",
           "FRAMES (Factuality, Retrieval, And reasoning MEasurement Set)"
         ],
-        "category": "Safety",
+        "category": "Long Context & RAG",
         "tags": [
           "information retrieval & RAG",
-          "language & reasoning",
-          "safety"
+          "language & reasoning"
         ],
         "description": "Tests the capabilities of Retrieval-Augmented Generation (RAG) systems across factuality, retrieval accuracy, and reasoning.",
         "hf_meta": {
@@ -3298,8 +3297,7 @@
           "card_text": "Tests the capabilities of Retrieval-Augmented Generation (RAG) systems across factuality, retrieval accuracy, and reasoning.",
           "tags": [
             "information retrieval & RAG",
-            "language & reasoning",
-            "safety"
+            "language & reasoning"
           ],
           "exists_on_hf": true
         },
@@ -3359,10 +3357,9 @@
           "ragtruth",
           "RAGTruth"
         ],
-        "category": "Safety",
+        "category": "Long Context & RAG",
         "tags": [
-          "information retrieval & RAG",
-          "safety"
+          "information retrieval & RAG"
         ],
         "description": "A corpus tailored for analyzing word-level hallucinations within the standard RAG frameworks for LLM applications. RAGTruth comprises 18,000 naturally generated responses from diverse LLMs using RAG.",
         "hf_meta": {
@@ -3370,8 +3367,7 @@
           "hf_repo": "wandb/RAGTruth-processed",
           "card_text": "A corpus tailored for analyzing word-level hallucinations within the standard RAG frameworks for LLM applications. RAGTruth comprises 18,000 naturally generated responses from diverse LLMs using RAG.",
           "tags": [
-            "information retrieval & RAG",
-            "safety"
+            "information retrieval & RAG"
           ],
           "exists_on_hf": true
         },
@@ -3432,7 +3428,7 @@
           "infobench",
           "Infobench"
         ],
-        "category": "General",
+        "category": "Instruction & Chat",
         "tags": [
           "instruction-following"
         ],
@@ -3498,10 +3494,10 @@
           "megascience",
           "MegaScience"
         ],
-        "category": "Knowledge",
+        "category": "Knowledge & QA",
         "tags": [
           "knowledge",
-          "language & reasoning"
+          "domain-specific"
         ],
         "description": "A large-scale mixture of high-quality open-source datasets totaling 1.25 million instances.",
         "hf_meta": {
@@ -3510,7 +3506,7 @@
           "card_text": "A large-scale mixture of high-quality open-source datasets totaling 1.25 million instances.",
           "tags": [
             "knowledge",
-            "language & reasoning"
+            "domain-specific"
           ],
           "exists_on_hf": true
         },
@@ -3564,10 +3560,9 @@
           "mmlu",
           "MMLU"
         ],
-        "category": "Knowledge",
+        "category": "Knowledge & QA",
         "tags": [
-          "knowledge",
-          "language & reasoning"
+          "knowledge"
         ],
         "description": "Multi-choice tasks across 57 subjects, high school to expert level.",
         "hf_meta": {
@@ -3575,8 +3570,7 @@
           "hf_repo": "cais/mmlu",
           "card_text": "Multi-choice tasks across 57 subjects, high school to expert level.",
           "tags": [
-            "knowledge",
-            "language & reasoning"
+            "knowledge"
           ],
           "exists_on_hf": true
         },
@@ -4678,10 +4672,9 @@
           "arc",
           "ARC"
         ],
-        "category": "Knowledge",
+        "category": "Knowledge & QA",
         "tags": [
-          "knowledge",
-          "language & reasoning"
+          "knowledge"
         ],
         "description": "Grade-school level, multiple-choice science questions.",
         "hf_meta": {
@@ -4689,8 +4682,7 @@
           "hf_repo": "allenai/ai2_arc",
           "card_text": "Grade-school level, multiple-choice science questions.",
           "tags": [
-            "knowledge",
-            "language & reasoning"
+            "knowledge"
           ],
           "exists_on_hf": true
         },
@@ -4774,10 +4766,9 @@
           "mmlu-pro",
           "MMLU Pro"
         ],
-        "category": "Knowledge",
+        "category": "Knowledge & QA",
         "tags": [
-          "knowledge",
-          "language & reasoning"
+          "knowledge"
         ],
         "description": "An enhanced dataset designed to extend the MMLU benchmark. More challenging questions, the choice set of ten options.",
         "hf_meta": {
@@ -4785,8 +4776,7 @@
           "hf_repo": "TIGER-Lab/MMLU-Pro",
           "card_text": "An enhanced dataset designed to extend the MMLU benchmark. More challenging questions, the choice set of ten options.",
           "tags": [
-            "knowledge",
-            "language & reasoning"
+            "knowledge"
           ],
           "exists_on_hf": true
         },
@@ -4842,10 +4832,9 @@
           "truthfulqa",
           "TruthfulQA"
         ],
-        "category": "Safety",
+        "category": "Knowledge & QA",
         "tags": [
           "knowledge",
-          "language & reasoning",
           "safety"
         ],
         "description": "Evaluates how well models generate truthful responses.",
@@ -4855,7 +4844,6 @@
           "card_text": "Evaluates how well models generate truthful responses.",
           "tags": [
             "knowledge",
-            "language & reasoning",
             "safety"
           ],
           "exists_on_hf": true
@@ -5567,9 +5555,9 @@
           "squad-stanford-question-answering-dataset",
           "SQuAD (Stanford Question Answering Dataset)"
         ],
-        "category": "Reasoning",
+        "category": "Long Context & RAG",
         "tags": [
-          "language & reasoning"
+          "information retrieval & RAG"
         ],
         "description": "A reading comprehension dataset consisting of 100,000 questions posed by crowdworkers on a set of Wikipedia articles.",
         "hf_meta": {
@@ -5577,7 +5565,7 @@
           "hf_repo": "rajpurkar/squad",
           "card_text": "A reading comprehension dataset consisting of 100,000 questions posed by crowdworkers on a set of Wikipedia articles.",
           "tags": [
-            "language & reasoning"
+            "information retrieval & RAG"
           ],
           "exists_on_hf": true
         },
@@ -5635,9 +5623,9 @@
           "openbookqa",
           "OpenBookQA"
         ],
-        "category": "Reasoning",
+        "category": "Knowledge & QA",
         "tags": [
-          "language & reasoning"
+          "knowledge"
         ],
         "description": "Question answering dataset, modeled after open book exams.",
         "hf_meta": {
@@ -5645,7 +5633,7 @@
           "hf_repo": "allenai/openbookqa",
           "card_text": "Question answering dataset, modeled after open book exams.",
           "tags": [
-            "language & reasoning"
+            "knowledge"
           ],
           "exists_on_hf": true
         },
@@ -5723,9 +5711,9 @@
           "squad2-0",
           "SQuAD2.0"
         ],
-        "category": "Reasoning",
+        "category": "Long Context & RAG",
         "tags": [
-          "language & reasoning"
+          "information retrieval & RAG"
         ],
         "description": "Combines the 100,000 questions in SQuAD1.1 with over 50,000 unanswerable questions written adversarially by crowdworkers to look similar to answerable ones.",
         "hf_meta": {
@@ -5733,7 +5721,7 @@
           "hf_repo": "bayes-group-diffusion/squad-2.0",
           "card_text": "Combines the 100,000 questions in SQuAD1.1 with over 50,000 unanswerable questions written adversarially by crowdworkers to look similar to answerable ones.",
           "tags": [
-            "language & reasoning"
+            "information retrieval & RAG"
           ],
           "exists_on_hf": true
         },
@@ -5796,9 +5784,9 @@
           "ms-marco",
           "MS MARCO"
         ],
-        "category": "Reasoning",
+        "category": "Long Context & RAG",
         "tags": [
-          "language & reasoning"
+          "information retrieval & RAG"
         ],
         "description": "Questions sampled from Bing's search query logs and passages from web documents.",
         "hf_meta": {
@@ -5806,7 +5794,7 @@
           "hf_repo": "microsoft/ms_marco",
           "card_text": "Questions sampled from Bing's search query logs and passages from web documents.",
           "tags": [
-            "language & reasoning"
+            "information retrieval & RAG"
           ],
           "exists_on_hf": true
         },
@@ -5883,9 +5871,9 @@
           "sciq",
           "SciQ"
         ],
-        "category": "Reasoning",
+        "category": "Knowledge & QA",
         "tags": [
-          "language & reasoning"
+          "knowledge"
         ],
         "description": "Multiple choice science exam questions.",
         "hf_meta": {
@@ -5893,7 +5881,7 @@
           "hf_repo": "allenai/sciq",
           "card_text": "Multiple choice science exam questions.",
           "tags": [
-            "language & reasoning"
+            "knowledge"
           ],
           "exists_on_hf": true
         },
@@ -5963,9 +5951,9 @@
           "triviaqa",
           "TriviaQA"
         ],
-        "category": "Reasoning",
+        "category": "Knowledge & QA",
         "tags": [
-          "language & reasoning"
+          "knowledge"
         ],
         "description": "A large-scale question-answering dataset.",
         "hf_meta": {
@@ -5973,7 +5961,7 @@
           "hf_repo": "mandarjoshi/trivia_qa",
           "card_text": "A large-scale question-answering dataset.",
           "tags": [
-            "language & reasoning"
+            "knowledge"
           ],
           "exists_on_hf": true
         },
@@ -6685,9 +6673,10 @@
           "longbench",
           "LongBench"
         ],
-        "category": "Reasoning",
+        "category": "Long Context & RAG",
         "tags": [
-          "language & reasoning"
+          "language & reasoning",
+          "information retrieval & RAG"
         ],
         "description": "Assesses the ability of LLMs to handle long-context problems requiring deep understanding and reasoning across real-world multitasks. Consists of multiple-choice questions, with contexts ranging from 8k to 2M words.",
         "hf_meta": {
@@ -6695,7 +6684,8 @@
           "hf_repo": "THUDM/LongBench-v2",
           "card_text": "Assesses the ability of LLMs to handle long-context problems requiring deep understanding and reasoning across real-world multitasks. Consists of multiple-choice questions, with contexts ranging from 8k to 2M words.",
           "tags": [
-            "language & reasoning"
+            "language & reasoning",
+            "information retrieval & RAG"
           ],
           "exists_on_hf": true
         },
@@ -6903,9 +6893,10 @@
           "gpqa",
           "GPQA"
         ],
-        "category": "Reasoning",
+        "category": "Knowledge & QA",
         "tags": [
-          "language & reasoning"
+          "knowledge",
+          "domain-specific"
         ],
         "description": "A set of multiple-choice questions written by domain experts in biology, physics, and chemistry.",
         "hf_meta": {
@@ -6913,7 +6904,8 @@
           "hf_repo": "Idavidrein/gpqa",
           "card_text": "A set of multiple-choice questions written by domain experts in biology, physics, and chemistry.",
           "tags": [
-            "language & reasoning"
+            "knowledge",
+            "domain-specific"
           ],
           "exists_on_hf": true
         },
@@ -7006,12 +6998,10 @@
           "biggen-bench",
           "BiGGen-Bench"
         ],
-        "category": "Safety",
+        "category": "Instruction & Chat",
         "tags": [
-          "language & reasoning",
-          "agents & tools use",
-          "safety",
-          "instruction-following"
+          "instruction-following",
+          "agents & tools use"
         ],
         "description": "Evaluates nine distinct capabilities of LMs, including instruction following, reasoning, tool usage, and safety.",
         "hf_meta": {
@@ -7019,10 +7009,8 @@
           "hf_repo": "prometheus-eval/BiGGen-Bench",
           "card_text": "Evaluates nine distinct capabilities of LMs, including instruction following, reasoning, tool usage, and safety.",
           "tags": [
-            "language & reasoning",
-            "agents & tools use",
-            "safety",
-            "instruction-following"
+            "instruction-following",
+            "agents & tools use"
           ],
           "exists_on_hf": true
         },
@@ -7079,9 +7067,8 @@
           "include",
           "Include"
         ],
-        "category": "Reasoning",
+        "category": "Instruction & Chat",
         "tags": [
-          "language & reasoning",
           "multilingual"
         ],
         "description": "An evaluation suite to measure the capabilities of multilingual LLMs in a variety of regional contexts across 44 written languages.",
@@ -7090,7 +7077,6 @@
           "hf_repo": "CohereLabs/include-base-44",
           "card_text": "An evaluation suite to measure the capabilities of multilingual LLMs in a variety of regional contexts across 44 written languages.",
           "tags": [
-            "language & reasoning",
             "multilingual"
           ],
           "exists_on_hf": true
@@ -7783,9 +7769,8 @@
           "multinrc",
           "MultiNRC"
         ],
-        "category": "Reasoning",
+        "category": "Instruction & Chat",
         "tags": [
-          "language & reasoning",
           "multilingual"
         ],
         "description": "Assesses LLMs on reasoning questions written by native speakers in French, Spanish, and Chinese. MultiNRC covers four core reasoning categories: language-specific linguistic reasoning, wordplay & riddles, cultural/tradition reasoning, and math reasoning with cultural relevance.",
@@ -7794,7 +7779,6 @@
           "hf_repo": "ScaleAI/MultiNRC",
           "card_text": "Assesses LLMs on reasoning questions written by native speakers in French, Spanish, and Chinese. MultiNRC covers four core reasoning categories: language-specific linguistic reasoning, wordplay & riddles, cultural/tradition reasoning, and math reasoning with cultural relevance.",
           "tags": [
-            "language & reasoning",
             "multilingual"
           ],
           "exists_on_hf": true
@@ -7853,7 +7837,7 @@
           "judgebench",
           "JudgeBench"
         ],
-        "category": "General",
+        "category": "Instruction & Chat",
         "tags": [
           "llm judge evaluation"
         ],
@@ -8366,9 +8350,9 @@
           "simpleqa",
           "SimpleQA"
         ],
-        "category": "Safety",
+        "category": "Knowledge & QA",
         "tags": [
-          "safety"
+          "knowledge"
         ],
         "description": "Measures the ability for language models to answer short, fact-seeking questions to reduce hallucinations.",
         "hf_meta": {
@@ -8376,7 +8360,7 @@
           "hf_repo": "basicv8vc/SimpleQA",
           "card_text": "Measures the ability for language models to answer short, fact-seeking questions to reduce hallucinations.",
           "tags": [
-            "safety"
+            "knowledge"
           ],
           "exists_on_hf": true
         },
@@ -8425,7 +8409,7 @@
           "air-bench",
           "AIR-Bench"
         ],
-        "category": "Safety",
+        "category": "Safety & Alignment",
         "tags": [
           "safety"
         ],
@@ -8537,7 +8521,7 @@
           "or-bench",
           "OR-Bench"
         ],
-        "category": "Safety",
+        "category": "Safety & Alignment",
         "tags": [
           "safety"
         ],
@@ -8624,8 +8608,9 @@
           "agentharm",
           "AgentHarm"
         ],
-        "category": "Safety",
+        "category": "Agents & Tools",
         "tags": [
+          "agents & tools use",
           "safety"
         ],
         "description": "Explicitly malicious agent tasks, including fraud, cybercrime, and harassment.",
@@ -8634,6 +8619,7 @@
           "hf_repo": "ai-safety-institute/AgentHarm",
           "card_text": "Explicitly malicious agent tasks, including fraud, cybercrime, and harassment.",
           "tags": [
+            "agents & tools use",
             "safety"
           ],
           "exists_on_hf": true
@@ -8719,7 +8705,7 @@
           "backdoorllm",
           "BackdoorLLM"
         ],
-        "category": "Safety",
+        "category": "Safety & Alignment",
         "tags": [
           "safety"
         ],
@@ -8783,7 +8769,7 @@
           "safetybench",
           "SafetyBench"
         ],
-        "category": "Safety",
+        "category": "Safety & Alignment",
         "tags": [
           "safety"
         ],
@@ -8871,7 +8857,7 @@
           "harmfulqa",
           "HarmfulQA"
         ],
-        "category": "Safety",
+        "category": "Safety & Alignment",
         "tags": [
           "safety"
         ],
@@ -8936,7 +8922,7 @@
           "beavertails",
           "BeaverTails"
         ],
-        "category": "Safety",
+        "category": "Safety & Alignment",
         "tags": [
           "safety"
         ],
@@ -9030,7 +9016,7 @@
           "donotanswer",
           "DoNotAnswer"
         ],
-        "category": "Safety",
+        "category": "Safety & Alignment",
         "tags": [
           "safety"
         ],
@@ -9103,7 +9089,7 @@
           "toxigen",
           "ToxiGen"
         ],
-        "category": "Safety",
+        "category": "Safety & Alignment",
         "tags": [
           "safety"
         ],
@@ -9317,7 +9303,7 @@
           "anthropicredteam",
           "AnthropicRedTeam"
         ],
-        "category": "Safety",
+        "category": "Safety & Alignment",
         "tags": [
           "safety"
         ],
@@ -9386,7 +9372,7 @@
           "realtoxicityprompt",
           "RealToxicityPrompt"
         ],
-        "category": "Safety",
+        "category": "Safety & Alignment",
         "tags": [
           "safety"
         ],
@@ -9451,9 +9437,8 @@
           "stereoset",
           "StereoSet"
         ],
-        "category": "Safety",
+        "category": "Safety & Alignment",
         "tags": [
-          "safety",
           "bias & ethics"
         ],
         "description": "A large-scale natural dataset in English to measure stereotypical biases in four domains: gender, profession, race, and religion.",
@@ -9462,7 +9447,6 @@
           "hf_repo": "McGill-NLP/stereoset",
           "card_text": "A large-scale natural dataset in English to measure stereotypical biases in four domains: gender, profession, race, and religion.",
           "tags": [
-            "safety",
             "bias & ethics"
           ],
           "exists_on_hf": true
@@ -9532,9 +9516,8 @@
           "winogender",
           "WinoGender"
         ],
-        "category": "Safety",
+        "category": "Safety & Alignment",
         "tags": [
-          "safety",
           "bias & ethics"
         ],
         "description": "Pairs of sentences that differ only by the gender of one pronoun in the sentence, designed to test for the presence of gender bias in automated coreference resolution systems.",
@@ -9543,7 +9526,6 @@
           "hf_repo": "oskarvanderwal/winogender",
           "card_text": "Pairs of sentences that differ only by the gender of one pronoun in the sentence, designed to test for the presence of gender bias in automated coreference resolution systems.",
           "tags": [
-            "safety",
             "bias & ethics"
           ],
           "exists_on_hf": true

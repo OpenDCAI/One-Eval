@@ -471,6 +471,10 @@ class BenchNameSuggestNode(BaseNode):
         # 如果已经是 repo ID 格式，直接返回
         return url
 
+    # 质量阈值：低于此分数的本地结果视为不够匹配
+    SCORE_THRESHOLD_TFIDF = 0.3
+    SCORE_THRESHOLD_RAG = 0.5
+
     async def run(self, state: NodeState) -> NodeState:
         """
         执行 benchmark 检索推荐
@@ -478,7 +482,7 @@ class BenchNameSuggestNode(BaseNode):
         流程：
         1. 从 state 中提取查询信息
         2. 使用 BenchmarkRetriever 检索（RAG 或 TF-IDF）
-        3. 返回 top_k 个结果，设置 skip_resolve=True 跳过后续 HF 解析
+        3. 按分数阈值过滤，高质量结果保留；不足时交由 BenchResolveAgent 上 HF 补充
         """
         info = self._extract_query_info(state)
 
@@ -507,9 +511,13 @@ class BenchNameSuggestNode(BaseNode):
         mode = "RAG" if use_rag else "TF-IDF"
         log.info(f"[{mode}模式] 检索到 {len(search_results)} 个 benchmark")
 
+        # 按分数阈值区分高质量 / 低质量结果
+        score_threshold = self.SCORE_THRESHOLD_RAG if use_rag else self.SCORE_THRESHOLD_TFIDF
+
         # 转换检索结果
         bench_info: Dict[str, Dict[str, Any]] = {}
         local_matches = []
+        quality_matches = []  # 高于阈值的结果
 
         for result in search_results:
             name = result.get('name', '')
@@ -519,41 +527,79 @@ class BenchNameSuggestNode(BaseNode):
 
             # 从 URL 提取 HF repo ID（用于下载）
             hf_repo_id = self._extract_hf_repo_from_url(dataset_url) or name
+            score = result.get('score', 0.0)
 
             bench_data = {
                 'bench_name': hf_repo_id,  # 使用完整 repo ID
                 'type': result.get('type', ''),
                 'description': result.get('description', ''),
                 'dataset_url': dataset_url,
-                'score': result.get('score', 0.0),
+                'score': score,
                 'source': 'retrieval',
             }
             bench_info[hf_repo_id] = bench_data
             local_matches.append(bench_data)
+            if score >= score_threshold:
+                quality_matches.append(bench_data)
 
-        # 构建 BenchInfo 列表
+        # 构建 BenchInfo 列表（只保留高质量本地结果）
         state.benches = [
             BenchInfo(
-                bench_name=repo_id,  # 使用完整 HF repo ID
+                bench_name=repo_id,
                 bench_table_exist=True,
                 bench_source_url=bench_info[repo_id].get('dataset_url'),
                 meta=bench_info[repo_id],
             )
             for repo_id in bench_info.keys()
+            if bench_info[repo_id].get('score', 0.0) >= score_threshold
         ]
 
-        state.bench_info = bench_info
+        state.bench_info = {
+            repo_id: data for repo_id, data in bench_info.items()
+            if data.get('score', 0.0) >= score_threshold
+        }
+
+        # 判断是否需要 BenchResolveAgent 去 HF 补充搜索
+        specific_benches: List[str] = info.get("specific_benches") or []
+        need_hf_resolve = len(quality_matches) < self.top_k or len(specific_benches) > 0
+
+        # 收集需要在 HF 上搜索的名称
+        names_for_hf: List[str] = []
+        if need_hf_resolve:
+            matched_names = {m['bench_name'] for m in quality_matches}
+            # 1) 用户明确指定的 benchmark 且本地没有高质量匹配的
+            for name in specific_benches:
+                if name and name not in matched_names:
+                    names_for_hf.append(name)
+            # 2) 本地低分结果的名字也交给 HF 搜索，作为候选补充
+            if len(quality_matches) < self.top_k:
+                for m in local_matches:
+                    if m['bench_name'] not in matched_names and m['bench_name'] not in names_for_hf:
+                        names_for_hf.append(m['bench_name'])
+
+        skip_resolve = not need_hf_resolve
+
+        state.temp_data["skip_resolve"] = skip_resolve
+        state.temp_data["bench_names_suggested"] = names_for_hf
 
         state.agent_results["BenchNameSuggestNode"] = {
             "local_matches": local_matches,
-            "bench_names": [],
-            "skip_resolve": True,
+            "quality_matches": [m['bench_name'] for m in quality_matches],
+            "bench_names": names_for_hf,
+            "skip_resolve": skip_resolve,
             "retrieval_mode": "rag" if use_rag else "tfidf",
             "search_query": search_query,
+            "score_threshold": score_threshold,
         }
 
-        # 跳过后续 BenchResolveAgent
-        state.temp_data["skip_resolve"] = True
+        if skip_resolve:
+            log.info(f"检索完成，{len(quality_matches)} 个高质量结果，跳过 HF 搜索")
+        else:
+            log.info(
+                f"检索完成，{len(quality_matches)}/{self.top_k} 个高质量结果 "
+                f"(阈值 {score_threshold})，将由 BenchResolveAgent 补充 HF 搜索"
+            )
+            if names_for_hf:
+                log.info(f"待 HF 搜索的名称: {names_for_hf}")
 
-        log.info(f"检索完成，返回 {len(local_matches)} 个 benchmark")
         return state
