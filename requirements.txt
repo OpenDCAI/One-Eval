@@ -5,7 +5,7 @@ langchain>=0.1.0
 langchain-core>=0.1.0
 langchain-openai>=0.0.5
 langgraph>=0.0.10
-langgraph.checkpoint.sqlite
+langgraph-checkpoint-sqlite
 pydantic>=2.0.0
 
 # --- Data Processing & HuggingFace ---
@@ -23,6 +23,20 @@ vllm>=0.3.0
 # --- Utilities ---
 tqdm
 aiohttp
+
+# --- Server & HTTP ---
+fastapi
+uvicorn
+requests
+httpx
+
+# --- Metrics & Math ---
+scikit-learn
+scipy
+math-verify
+
+# --- Configuration ---
+python-dotenv
 
 # --- Project Dependencies ---
 # These libraries are assumed to be installed from local sources or private PyPI

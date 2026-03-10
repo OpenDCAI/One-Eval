@@ -8,6 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
+
+import { ReportView } from "./ReportComponents";
+
 // --- Types ---
 export interface Bench {
   bench_name: string;
@@ -24,6 +27,8 @@ export interface WorkflowState {
   benches: Bench[];
   target_model_name?: string;
   target_model?: any;
+  metric_plan?: Record<string, any[]>;
+  reports?: Record<string, any>;
 }
 
 // --- Modal Component ---
@@ -866,6 +871,82 @@ export const WorkflowBlock = ({ title, icon: Icon, nodes, activeNodeId, status, 
     );
 };
 
+
+
+// --- Summary Bench Card Component ---
+const SummaryBenchCard = ({ bench }: { bench: any }) => {
+    const [isResultOpen, setIsResultOpen] = useState(true);
+    // const [isSummaryOpen, setIsSummaryOpen] = useState(false);
+    
+    const hasResult = bench.meta?.eval_result && Object.keys(bench.meta.eval_result).length > 0;
+    // const hasSummary = !!bench.meta?.metric_summary;
+
+    return (
+        <div className="min-w-[320px] bg-white rounded-xl p-3 border border-slate-200 shadow-sm flex flex-col gap-3 relative group hover:border-blue-400 hover:shadow-md transition-all self-start">
+            <div className="flex justify-between items-start">
+                <span className="font-bold text-sm text-slate-800 line-clamp-1" title={bench.bench_name}>{bench.bench_name}</span>
+                <div className={cn(
+                    "w-2 h-2 rounded-full ring-2 ring-white shrink-0 ml-2",
+                    bench.eval_status === "success" ? "bg-emerald-500" : "bg-slate-200"
+                )} />
+            </div>
+            
+            <div className="space-y-2">
+                {/* Metric Result Section */}
+                {hasResult ? (
+                    <div className="border border-slate-100 rounded-lg overflow-hidden bg-slate-50/30">
+                        <div 
+                            className="bg-slate-50 px-3 py-2 flex justify-between items-center cursor-pointer hover:bg-slate-100 transition-colors"
+                            onClick={() => setIsResultOpen(!isResultOpen)}
+                        >
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                                <Tag className="w-3 h-3" /> Metric Result
+                            </span>
+                            {isResultOpen ? <ChevronUp className="w-3 h-3 text-slate-400"/> : <ChevronDown className="w-3 h-3 text-slate-400"/>}
+                        </div>
+                        {isResultOpen && (
+                             <div className="p-3 bg-white text-xs space-y-1 border-t border-slate-100">
+                                 {Object.entries(bench.meta.eval_result).map(([k, v]) => (
+                                     <div key={k} className="flex justify-between items-center border-b border-slate-50 last:border-0 pb-1 last:pb-0">
+                                         <span className="text-slate-500 font-medium truncate pr-2" title={k}>{k}</span>
+                                         <span className="font-mono font-bold text-emerald-600">
+                                            {typeof v === 'number' ? v.toFixed(4) : String(v)}
+                                         </span>
+                                     </div>
+                                 ))}
+                             </div>
+                        )}
+                    </div>
+                ) : (
+                    <div className="h-10 flex items-center justify-center text-[10px] text-slate-300 italic border border-dashed border-slate-100 rounded-lg">
+                        No results yet
+                    </div>
+                )}
+
+                {/* Metric Summary Section */}
+                {/* {hasSummary && (
+                    <div className="border border-slate-100 rounded-lg overflow-hidden bg-slate-50/30">
+                        <div 
+                            className="bg-slate-50 px-3 py-2 flex justify-between items-center cursor-pointer hover:bg-slate-100 transition-colors"
+                            onClick={() => setIsSummaryOpen(!isSummaryOpen)}
+                        >
+                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                                <Bot className="w-3 h-3" /> Metric Summary
+                            </span>
+                            {isSummaryOpen ? <ChevronUp className="w-3 h-3 text-slate-400"/> : <ChevronDown className="w-3 h-3 text-slate-400"/>}
+                        </div>
+                        {isSummaryOpen && (
+                             <div className="p-3 bg-white border-t border-slate-100 max-h-[300px] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-200">
+                                 <SimpleMarkdown content={bench.meta.metric_summary} />
+                             </div>
+                        )}
+                    </div>
+                )} */}
+            </div>
+        </div>
+    );
+};
+
 // --- Summary Panel Component ---
 export const SummaryPanel = ({ state, sidebarWidth, chatWidth }: { 
     state: WorkflowState | null, 
@@ -873,88 +954,89 @@ export const SummaryPanel = ({ state, sidebarWidth, chatWidth }: {
     chatWidth: number
 }) => {
     const [isOpen, setIsOpen] = React.useState(true);
+    const [viewMode, setViewMode] = React.useState<"benches" | "report">("benches");
 
     if (!state) return null;
+
+    const hasReport = state.reports && state.reports["default"];
+
+    // Auto-switch to report view when available and not manually switched
+    // useEffect(() => {
+    //     if (hasReport) {
+    //         setViewMode("report");
+    //         setIsOpen(true);
+    //     }
+    // }, [hasReport]);
 
     return (
         <motion.div 
             initial={{ y: 100 }}
-            animate={{ y: 0, left: sidebarWidth + 60, right: chatWidth + 0 }}
+            animate={{ 
+                y: 0, 
+                left: sidebarWidth + 60, 
+                right: chatWidth + 0,
+                height: isOpen ? (viewMode === "report" ? "85vh" : "auto") : "auto" 
+            }}
             className="fixed bottom-0 z-40 px-8 pb-0 pointer-events-none transition-all duration-300"
         >
-            <div className="max-w-5xl mx-auto pointer-events-auto">
-                <div className="bg-white/90 backdrop-blur-xl border border-slate-200 rounded-t-2xl shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)] overflow-hidden ring-1 ring-slate-100">
+            <div className="max-w-6xl mx-auto pointer-events-auto h-full flex flex-col justify-end">
+                <div className="bg-white/90 backdrop-blur-xl border border-slate-200 rounded-t-2xl shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.1)] overflow-hidden ring-1 ring-slate-100 flex flex-col max-h-full transition-all duration-300">
                     <div 
-                        className="h-10 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between px-6 cursor-pointer hover:bg-slate-100 transition-colors"
-                        onClick={() => setIsOpen(!isOpen)}
+                        className="h-12 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between px-6 shrink-0"
                     >
-                        <div className="flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-wider">
-                            <Database className="w-4 h-4" />
-                            Evaluation Context
+                        <div className="flex items-center gap-6 h-full">
+                             <div 
+                                className={cn(
+                                    "flex items-center gap-2 text-xs font-bold uppercase tracking-wider h-full border-b-2 transition-all cursor-pointer px-2",
+                                    viewMode === "benches" ? "text-slate-600 border-slate-600" : "text-slate-400 border-transparent hover:text-slate-500"
+                                )}
+                                onClick={() => { setViewMode("benches"); setIsOpen(true); }}
+                            >
+                                <Database className="w-4 h-4" />
+                                Context
+                            </div>
+                            
+                            {hasReport && (
+                                <div 
+                                    className={cn(
+                                        "flex items-center gap-2 text-xs font-bold uppercase tracking-wider h-full border-b-2 transition-all cursor-pointer px-2 relative",
+                                        viewMode === "report" ? "text-violet-600 border-violet-600 bg-violet-50/50" : "text-slate-400 border-transparent hover:text-slate-500"
+                                    )}
+                                    onClick={() => { setViewMode("report"); setIsOpen(true); }}
+                                >
+                                    <Bot className="w-4 h-4" />
+                                    Final Report
+                                    <span className="absolute top-3 right-0 w-1.5 h-1.5 bg-violet-500 rounded-full animate-pulse" />
+                                </div>
+                            )}
                         </div>
-                        <Button variant="ghost" size="icon" className="h-6 w-6">
-                            {isOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
-                        </Button>
+
+                        <div 
+                            className="flex items-center gap-2 cursor-pointer p-2 hover:bg-slate-100 rounded-lg transition-colors"
+                            onClick={() => setIsOpen(!isOpen)}
+                        >
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                {isOpen ? "Collapse" : "Expand"}
+                            </span>
+                            {isOpen ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronUp className="w-4 h-4 text-slate-400" />}
+                        </div>
                     </div>
 
-                    <AnimatePresence>
+                    <AnimatePresence mode="wait">
                         {isOpen && (
                             <motion.div 
-                                initial={{ height: 0 }}
-                                animate={{ height: "auto" }}
-                                exit={{ height: 0 }}
-                                className="overflow-hidden"
+                                key={viewMode}
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                                transition={{ duration: 0.2 }}
+                                className="overflow-hidden flex-1 flex flex-col bg-slate-50/30"
                             >
-                                <div className="p-6 grid grid-cols-12 gap-8">
-                                    <div className="col-span-12">
-                                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-                                             Selected Benchmarks
-                                        </h4>
-                                        <div className="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+                                {viewMode === "benches" ? (
+                                    <div className="p-6 overflow-x-auto">
+                                        <div className="flex gap-4 pb-4 scrollbar-hide items-start min-h-[120px]">
                                             {state.benches?.length ? state.benches.map((b, i) => (
-                                                <div key={i} className="min-w-[180px] bg-white rounded-xl p-3 border border-slate-200 shadow-sm flex flex-col gap-3 relative group hover:border-blue-400 hover:shadow-md transition-all">
-                                                    <div className="flex justify-between items-start">
-                                                        <span className="font-bold text-sm text-slate-800 line-clamp-1" title={b.bench_name}>{b.bench_name}</span>
-                                                        <div className={cn(
-                                                            "w-2 h-2 rounded-full ring-2 ring-white",
-                                                            b.eval_status === "success" ? "bg-emerald-500" : "bg-slate-200"
-                                                        )} />
-                                                    </div>
-                                                    
-                                                    {b.meta?.eval_result ? (
-                                                        <div className="mt-auto pt-2 border-t border-slate-50">
-                                                            <div className="flex justify-between items-end">
-                                                                <span className="text-[10px] text-slate-400 uppercase font-bold">Result</span>
-                                                                <div className="text-right">
-                                                                     {/* Parse and show metric if available */}
-                                                                     {(() => {
-                                                                         const res = b.meta.eval_result;
-                                                                         const pickScore = (r: any) => {
-                                                                             if (!r || typeof r !== 'object') return null;
-                                                                             for (const k of ['score','accuracy','exact_match']) {
-                                                                                 const v = (r as any)[k];
-                                                                                 if (typeof v === 'number') return v;
-                                                                                 if (typeof v === 'string') return v;
-                                                                             }
-                                                                             for (const v of Object.values(r)) {
-                                                                                 if (typeof v === 'number' || typeof v === 'string') return v;
-                                                                             }
-                                                                             return null;
-                                                                         };
-                                                                         const score = pickScore(res);
-                                                                         return <span className="font-bold text-emerald-600 text-lg leading-none">{score === null ? "N/A" : (typeof score === 'number' ? score.toFixed(2) : String(score))}</span>
-                                                                     })()}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="mt-auto h-6 flex items-end">
-                                                            <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                                                                <div className="h-full bg-slate-300 w-1/3 rounded-full" />
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
+                                                <SummaryBenchCard key={i} bench={b} />
                                             )) : (
                                                 <div className="h-24 w-full border-2 border-dashed border-slate-100 rounded-xl flex items-center justify-center text-xs text-slate-400">
                                                     No benchmarks selected
@@ -962,7 +1044,13 @@ export const SummaryPanel = ({ state, sidebarWidth, chatWidth }: {
                                             )}
                                         </div>
                                     </div>
-                                </div>
+                                ) : (
+                                    <div className="p-8 overflow-y-auto flex-1 min-h-[400px] scrollbar-thin scrollbar-thumb-slate-200">
+                                        <div className="max-w-5xl mx-auto">
+                                            <ReportView report={state.reports?.["default"]} />
+                                        </div>
+                                    </div>
+                                )}
                             </motion.div>
                         )}
                     </AnimatePresence>

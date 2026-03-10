@@ -2,12 +2,13 @@ import { useState, useEffect, useMemo } from "react";
 import axios from "axios";
 import { motion } from "framer-motion";
 import { 
-    Clock, X, Search, Database, Play, Save, Layers, Plus, BookOpen, Trash2, AlertTriangle, Settings, ChevronRight, ChevronDown, Check, RefreshCw
+    Clock, X, Search, Database, Play, Save, Layers, Plus, BookOpen, Trash2, AlertTriangle, Settings, ChevronRight, ChevronDown, Check, RefreshCw, Bot, Tag, ChevronUp
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { ChatPanel, WorkflowBlock, SummaryPanel, Bench, WorkflowState, BenchCard, GalleryModal } from "./EvalComponents";
+import { SimpleMarkdown } from "@/components/ui/simple-markdown";
 
 // --- Types ---
 interface StatusResponse {
@@ -32,7 +33,16 @@ interface ChatMessage {
     timestamp: number;
 }
 
+interface MetricMeta {
+    name: string;
+    desc: string;
+    usage: string;
+    categories: string[];
+    aliases: string[];
+}
+
 export const Eval = () => {
+    const [metricRegistry, setMetricRegistry] = useState<MetricMeta[]>([]);
   const [workMode, setWorkMode] = useState<"agent" | "manual">(() => {
       const v = localStorage.getItem("oneEval.workMode");
       return v === "manual" ? "manual" : "agent";
@@ -69,9 +79,12 @@ export const Eval = () => {
   });
 
   const [expandedResults, setExpandedResults] = useState<number[]>([]);
+  const [expandedMetricResults, setExpandedMetricResults] = useState<string[]>([]);
+  const [expandedMetricSummaries, setExpandedMetricSummaries] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState<any | null>(null);
   const [manualModelPath, setManualModelPath] = useState<string>("");
   const [manualBenches, setManualBenches] = useState<Bench[]>([]);
+  const [editMetricPlan, setEditMetricPlan] = useState<Record<string, any[]> | null>(null);
   
   // Chat State
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -104,6 +117,15 @@ export const Eval = () => {
               }
           })
           .catch(e => console.error("Failed to fetch models", e));
+
+      // Fetch Metrics Registry
+      axios.get(`${apiBaseUrl}/api/metrics/registry`)
+          .then(res => {
+              if (Array.isArray(res.data)) {
+                  setMetricRegistry(res.data);
+              }
+          })
+          .catch(e => console.error("Failed to fetch metrics registry", e));
   }, [apiBaseUrl]);
 
   // Fetch History
@@ -199,7 +221,10 @@ export const Eval = () => {
       if (status === "interrupted" && state?.benches && editBenches.length === 0) {
           setEditBenches(state.benches);
       }
-  }, [status, state?.benches]);
+      if (status === "interrupted" && currentNode?.includes("MetricReviewNode") && state?.metric_plan && !editMetricPlan) {
+          setEditMetricPlan(state.metric_plan);
+      }
+  }, [status, state?.benches, state?.metric_plan, currentNode]);
 
   // Sync state and params
   useEffect(() => {
@@ -306,6 +331,9 @@ export const Eval = () => {
           };
           if (modelForUpdate) {
               payload.state_updates.target_model = modelForUpdate;
+          }
+          if (currentNode?.includes("MetricReviewNode") && editMetricPlan) {
+              payload.state_updates.metric_plan = editMetricPlan;
           }
       }
 
@@ -531,7 +559,7 @@ export const Eval = () => {
       const nodes = currentNode ? [currentNode] : [];
       const isSearchActive = ["QueryUnderstandNode", "BenchSearchNode", "HumanReviewNode"].some(n => nodes.some(cn => cn.includes(n)));
       const isPrepActive = ["DatasetStructureNode", "BenchConfigRecommendNode", "BenchTaskInferNode", "DownloadNode"].some(n => nodes.some(cn => cn.includes(n)));
-      const isExecActive = ["PreEvalReviewNode", "DataFlowEvalNode"].some(n => nodes.some(cn => cn.includes(n)));
+      const isExecActive = ["PreEvalReviewNode", "DataFlowEvalNode", "MetricRecommendNode", "MetricReviewNode", "ScoreCalcNode"].some(n => nodes.some(cn => cn.includes(n)));
 
       if (status === 'completed') return 'completed';
       
@@ -1248,7 +1276,10 @@ export const Eval = () => {
                         colorTheme="emerald"
                         nodes={[
                             { id: "PreEvalReviewNode", label: "Confirm" },
-                            { id: "DataFlowEvalNode", label: "Evaluation" }
+                            { id: "DataFlowEvalNode", label: "Evaluation" },
+                            { id: "MetricRecommendNode", label: "Metrics" },
+                            { id: "MetricReviewNode", label: "Review" },
+                            { id: "ScoreCalcNode", label: "Scoring" }
                         ]}
                    >
                        <div className="space-y-6">
@@ -1437,7 +1468,101 @@ export const Eval = () => {
                                    </div>
                                </div>
                            </div>
+                           {/* Metric Review Interrupt Block */}
+                           {status === "interrupted" && currentNode?.includes("MetricReviewNode") && (editMetricPlan || state?.metric_plan) && (
+                               <div className="bg-white p-6 rounded-xl border-2 border-amber-200 shadow-lg shadow-amber-50 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                   <div className="flex items-center justify-between mb-4">
+                                       <div className="flex items-center gap-3">
+                                           <div className="p-2 bg-amber-100 rounded-lg text-amber-600">
+                                               <Bot className="w-5 h-5" />
+                                           </div>
+                                           <div>
+                                               <h3 className="text-lg font-bold text-slate-800">Review Metrics Plan</h3>
+                                               <p className="text-sm text-slate-500">Customize the metrics for each benchmark before calculation.</p>
+                                           </div>
+                                       </div>
+                                       <Button 
+                                           onClick={handleResume}
+                                           className="bg-amber-500 hover:bg-amber-600 text-white gap-2 shadow-amber-200 shadow-lg"
+                                       >
+                                           <Check className="w-4 h-4" /> Confirm & Calculate Scores
+                                       </Button>
+                                   </div>
 
+                                   <div className="grid grid-cols-1 gap-4">
+                                       {Object.entries(editMetricPlan || state?.metric_plan || {}).map(([benchName, metrics]: [string, any[]]) => (
+                                           <div key={benchName} className="border border-slate-200 rounded-lg p-4 bg-slate-50/50">
+                                               <div className="flex items-center justify-between mb-3">
+                                                   <span className="font-bold text-slate-700">{benchName}</span>
+                                                   <span className="text-xs font-bold text-slate-400 bg-white px-2 py-1 rounded border border-slate-100">{metrics.length} metrics</span>
+                                               </div>
+                                               <div className="flex flex-wrap gap-3">
+                                                   {metrics.map((m, idx) => {
+                                                       const meta = metricRegistry.find(reg => reg.name === m.name || reg.aliases.includes(m.name));
+                                                       return (
+                                                           <div key={idx} className="bg-white p-3 rounded-lg border border-slate-200 text-sm flex flex-col gap-2 shadow-sm group relative w-full md:w-[calc(50%-0.75rem)] lg:w-[calc(33.33%-0.75rem)] transition-all hover:border-blue-200 hover:shadow-md">
+                                                               <div className="flex justify-between items-start">
+                                                                    <div className="flex items-center gap-2">
+                                                                       <span className="font-bold text-slate-800">{m.name}</span>
+                                                                       {m.priority && (
+                                                                           <span className={cn(
+                                                                               "text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider font-bold",
+                                                                               m.priority === "primary" ? "bg-violet-100 text-violet-600" : "bg-slate-100 text-slate-500"
+                                                                           )}>
+                                                                               {m.priority}
+                                                                           </span>
+                                                                       )}
+                                                                    </div>
+                                                                    {/* Delete Button */}
+                                                                    <Button 
+                                                                       variant="ghost" 
+                                                                       size="icon" 
+                                                                       className="h-6 w-6 text-slate-400 hover:text-red-500 hover:bg-red-50 -mt-1 -mr-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                                       onClick={() => {
+                                                                           const newPlan = { ...(editMetricPlan || state?.metric_plan) };
+                                                                           // Ensure array copy
+                                                                           if (!editMetricPlan) {
+                                                                               // Deep copy if first edit
+                                                                               Object.keys(newPlan).forEach(k => {
+                                                                                   newPlan[k] = [...newPlan[k]];
+                                                                               });
+                                                                           }
+                                                                           
+                                                                           newPlan[benchName] = newPlan[benchName].filter((_, i) => i !== idx);
+                                                                           setEditMetricPlan(newPlan);
+                                                                       }}
+                                                                    >
+                                                                        <X className="w-4 h-4" />
+                                                                    </Button>
+                                                               </div>
+                                                               
+                                                               {meta?.desc && (
+                                                                   <div className="text-xs text-slate-500 line-clamp-2 leading-relaxed" title={meta.desc}>
+                                                                       {meta.desc}
+                                                                   </div>
+                                                               )}
+                                                               
+                                                               {meta?.usage && (
+                                                                   <div className="mt-auto pt-2 border-t border-slate-50 text-[10px] text-slate-400 flex items-start gap-1">
+                                                                       <span className="font-bold uppercase text-slate-300 shrink-0">Usage:</span>
+                                                                       <span className="line-clamp-1" title={meta.usage}>{meta.usage}</span>
+                                                                   </div>
+                                                               )}
+                                                           </div>
+                                                       );
+                                                   })}
+                                                   {metrics.length === 0 && (
+                                                       <div className="w-full text-center py-4 text-slate-400 italic text-sm border-2 border-dashed border-slate-100 rounded-lg">
+                                                           No metrics selected.
+                                                       </div>
+                                                   )}
+                                               </div>
+                                           </div>
+                                       ))}
+                                   </div>
+                               </div>
+                           )}
+               
                            <div className="space-y-3">
                                {state?.benches?.map((b, i) => {
                                    const isExpanded = expandedResults.includes(i);
@@ -1522,20 +1647,136 @@ export const Eval = () => {
                                                        <div className="p-3 bg-white rounded-lg border border-slate-100">
                                                            <div className="text-[10px] text-slate-400 uppercase font-bold mb-1">Total Samples</div>
                                                            <div className="text-lg font-mono font-bold text-slate-700">
-                                                               {b.meta?.download_config?.count || b.meta?.structure?.count || "N/A"}
+                                                               {b.meta?.eval_result?.total_samples || b.meta?.download_config?.count || b.meta?.structure?.count || "N/A"}
                                                            </div>
                                                        </div>
-                                                       <div className="p-3 bg-white rounded-lg border border-slate-100">
-                                                           <div className="text-[10px] text-slate-400 uppercase font-bold mb-1">Metrics Detail</div>
-                                                           <div className="text-xs font-mono text-slate-600 space-y-1">
-                                                               {res ? Object.entries(res).map(([key, value]) => (
-                                                                   <div key={key} className="flex justify-between border-b border-slate-50 pb-1 last:border-0">
-                                                                       <span className="text-slate-400 mr-2">{key}:</span>
-                                                                       <span className="font-bold text-slate-700 truncate" title={String(value)}>{String(value)}</span>
+                                                       
+                                                        <div className="p-3 bg-white rounded-lg border border-slate-100">
+                                                            <div className="text-[10px] text-slate-400 uppercase font-bold mb-1">Accuracy (General)</div>
+                                                            <div className="text-lg font-mono font-bold text-slate-700">
+                                                                {/* 这里放你的数据，例如: b.meta?.eval_result?.accuracy || "0.00" */}
+                                                                {b.meta?.eval_result?.accuracy || "N/A"} 
+                                                            </div>
+                                                        </div>
+
+                                                       {/* Metric Cards Area */}
+                                                       <div className="col-span-2 space-y-2">
+                                                            <div 
+                                                                className="text-[10px] text-slate-400 uppercase font-bold mb-1 cursor-pointer flex items-center justify-between hover:text-slate-600 transition-colors"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setExpandedMetricResults(prev => 
+                                                                        prev.includes(b.bench_name) 
+                                                                        ? prev.filter(name => name !== b.bench_name) 
+                                                                        : [...prev, b.bench_name]
+                                                                    );
+                                                                }}
+                                                            >
+                                                                <span className="flex items-center gap-1"><Tag className="w-3 h-3" /> Metric Results</span>
+                                                                {expandedMetricResults.includes(b.bench_name) ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                                            </div>
+                                                            {expandedMetricResults.includes(b.bench_name) && (
+                                                                <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-top-1 duration-200">
+                                                                    {res ? Object.entries(res)
+                                                                        .filter(([key]) => !["bench_name_or_prefix",
+                                                                             "metric", 
+                                                                             "type", 
+                                                                             "valid_samples", 
+                                                                             "total_samples", 
+                                                                             "metric_summary_analyst", 
+                                                                             "case_study_analyst"
+                                                                            ].includes(key))
+                                                                        .map(([key, value]) => {
+                                                                        const meta = metricRegistry.find(m => m.name === key || m.aliases.includes(key));
+                                                                        return (
+                                                                            <div key={key} className="bg-white rounded-lg border border-slate-200 p-3 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+                                                                                <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-slate-50 to-transparent opacity-50 rounded-bl-full pointer-events-none" />
+                                                                                
+                                                                                <div className="flex justify-between items-start mb-2 relative z-10">
+                                                                                    <div className="flex flex-col">
+                                                                                        <span className="text-xs font-bold text-slate-700 flex items-center gap-2">
+                                                                                            {key}
+                                                                                        </span>
+                                                                                        {meta?.desc && (
+                                                                                            <span className="text-[10px] text-slate-400 mt-0.5 line-clamp-1" title={meta.desc}>
+                                                                                                {meta.desc}
+                                                                                            </span>
+                                                                                        )}
+                                                                                    </div>
+                                                                                    <span className="font-mono font-bold text-lg text-emerald-600">
+                                                                                        {(() => {
+                                                                                            const v = typeof value === 'string' ? parseFloat(value) : value;
+                                                                                            if (typeof v === 'number' && !isNaN(v)) {
+                                                                                                return Number.isInteger(v) ? v : v.toFixed(4);
+                                                                                            }
+                                                                                            return String(value);
+                                                                                        })()}
+                                                                                    </span>
+                                                                                </div>
+                                                                                
+                                                                                {meta?.usage && (
+                                                                                    <div className="mt-2 pt-2 border-t border-slate-50 text-[10px] text-slate-500 relative z-10">
+                                                                                        <span className="font-bold text-slate-300 uppercase mr-1">Usage:</span>
+                                                                                        {meta.usage}
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        );
+                                                                    }) : (
+                                                                        <div className="col-span-2 text-xs text-slate-400 italic p-2">No detailed metrics available yet.</div>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                       </div>
+
+                                                       {/* Recommended Metrics Section
+                                                       {(state.metric_plan && state.metric_plan[b.bench_name]) && (
+                                                           <div className="col-span-2 space-y-2 mt-2 pt-2 border-t border-slate-50">
+                                                               <div className="text-[10px] text-violet-400 uppercase font-bold mb-1 flex items-center gap-2">
+                                                                   <Bot className="w-3 h-3" /> Recommended Metrics Plan
+                                                               </div>
+                                                               <div className="flex flex-wrap gap-2">
+                                                                   {state.metric_plan[b.bench_name].map((m: any, idx: number) => (
+                                                                       <div key={idx} className="bg-white px-2 py-1 rounded border border-violet-100 text-xs flex items-center gap-2 shadow-sm" title={JSON.stringify(m.args || {})}>
+                                                                           <span className="font-bold text-violet-700">{m.name}</span>
+                                                                           {m.priority && (
+                                                                               <span className={cn(
+                                                                                   "text-[9px] px-1 rounded uppercase tracking-wider font-bold",
+                                                                                   m.priority === "primary" ? "bg-violet-100 text-violet-600" : "bg-slate-100 text-slate-500"
+                                                                               )}>
+                                                                                   {m.priority}
+                                                                               </span>
+                                                                           )}
+                                                                       </div>
+                                                                   ))}
+                                                               </div>
+                                                           </div>
+                                                       )} */}
+
+                                                       {/* Metric Summary Text (New) */}
+                                                       {b.meta?.metric_summary && (
+                                                           <div className="col-span-2 space-y-2 mt-2 pt-2 border-t border-slate-50">
+                                                               <div 
+                                                                   className="text-[10px] text-blue-400 uppercase font-bold mb-1 cursor-pointer flex items-center justify-between hover:text-blue-600 transition-colors"
+                                                                   onClick={(e) => {
+                                                                       e.stopPropagation();
+                                                                       setExpandedMetricSummaries(prev => 
+                                                                           prev.includes(b.bench_name) 
+                                                                           ? prev.filter(name => name !== b.bench_name) 
+                                                                           : [...prev, b.bench_name]
+                                                                       );
+                                                                   }}
+                                                               >
+                                                                   <span className="flex items-center gap-1"><Bot className="w-3 h-3" /> Metric Summary</span>
+                                                                   {expandedMetricSummaries.includes(b.bench_name) ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                                               </div>
+                                                               {expandedMetricSummaries.includes(b.bench_name) && (
+                                                                   <div className="p-3 bg-slate-50 rounded-lg border border-slate-100 text-xs text-slate-600 font-sans animate-in fade-in slide-in-from-top-1 duration-200">
+                                                                       <SimpleMarkdown content={b.meta.metric_summary} />
                                                                    </div>
-                                                               )) : "No detailed metrics"}
+                                                               )}
                                                            </div>
-                                                       </div>
+                                                       )}
                                                    </div>
                                                    {b.eval_status === "failed" && b.meta?.eval_error && (
                                                        <div className="mt-4 p-3 bg-red-50/50 rounded-lg border border-red-100 text-xs text-red-700 font-mono whitespace-pre-wrap">

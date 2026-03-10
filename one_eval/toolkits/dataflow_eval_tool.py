@@ -26,16 +26,38 @@ class DataFlowEvalTool:
     - BenchAnswerGenerator
     - UnifiedBenchDatasetEvaluator
     """
+    
+    # Class-level cache to prevent reloading vLLM on every request
+    _cached_llm_serving: Optional[LLMServingABC] = None
+    _cached_model_config: Optional[ModelConfig] = None
 
     def __init__(self, output_root: str = "cache/eval_results"):
         self.output_root = output_root
         os.makedirs(self.output_root, exist_ok=True)
-        self.llm_serving: Optional[LLMServingABC] = None
-        self._current_model_config: Optional[ModelConfig] = None
+        # Initialize instance members from cache if available, otherwise None
+        self.llm_serving: Optional[LLMServingABC] = DataFlowEvalTool._cached_llm_serving
+        self._current_model_config: Optional[ModelConfig] = DataFlowEvalTool._cached_model_config
 
     def _init_llm_serving(self, config: ModelConfig):
         """初始化或更新 LLM Serving"""
-        # 如果配置相同且 serving 已存在，复用
+        # Check global cache first
+        if DataFlowEvalTool._cached_llm_serving and DataFlowEvalTool._cached_model_config == config:
+            self.llm_serving = DataFlowEvalTool._cached_llm_serving
+            self._current_model_config = config
+            return
+
+        # If cache exists but config differs, cleanup old one
+        if DataFlowEvalTool._cached_llm_serving:
+            try:
+                log.info("Cleaning up old LLM serving instance...")
+                if hasattr(DataFlowEvalTool._cached_llm_serving, "cleanup"):
+                    DataFlowEvalTool._cached_llm_serving.cleanup()
+            except Exception as e:
+                log.warning(f"Failed to cleanup old serving: {e}")
+            DataFlowEvalTool._cached_llm_serving = None
+            DataFlowEvalTool._cached_model_config = None
+
+        # 如果配置相同且 serving 已存在 (instance level check, just in case)
         if self.llm_serving and self._current_model_config == config:
             return
 
@@ -82,6 +104,10 @@ class DataFlowEvalTool:
             )
         
         self._current_model_config = config
+        
+        # Update class-level cache
+        DataFlowEvalTool._cached_llm_serving = self.llm_serving
+        DataFlowEvalTool._cached_model_config = config
 
     def _preprocess_dataframe(self, df, bench_name, key_mapping, cache_path="", eval_type=""):
         """Ad-hoc 数据预处理"""
