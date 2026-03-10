@@ -39,3 +39,10 @@ word2number>=1.1
 
 # --- Project Dependencies ---
 open-dataflow
+aiohttp
+sacrebleu
+rouge_score
+openpyxl
+# --- Project Dependencies ---
+# These libraries are assumed to be installed from local sources or private PyPI
+# open-dataflow>=0.1.0

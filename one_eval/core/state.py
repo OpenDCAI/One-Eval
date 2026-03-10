@@ -1,9 +1,37 @@
-from dataflow_agent.state import MainState
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 import time
 import copy
 import uuid
+from typing_extensions import Annotated
+from langgraph.graph.message import add_messages
+from langchain_core.messages import BaseMessage
+
+
+@dataclass
+class MainRequest:
+    language: str = "zh"
+    target: str = ""
+
+    def get(self, key, default=None):
+        return getattr(self, key, default)
+
+    def __setitem__(self, key, value):
+        setattr(self, key, value)
+
+
+@dataclass
+class MainState:
+    request: MainRequest = field(default_factory=MainRequest)
+    messages: Annotated[List[BaseMessage], add_messages] = field(default_factory=list)
+    agent_results: Dict[str, Any] = field(default_factory=dict)
+    temp_data: Dict[str, Any] = field(default_factory=dict)
+
+    def get(self, key, default=None):
+        return getattr(self, key, default)
+
+    def __setitem__(self, key, value):
+        setattr(self, key, value)
 
 @dataclass
 class BenchInfo:

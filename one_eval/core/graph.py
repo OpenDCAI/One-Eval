@@ -1,4 +1,3 @@
-from dataflow_agent.graphbuilder.graph_builder import GenericGraphBuilder
 from langgraph.graph import StateGraph
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from one_eval.toolkits.tool_manager import get_tool_manager
@@ -6,6 +5,54 @@ from typing import Optional, Callable, Dict, List, Tuple, Any
 from langchain_core.runnables import RunnableConfig
 from langchain_core.runnables.config import var_child_runnable_config
 import asyncio
+
+
+class GenericGraphBuilder:
+    def __init__(self, state_model, entry_point: str = "start"):
+        self.state_model = state_model
+        self.entry_point = entry_point
+        self.nodes: Dict[str, Tuple[Callable, str]] = {}
+        self.edges: List[Tuple[str, str]] = []
+        self.conditional_edges: Dict[str, Callable] = {}
+        self.pre_tool_registry: Dict[str, Dict[str, Callable]] = {}
+        self.post_tool_registry: Dict[str, List[Callable]] = {}
+        self.tool_manager = None
+
+    def _get_tool_manager(self):
+        if self.tool_manager is None:
+            self.tool_manager = get_tool_manager()
+        return self.tool_manager
+
+    def add_node(self, name: str, func: Callable, role: str = None) -> "GenericGraphBuilder":
+        self.nodes[name] = (func, role or name)
+        return self
+
+    def add_nodes(
+        self,
+        nodes: Dict[str, Callable],
+        role_mapping: Dict[str, str] = None,
+    ) -> "GenericGraphBuilder":
+        role_mapping = role_mapping or {}
+        for name, func in nodes.items():
+            role = role_mapping.get(name, name)
+            self.add_node(name, func, role)
+        return self
+
+    def add_edge(self, src: str, dst: str) -> "GenericGraphBuilder":
+        self.edges.append((src, dst))
+        return self
+
+    def add_edges(self, edges: List[Tuple[str, str]]) -> "GenericGraphBuilder":
+        self.edges.extend(edges)
+        return self
+
+    def add_conditional_edge(self, src: str, condition_func: Callable) -> "GenericGraphBuilder":
+        self.conditional_edges[src] = condition_func
+        return self
+
+    def add_conditional_edges(self, conditional_edges: Dict[str, Callable]) -> "GenericGraphBuilder":
+        self.conditional_edges.update(conditional_edges)
+        return self
 
 class GraphBuilder(GenericGraphBuilder):
     """Eval流程Graph的构建类"""

@@ -13,7 +13,7 @@ log = get_logger(__name__)
 # Mock State for CustomLLMCaller to satisfy initialization requirements
 class MockState:
     def __init__(self, model_name: str):
-        # BaseLLMCaller accesses self.state.request.model
+        # LLMCaller accesses self.state.request.model
         self.request = type("MockRequest", (), {"model": model_name})()
 
 @register_metric(
@@ -124,8 +124,7 @@ def compute_case_study_analyst(preds: List[Any], refs: List[Any], **kwargs) -> D
     # 5. 调用 CustomLLMCaller (Async Wrapper)
     async def _call_llm():
         # Use real state if available, otherwise use MockState
-        # Note: If real_state is passed, it should be an instance of dataflow_agent.state.MainState or similar
-        # that CustomLLMCaller expects.
+        # Note: real_state should expose request.model for CustomLLMCaller.
         llm_state = real_state if real_state else MockState(model_name)
         
         # Initialize CustomLLMCaller

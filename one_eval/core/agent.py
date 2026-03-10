@@ -114,7 +114,7 @@ class CustomAgent(BaseAgent):
     """
     CustomAgent
     ----------
-    继承自 DataFlow-Agent 的 BaseAgent
+    继承自 BaseAgent
     在 one_eval 框架中用于执行单个节点逻辑。
 
     处理：
