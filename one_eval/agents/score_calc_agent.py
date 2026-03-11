@@ -167,10 +167,25 @@ class ScoreCalcAgent(CustomAgent):
 
             metrics = bench_result.get("metrics", {})
             num_samples = bench_result.get("num_samples", 0)
+            
+            # Extract simple metrics for meta display
+            simple_metrics = {mname: mres.get("score") for mname, mres in metrics.items() if isinstance(mres, dict) and "score" in mres}
+            
+            # Update bench.meta["eval_result"] so frontend can display them
+            if "eval_result" not in bench.meta or not isinstance(bench.meta["eval_result"], dict):
+                bench.meta["eval_result"] = {}
+            
+            bench.meta["eval_result"].update(simple_metrics)
+
+            # Update bench.meta["metric_summary"] so frontend can display them
+            metric_summary_text = metrics.get("metric_summary_analyst", {}).get("summary")
+            if metric_summary_text:
+                bench.meta["metric_summary"] = metric_summary_text
+            
             summary = {
                 "bench": bench_name,
                 "num_samples": num_samples,
-                "metrics": {mname: (mres.get("score")) for mname, mres in metrics.items()},
+                "metrics": simple_metrics,
                 "analyst": {
                     "metric_summary": metrics.get("metric_summary_analyst", {}).get("summary"),
                     "case_study": metrics.get("case_study_analyst", {}).get("analysis"),

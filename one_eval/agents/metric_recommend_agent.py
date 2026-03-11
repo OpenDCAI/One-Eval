@@ -78,7 +78,18 @@ class MetricRecommendAgent(CustomAgent):
         seen = set()
         if not metrics:
             return []
+        
+        # 兼容 LLM 返回格式：可能是 {"metrics": [...]} 而不是直接 [...]
+        if isinstance(metrics, dict) and "metrics" in metrics:
+            metrics = metrics["metrics"]
+            
+        if not isinstance(metrics, list):
+            log.warning(f"Metrics 格式无效，期望 List，实际: {type(metrics)}")
+            return []
+
         for metric in metrics:
+            if not isinstance(metric, dict):
+                continue
             try:
                 normalized = self._normalize_metric_format(metric)
                 name = normalized.get("name")
@@ -280,21 +291,40 @@ class MetricRecommendAgent(CustomAgent):
 
             # 处理 LLM 返回结果
             if isinstance(parsed_result, dict):
+                # 预先建立小写名称映射，解决 LLM 返回大小写不一致的问题
+                bench_map = {b.bench_name.strip().lower(): b for b in target_benches}
+                
                 for b_name, metrics in parsed_result.items():
-                    matched_bench = next((b for b in target_benches if b.bench_name == b_name), None)
+                    # 尝试匹配 Benchmark (不区分大小写)
+                    matched_bench = bench_map.get(str(b_name).strip().lower())
+                    
                     if not matched_bench:
+                        log.warning(f"LLM 返回了未知的 Benchmark 名称: '{b_name}'，忽略。")
                         continue
+                    
+                    real_name = matched_bench.bench_name
                     
                     if isinstance(metrics, list) and len(metrics) > 0:
                         validated = self._validate_metrics(metrics)
                         if validated:
+                            # 强制追加 Analyst Metrics
+                            analyst_metrics = [
+                                {"name": "metric_summary_analyst", "priority": "diagnostic"},
+                                {"name": "case_study_analyst", "priority": "diagnostic"}
+                            ]
+                            # 避免重复
+                            existing_names = {m["name"] for m in validated}
+                            for am in analyst_metrics:
+                                if am["name"] not in existing_names:
+                                    validated.append(am)
+                                    
                             self._ensure_primary(validated)
-                            state.metric_plan[b_name] = validated
-                            log.info(f"[{b_name}] ✓ LLM 推荐 Metrics ({len(validated)} 个)")
+                            state.metric_plan[real_name] = validated
+                            log.info(f"[{real_name}] ✓ LLM 推荐 Metrics ({len(validated)} 个)")
                         else:
-                            log.warning(f"[{b_name}] LLM 推荐 Metrics 验证失败")
+                            log.warning(f"[{real_name}] LLM 推荐 Metrics 验证失败: {metrics}")
                     else:
-                        log.warning(f"LLM 返回的 {b_name} metric 格式不正确")
+                        log.warning(f"[{real_name}] LLM 返回的 metric 格式不正确 (非列表或空): {metrics}")
             else:
                 log.warning(f"LLM 返回结果格式非 Dict: {parsed_result}")
 
@@ -311,6 +341,17 @@ class MetricRecommendAgent(CustomAgent):
                         {"name": "exact_match", "priority": "primary"},
                         {"name": "extraction_rate", "priority": "diagnostic"}
                     ]
+            
+                # 强制追加 Analyst Metrics (在 Fallback 情况下也追加)
+                analyst_metrics = [
+                    {"name": "metric_summary_analyst", "priority": "diagnostic"},
+                    {"name": "case_study_analyst", "priority": "diagnostic"}
+                ]
+                existing_names = {m["name"] for m in fallback}
+                for am in analyst_metrics:
+                    if am["name"] not in existing_names:
+                        fallback.append(am)
+
                 validated = self._validate_metrics(fallback)
                 self._ensure_primary(validated)
                 state.metric_plan[bench.bench_name] = validated

@@ -184,6 +184,7 @@ from one_eval.core.state import NodeState, ModelConfig, BenchInfo
 from one_eval.utils.deal_json import _save_state_json
 from langgraph.types import Command
 from one_eval.utils.bench_registry import BenchRegistry
+from one_eval.core.metric_registry import get_registered_metrics_meta, MetricMeta
 
 # Bench Registry - 使用 bench_gallery.json 作为数据源
 BENCH_GALLERY_PATH = REPO_ROOT / "one_eval" / "utils" / "bench_table" / "bench_gallery.json"
@@ -538,7 +539,7 @@ async def get_status(thread_id: str):
             current_values = snap.values or {}
             interrupts = snap.interrupts
 
-            INTERRUPT_NODES = ("HumanReviewNode", "PreEvalReviewNode")
+            INTERRUPT_NODES = ("HumanReviewNode", "PreEvalReviewNode", "MetricReviewNode")
 
             # 检测中断
             is_interrupted = bool(interrupts and len(interrupts) > 0)
@@ -967,7 +968,6 @@ async def redownload_bench(thread_id: str, req: RedownloadBenchRequest):
 
 @app.get("/api/workflow/history", response_model=List[HistoryItem])
 async def get_history():
-    import aiosqlite
     import datetime
     
     if not DB_PATH.exists():
@@ -975,44 +975,40 @@ async def get_history():
         
     items = []
     try:
-        async with aiosqlite.connect(DB_PATH) as db:
-            # Query distinct thread_ids from checkpoints
-            # Schema usually: thread_id, checkpoint_id, checkpoint, metadata...
-            # We want the latest checkpoint for each thread.
-            # But LangGraph 0.2 schema might differ.
-            # Usually 'checkpoints' table has 'thread_id'.
-            
-            # Simple query to get unique threads
-            cursor = await db.execute("SELECT DISTINCT thread_id FROM checkpoints ORDER BY thread_id DESC LIMIT 50")
-            rows = await cursor.fetchall()
+        # Optimize: Reuse single connection/checkpointer for all lookups
+        async with get_checkpointer(DB_PATH, mode="run") as cp:
+            # 1. Get thread_ids using the same connection
+            async with cp.conn.execute("SELECT DISTINCT thread_id FROM checkpoints ORDER BY thread_id DESC LIMIT 50") as cursor:
+                rows = await cursor.fetchall()
+
+            # 2. Build graph once
+            graph = build_complete_workflow(checkpointer=cp)
             
             for (tid,) in rows:
-                # Get latest state for this thread to find query/status
-                async with get_checkpointer(DB_PATH, mode="run") as cp:
-                    graph = build_complete_workflow(checkpointer=cp)
-                    cfg = {"configurable": {"thread_id": tid}}
-                    try:
-                        snap = await graph.aget_state(cfg)
-                        if snap and snap.values:
-                            q = snap.values.get("user_query", "Unknown Query")
-                            # Determine status
-                            status = "completed"
-                            if snap.next:
-                                status = "interrupted" if ("HumanReviewNode" in snap.next or "PreEvalReviewNode" in snap.next) else "running"
-                            # If no next and no error -> completed
-                            
-                            ts = snap.metadata.get("created_at") if snap.metadata else None
-                            # If not in metadata, use current time or skip
-                            date_str = ts or datetime.datetime.now().isoformat()
-                            
-                            items.append(HistoryItem(
-                                thread_id=tid,
-                                updated_at=str(date_str),
-                                user_query=str(q),
-                                status=status
-                            ))
-                    except Exception:
-                        pass
+                cfg = {"configurable": {"thread_id": tid}}
+                try:
+                    # aget_state uses the passed checkpointer (cp)
+                    snap = await graph.aget_state(cfg)
+                    if snap and snap.values:
+                        q = snap.values.get("user_query", "Unknown Query")
+                        # Determine status
+                        status = "completed"
+                        if snap.next:
+                            status = "interrupted" if ("HumanReviewNode" in snap.next or "PreEvalReviewNode" in snap.next) else "running"
+                        # If no next and no error -> completed
+                        
+                        ts = snap.metadata.get("created_at") if snap.metadata else None
+                        # If not in metadata, use current time or skip
+                        date_str = ts or datetime.datetime.now().isoformat()
+                        
+                        items.append(HistoryItem(
+                            thread_id=tid,
+                            updated_at=str(date_str),
+                            user_query=str(q),
+                            status=status
+                        ))
+                except Exception:
+                    pass
     except Exception as e:
         log.error(f"Error fetching history: {e}")
         return []
@@ -1037,6 +1033,12 @@ def add_model(model: Dict[str, Any]):
 @app.get("/api/benches/gallery")
 def get_bench_gallery():
     return bench_registry.get_all_benches()
+
+
+@app.get("/api/metrics/registry")
+def get_metrics_registry():
+    """获取所有注册的 Metric 元数据"""
+    return get_registered_metrics_meta()
 
 
 class AddBenchRequest(BaseModel):
@@ -1083,4 +1085,5 @@ def add_bench_to_gallery(req: AddBenchRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Disable uvloop to allow nest_asyncio patching in synchronous nodes
+    uvicorn.run(app, host="0.0.0.0", port=8001, loop="asyncio")

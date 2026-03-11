@@ -31,3 +31,16 @@ def no_bench_validator(state: NodeState) -> Optional[Dict[str, Any]]:
         "reason": "当前没有找到任何 benchmark，请人工确认是继续还是回退修改需求。",
         "payload": {},
     }
+
+def metric_plan_review(state: NodeState) -> Dict[str, Any]:
+    """
+    Review the recommended metric plan before calculation.
+    """
+    metric_plan = getattr(state, "metric_plan", {}) or {}
+    return {
+        "type": "manual_metric_review",
+        "reason": "Metric recommendation completed. Please review the metric plan.",
+        "payload": {
+            "metric_plan": metric_plan
+        },
+    }

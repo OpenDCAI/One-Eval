@@ -21,6 +21,9 @@ async def get_checkpointer(base_db: Path, mode: str):
 
     if mode == "run":
         async with AsyncSqliteSaver.from_conn_string(str(base_db)) as cp:
+            # Optimize SQLite for concurrency
+            # await cp.conn.execute("PRAGMA journal_mode=WAL;")
+            await cp.conn.execute("PRAGMA busy_timeout=3000;") # 3s timeout
             yield cp
         return
 
@@ -32,6 +35,9 @@ async def get_checkpointer(base_db: Path, mode: str):
     try:
         _copy_sqlite_with_wal(base_db, tmp_db)
         async with AsyncSqliteSaver.from_conn_string(str(tmp_db)) as cp:
+            # Optimize SQLite for concurrency
+            # await cp.conn.execute("PRAGMA journal_mode=WAL;")
+            await cp.conn.execute("PRAGMA busy_timeout=3000;")
             yield cp
     finally:
         # 清理临时 db 及其 wal/shm
