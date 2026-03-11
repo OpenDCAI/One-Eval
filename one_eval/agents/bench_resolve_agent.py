@@ -172,24 +172,30 @@ class BenchResolveAgent(CustomAgent):
                 }
 
         # ================ Step 3: 写回 state ================
-        benches: List[BenchInfo] = []
-        seen_short_ids = set()
+        # 保留 BenchNameSuggestNode 已构建的 gallery BenchInfo，追加 HF 结果
+        existing_benches: List[BenchInfo] = getattr(state, "benches", []) or []
+        seen_short_ids = {b.bench_name.split("/")[-1].lower() for b in existing_benches}
+
+        hf_benches: List[BenchInfo] = []
         for repo_id, info in bench_info.items():
+            if info.get("source") != "hf_resolve":
+                continue  # gallery 的已在 existing_benches 里，跳过
             hf_meta = (info.get("hf_meta", {}) or {})
             hf_repo = hf_meta.get("hf_repo") or repo_id
             short_id = hf_repo.split("/")[-1].lower()
             if short_id in seen_short_ids:
                 continue
             seen_short_ids.add(short_id)
-            benches.append(
+            hf_benches.append(
                 BenchInfo(
                     bench_name=repo_id,
-                    bench_table_exist=info.get("source") != "hf_resolve",
+                    bench_table_exist=False,
                     bench_source_url=hf_repo,
-                    meta=info,
+                    meta={**info, "from_gallery": False},
                 )
             )
-        state.benches = benches
+
+        state.benches = existing_benches + hf_benches
         state.bench_info = bench_info
 
         state.agent_results["BenchResolveAgent"] = {

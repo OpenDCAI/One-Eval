@@ -293,6 +293,46 @@ class BenchmarkRetriever:
 
         return True
 
+    def _load_gallery_extra(self) -> tuple:
+        """从 bench_gallery.json 加载 xlsx 里没有的 bench，返回 (extra_meta, extra_texts)"""
+        gallery_path = Path(__file__).parent.parent / "utils" / "bench_table" / "bench_gallery.json"
+        if not gallery_path.exists():
+            return [], []
+
+        gallery = json.loads(gallery_path.read_text(encoding="utf-8"))
+        extra_meta, extra_texts = [], []
+        for b in gallery.get("benches", []):
+            name = b.get("bench_name", "")
+            if not name:
+                continue
+            meta_section = b.get("meta") or {}
+            description = meta_section.get("description", "")
+            category = meta_section.get("category", "")
+            aliases = meta_section.get("aliases") or []
+            tags = meta_section.get("tags") or []
+            source_url = b.get("bench_source_url", "")
+
+            extra_meta.append({
+                "name": name,
+                "type": category,
+                "description": description,
+                "dataset_url": source_url,
+            })
+            alias_str = " ".join(aliases)
+            tag_str = " ".join(tags)
+            text_parts = [f"Name: {name}"]
+            if alias_str:
+                text_parts.append(f"Aliases: {alias_str}")
+            if category:
+                text_parts.append(f"Type: {category}")
+            if tag_str:
+                text_parts.append(f"Tags: {tag_str}")
+            if description:
+                text_parts.append(f"Description: {description}")
+            extra_texts.append(" | ".join(text_parts))
+
+        return extra_meta, extra_texts
+
     def build_index(self, force_rebuild: bool = False):
         """构建索引（RAG模式用embedding，非RAG模式用TF-IDF）"""
         if not force_rebuild and self._load_cache():
@@ -301,6 +341,15 @@ class BenchmarkRetriever:
         df = self._load_xlsx()
         texts = self._build_texts(df)
         self.meta_data = self._build_meta(df)
+
+        # 把 gallery.json 里有但 xlsx 里没有的 bench 追加进索引
+        xlsx_names_lower = {str(m.get("name", "")).lower() for m in self.meta_data}
+        extra_meta, extra_texts = self._load_gallery_extra()
+        for m, t in zip(extra_meta, extra_texts):
+            if m["name"].lower() not in xlsx_names_lower:
+                self.meta_data.append(m)
+                texts.append(t)
+        log.info(f"追加了 {len(extra_meta) - sum(1 for m in extra_meta if m['name'].lower() in xlsx_names_lower)} 条 gallery-only bench 进入索引")
 
         if self.use_rag:
             log.info("正在调用OpenAI兼容API生成embeddings...")
@@ -374,7 +423,7 @@ class BenchNameSuggestNode(BaseNode):
         self,
         use_rag: bool = False,
         embedding_model: str = "text-embedding-3-small",
-        top_k: int = 3,
+        top_k: int = 5,
     ):
         """
         初始化 Node
@@ -382,7 +431,7 @@ class BenchNameSuggestNode(BaseNode):
         Args:
             use_rag: 是否使用 RAG 模式（embedding 检索），默认 False 使用 TF-IDF
             embedding_model: embedding 模型名称（RAG 模式需要）
-            top_k: 检索返回的结果数，默认 3
+            top_k: 检索返回的结果数，默认 8
 
         Note:
             RAG 模式的 api_base 和 api_key 从环境变量 OE_API_BASE 和 OE_API_KEY 读取
@@ -403,6 +452,35 @@ class BenchNameSuggestNode(BaseNode):
         )
 
         self._retriever: Optional[BenchmarkRetriever] = None
+
+        # 加载 gallery 索引，用于检索结果补全
+        self._gallery_index: Dict[str, Dict] = self._load_gallery_index()
+
+    def _load_gallery_index(self) -> Dict[str, Dict]:
+        """加载 bench_gallery.json，构建 bench_name -> 完整配置 的索引"""
+        gallery_path = Path(__file__).parent.parent / "utils" / "bench_table" / "bench_gallery.json"
+        if not gallery_path.exists():
+            log.warning(f"bench_gallery.json 不存在: {gallery_path}")
+            return {}
+        with open(gallery_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        index: Dict[str, Dict] = {}
+        for bench in data.get("benches", []):
+            name = bench.get("bench_name", "")
+            if name:
+                index[name.lower()] = bench
+                # 同时索引 aliases
+                for alias in (bench.get("meta") or {}).get("aliases", []):
+                    if isinstance(alias, str) and alias:
+                        index[alias.lower()] = bench
+        log.info(f"已加载 gallery 索引，共 {len(data.get('benches', []))} 条")
+        return index
+
+    def _lookup_gallery(self, bench_name: str) -> Optional[Dict]:
+        """在 gallery 中查找 bench，返回完整配置或 None"""
+        if not bench_name:
+            return None
+        return self._gallery_index.get(bench_name.lower())
 
     def _get_retriever(self) -> BenchmarkRetriever:
         """获取或创建检索器（懒加载）"""
@@ -472,8 +550,8 @@ class BenchNameSuggestNode(BaseNode):
         return url
 
     # 质量阈值：低于此分数的本地结果视为不够匹配
-    SCORE_THRESHOLD_TFIDF = 0.3
-    SCORE_THRESHOLD_RAG = 0.5
+    SCORE_THRESHOLD_TFIDF = 0.15
+    SCORE_THRESHOLD_RAG = 0.4
 
     async def run(self, state: NodeState) -> NodeState:
         """
@@ -519,6 +597,29 @@ class BenchNameSuggestNode(BaseNode):
         local_matches = []
         quality_matches = []  # 高于阈值的结果
 
+        # 用户明确指定的 specific_benches，在 gallery 里直接命中，不依赖检索分数
+        specific_benches_early: List[str] = info.get("specific_benches") or []
+        for name in specific_benches_early:
+            if not name:
+                continue
+            gallery_entry = self._lookup_gallery(name)
+            if gallery_entry and gallery_entry['bench_name'] not in bench_info:
+                repo_id = gallery_entry['bench_name']
+                bench_data = {
+                    'bench_name': repo_id,
+                    'type': gallery_entry.get('meta', {}).get('category', ''),
+                    'description': gallery_entry.get('meta', {}).get('description', ''),
+                    'dataset_url': gallery_entry.get('bench_source_url', ''),
+                    'score': 1.0,  # 直接命中，视为满分
+                    'source': 'gallery_direct',
+                    'from_gallery': True,
+                    '_gallery_entry': gallery_entry,
+                }
+                bench_info[repo_id] = bench_data
+                local_matches.append(bench_data)
+                quality_matches.append(bench_data)
+                log.info(f"[gallery直接命中] specific_bench={name} → {repo_id}")
+
         for result in search_results:
             name = result.get('name', '')
             dataset_url = result.get('dataset_url', '')
@@ -529,13 +630,23 @@ class BenchNameSuggestNode(BaseNode):
             hf_repo_id = self._extract_hf_repo_from_url(dataset_url) or name
             score = result.get('score', 0.0)
 
+            # 已经通过 specific_benches_early 直接命中的，不用检索结果覆盖
+            if hf_repo_id in bench_info:
+                continue
+
+            # 查 gallery，有则直接用完整配置（保存 entry 供后续构建 BenchInfo 使用）
+            gallery_entry = self._lookup_gallery(name) or self._lookup_gallery(hf_repo_id)
+            from_gallery = gallery_entry is not None
+
             bench_data = {
-                'bench_name': hf_repo_id,  # 使用完整 repo ID
+                'bench_name': hf_repo_id,
                 'type': result.get('type', ''),
                 'description': result.get('description', ''),
                 'dataset_url': dataset_url,
                 'score': score,
                 'source': 'retrieval',
+                'from_gallery': from_gallery,
+                '_gallery_entry': gallery_entry,  # 保留引用，避免二次查找 key 不一致
             }
             bench_info[hf_repo_id] = bench_data
             local_matches.append(bench_data)
@@ -543,63 +654,82 @@ class BenchNameSuggestNode(BaseNode):
                 quality_matches.append(bench_data)
 
         # 构建 BenchInfo 列表（只保留高质量本地结果）
-        state.benches = [
-            BenchInfo(
-                bench_name=repo_id,
-                bench_table_exist=True,
-                bench_source_url=bench_info[repo_id].get('dataset_url'),
-                meta=bench_info[repo_id],
-            )
-            for repo_id in bench_info.keys()
-            if bench_info[repo_id].get('score', 0.0) >= score_threshold
-        ]
+        # 若用户明确指定了 specific_benches，则只保留 gallery_direct 命中的（避免无关检索结果混入）
+        # 若是 domain 查询，则保留所有高分结果
+        only_gallery_direct = bool(info.get("specific_benches"))
 
-        state.bench_info = {
-            repo_id: data for repo_id, data in bench_info.items()
-            if data.get('score', 0.0) >= score_threshold
-        }
+        built_benches = []
+        built_bench_info = {}
+        for repo_id, data in bench_info.items():
+            if only_gallery_direct and data.get('source') != 'gallery_direct':
+                continue
+            if not only_gallery_direct and data.get('score', 0.0) < score_threshold:
+                continue
+            gallery_entry = data.get('_gallery_entry')
+            if gallery_entry:
+                bench = BenchInfo(
+                    bench_name=gallery_entry['bench_name'],
+                    bench_table_exist=gallery_entry.get('bench_table_exist', True),
+                    bench_source_url=gallery_entry.get('bench_source_url'),
+                    bench_dataflow_eval_type=gallery_entry.get('bench_dataflow_eval_type'),
+                    bench_prompt_template=gallery_entry.get('bench_prompt_template'),
+                    bench_keys=gallery_entry.get('bench_keys', []),
+                    meta={**gallery_entry.get('meta', {}), 'from_gallery': True, 'retrieval_score': data['score']},
+                )
+                log.info(f"[gallery命中] {repo_id} → 使用完整配置（eval_type={bench.bench_dataflow_eval_type}）")
+            else:
+                bench = BenchInfo(
+                    bench_name=repo_id,
+                    bench_table_exist=True,
+                    bench_source_url=data.get('dataset_url'),
+                    meta={**data, 'from_gallery': False},
+                )
+            built_benches.append(bench)
+            built_bench_info[repo_id] = data
 
-        # 判断是否需要 BenchResolveAgent 去 HF 补充搜索
+        state.benches = built_benches
+        state.bench_info = built_bench_info
+
+        # 收集需要在 HF 上搜索的名称：
+        # - 用户明确指定的 specific_benches 里不在 gallery 的
+        # - 检索结果中分数不足且不在 gallery 的（补充候选）
         specific_benches: List[str] = info.get("specific_benches") or []
-        need_hf_resolve = len(quality_matches) < self.top_k or len(specific_benches) > 0
+        gallery_quality = [m for m in quality_matches if m.get('from_gallery')]
+        matched_names = {m['bench_name'] for m in quality_matches}
 
-        # 收集需要在 HF 上搜索的名称
         names_for_hf: List[str] = []
-        if need_hf_resolve:
-            matched_names = {m['bench_name'] for m in quality_matches}
-            # 1) 用户明确指定的 benchmark 且本地没有高质量匹配的
-            for name in specific_benches:
-                if name and name not in matched_names:
-                    names_for_hf.append(name)
-            # 2) 本地低分结果的名字也交给 HF 搜索，作为候选补充
-            if len(quality_matches) < self.top_k:
-                for m in local_matches:
-                    if m['bench_name'] not in matched_names and m['bench_name'] not in names_for_hf:
-                        names_for_hf.append(m['bench_name'])
+        # 1) 用户明确指定但不在 gallery 的
+        for name in specific_benches:
+            if name and not self._lookup_gallery(name):
+                names_for_hf.append(name)
+        # 2) 检索到但分数不足 gallery 也没有的，补充给 HF
+        for m in local_matches:
+            if (
+                m['bench_name'] not in matched_names
+                and m['bench_name'] not in names_for_hf
+                and not m.get('from_gallery')
+            ):
+                names_for_hf.append(m['bench_name'])
 
-        skip_resolve = not need_hf_resolve
-
-        state.temp_data["skip_resolve"] = skip_resolve
+        # 始终触发 BenchResolveAgent（HF search 与 gallery 结果并列呈现）
+        state.temp_data["skip_resolve"] = False
         state.temp_data["bench_names_suggested"] = names_for_hf
 
+        gallery_hits = [m['bench_name'] for m in quality_matches if m.get('from_gallery')]
         state.agent_results["BenchNameSuggestNode"] = {
             "local_matches": local_matches,
             "quality_matches": [m['bench_name'] for m in quality_matches],
+            "gallery_hits": gallery_hits,
             "bench_names": names_for_hf,
-            "skip_resolve": skip_resolve,
+            "skip_resolve": False,
             "retrieval_mode": "rag" if use_rag else "tfidf",
             "search_query": search_query,
             "score_threshold": score_threshold,
         }
 
-        if skip_resolve:
-            log.info(f"检索完成，{len(quality_matches)} 个高质量结果，跳过 HF 搜索")
-        else:
-            log.info(
-                f"检索完成，{len(quality_matches)}/{self.top_k} 个高质量结果 "
-                f"(阈值 {score_threshold})，将由 BenchResolveAgent 补充 HF 搜索"
-            )
-            if names_for_hf:
-                log.info(f"待 HF 搜索的名称: {names_for_hf}")
+        log.info(
+            f"检索完成，{len(quality_matches)} 个高质量结果（gallery命中: {len(gallery_hits)}），"
+            f"HF 搜索候选: {names_for_hf}"
+        )
 
         return state

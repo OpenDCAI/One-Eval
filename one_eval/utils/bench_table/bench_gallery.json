@@ -345,7 +345,11 @@
           "ok": true,
           "error": null
         },
-        "download_error": "load_dataset 失败: Unknown split \"test\". Should be one of ['large', 'small'].",
+        "download_config": {
+          "config": "default",
+          "split": "small",
+          "reason": "该数据集只有 'large' 和 'small' 两个 split，选择 'small' 用于评测。"
+        },
         "key_mapping": {
           "input_question_key": "partial",
           "input_target_key": "truth_xml"
@@ -7904,13 +7908,15 @@
         "source": "bench_table",
         "aliases": [
           "aime",
-          "AIME"
+          "aime2024",
+          "AIME",
+          "AIME2024"
         ],
         "category": "Math",
         "tags": [
           "math"
         ],
-        "description": "This dataset contains problems from the American Invitational Mathematics Examination (AIME) 2024.",
+        "description": "AIME 2024: Problems from the American Invitational Mathematics Examination 2024. 30 problems total.",
         "hf_meta": {
           "bench_name": "aime",
           "hf_repo": "Maxwell-Jia/AIME_2024",
@@ -9569,6 +9575,1110 @@
           "input_label_key": "label"
         },
         "key_mapping_reason": "Winogender 是一种 Winograd Schema Challenge 类型的数据集，使用句子和代词进行核心指代消解评估。句子提供了问题内容，代词作为选择项，标签表明正确的指代。因此最适合选择题：单正确格式。"
+      }
+    },
+    {
+      "bench_name": "gsm8k",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/openai/gsm8k",
+      "bench_dataflow_eval_type": "key2_qa",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "question",
+        "answer"
+      ],
+      "meta": {
+        "bench_name": "gsm8k",
+        "source": "bench_table",
+        "aliases": [
+          "gsm8k",
+          "GSM8K"
+        ],
+        "category": "Math",
+        "tags": [
+          "math"
+        ],
+        "description": "Grade School Math benchmark with 8.5K high quality linguistically diverse grade school math word problems.",
+        "hf_meta": {
+          "bench_name": "gsm8k",
+          "hf_repo": "openai/gsm8k",
+          "card_text": "Grade School Math benchmark with 8.5K high quality linguistically diverse grade school math word problems.",
+          "tags": [
+            "math"
+          ],
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "openai/gsm8k",
+          "revision": null,
+          "subsets": [
+            {
+              "subset": "main",
+              "splits": [
+                {
+                  "name": "test",
+                  "num_examples": 1319
+                }
+              ]
+            }
+          ],
+          "ok": true,
+          "error": null
+        },
+        "download_config": {
+          "config": "main",
+          "split": "test",
+          "reason": "main config, test split is the standard evaluation split."
+        },
+        "key_mapping": {
+          "input_question_key": "question",
+          "input_target_key": "answer"
+        },
+        "key_mapping_reason": "question is the math problem, answer is the ground truth with chain-of-thought reasoning."
+      }
+    },
+    {
+      "bench_name": "hendrycks-math",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/EleutherAI/hendrycks_math",
+      "bench_dataflow_eval_type": "key2_qa",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "problem",
+        "level",
+        "type",
+        "solution"
+      ],
+      "meta": {
+        "bench_name": "hendrycks-math",
+        "source": "bench_table",
+        "aliases": [
+          "hendrycks-math",
+          "MATH",
+          "hendrycks_math",
+          "competition_math"
+        ],
+        "category": "Math",
+        "tags": [
+          "math"
+        ],
+        "description": "A challenging math benchmark covering algebra, geometry, number theory, counting, probability, precalculus, and more at competition level.",
+        "hf_meta": {
+          "bench_name": "hendrycks-math",
+          "hf_repo": "EleutherAI/hendrycks_math",
+          "card_text": "A challenging math benchmark covering algebra, geometry, number theory, counting, probability, precalculus, and more at competition level.",
+          "tags": [
+            "math"
+          ],
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "EleutherAI/hendrycks_math",
+          "revision": null,
+          "subsets": [
+            {
+              "subset": "algebra",
+              "splits": [
+                {
+                  "name": "test",
+                  "num_examples": 1187
+                }
+              ]
+            },
+            {
+              "subset": "counting_and_probability",
+              "splits": [
+                {
+                  "name": "test",
+                  "num_examples": 474
+                }
+              ]
+            },
+            {
+              "subset": "geometry",
+              "splits": [
+                {
+                  "name": "test",
+                  "num_examples": 479
+                }
+              ]
+            },
+            {
+              "subset": "intermediate_algebra",
+              "splits": [
+                {
+                  "name": "test",
+                  "num_examples": 903
+                }
+              ]
+            },
+            {
+              "subset": "number_theory",
+              "splits": [
+                {
+                  "name": "test",
+                  "num_examples": 540
+                }
+              ]
+            },
+            {
+              "subset": "prealgebra",
+              "splits": [
+                {
+                  "name": "test",
+                  "num_examples": 871
+                }
+              ]
+            },
+            {
+              "subset": "precalculus",
+              "splits": [
+                {
+                  "name": "test",
+                  "num_examples": 546
+                }
+              ]
+            }
+          ],
+          "ok": true,
+          "error": null
+        },
+        "download_config": {
+          "config": "algebra",
+          "split": "test",
+          "reason": "algebra is the most representative and commonly used subset for evaluation."
+        },
+        "key_mapping": {
+          "input_question_key": "problem",
+          "input_target_key": "solution"
+        },
+        "key_mapping_reason": "problem contains the math question, solution contains the full worked solution with the final answer."
+      }
+    },
+    {
+      "bench_name": "mbpp",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/google-research-datasets/mbpp",
+      "bench_dataflow_eval_type": "key2_qa",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "task_id",
+        "text",
+        "code",
+        "test_list",
+        "test_setup_code",
+        "challenge_test_list"
+      ],
+      "meta": {
+        "bench_name": "mbpp",
+        "source": "bench_table",
+        "aliases": [
+          "mbpp",
+          "MBPP"
+        ],
+        "category": "Coding",
+        "tags": [
+          "coding"
+        ],
+        "description": "Mostly Basic Python Problems: 974 crowd-sourced Python programming problems designed to be solvable by entry-level programmers.",
+        "hf_meta": {
+          "bench_name": "mbpp",
+          "hf_repo": "google-research-datasets/mbpp",
+          "card_text": "Mostly Basic Python Problems: 974 crowd-sourced Python programming problems.",
+          "tags": [
+            "coding"
+          ],
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "google-research-datasets/mbpp",
+          "revision": null,
+          "subsets": [
+            {
+              "subset": "full",
+              "splits": [
+                {
+                  "name": "test",
+                  "num_examples": 500
+                }
+              ]
+            }
+          ],
+          "ok": true,
+          "error": null
+        },
+        "download_config": {
+          "config": "full",
+          "split": "test",
+          "reason": "full config test split is the standard evaluation split for MBPP."
+        },
+        "key_mapping": {
+          "input_question_key": "text",
+          "input_target_key": "code"
+        },
+        "key_mapping_reason": "text is the natural language problem description, code is the reference solution."
+      }
+    },
+    {
+      "bench_name": "bigcodebench",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/bigcode/bigcodebench",
+      "bench_dataflow_eval_type": "key2_qa",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "task_id",
+        "complete_prompt",
+        "instruct_prompt",
+        "canonical_solution",
+        "code_prompt",
+        "test",
+        "entry_point",
+        "doc_struct",
+        "libs"
+      ],
+      "meta": {
+        "bench_name": "bigcodebench",
+        "source": "bench_table",
+        "aliases": [
+          "bigcodebench",
+          "BigCodeBench"
+        ],
+        "category": "Coding",
+        "tags": [
+          "coding"
+        ],
+        "description": "BigCodeBench: a challenging code benchmark with 1140 function-level programming tasks requiring diverse library usage and complex instructions.",
+        "hf_meta": {
+          "bench_name": "bigcodebench",
+          "hf_repo": "bigcode/bigcodebench",
+          "card_text": "BigCodeBench: challenging code benchmark with 1140 function-level programming tasks.",
+          "tags": [
+            "coding"
+          ],
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "bigcode/bigcodebench",
+          "revision": null,
+          "subsets": [
+            {
+              "subset": "default",
+              "splits": [
+                {
+                  "name": "v0.1.2",
+                  "num_examples": 1140
+                }
+              ]
+            }
+          ],
+          "ok": true,
+          "error": null
+        },
+        "download_config": {
+          "config": "default",
+          "split": "v0.1.2",
+          "reason": "v0.1.2 is the latest stable release split."
+        },
+        "key_mapping": {
+          "input_question_key": "instruct_prompt",
+          "input_target_key": "canonical_solution"
+        },
+        "key_mapping_reason": "instruct_prompt is the instruction-following prompt, canonical_solution is the reference implementation."
+      }
+    },
+    {
+      "bench_name": "hellaswag",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/Rowan/hellaswag",
+      "bench_dataflow_eval_type": "key3_q_choices_a",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "ind",
+        "activity_label",
+        "ctx_a",
+        "ctx_b",
+        "ctx",
+        "endings",
+        "source_id",
+        "split",
+        "split_type",
+        "label"
+      ],
+      "meta": {
+        "bench_name": "hellaswag",
+        "source": "bench_table",
+        "aliases": [
+          "hellaswag",
+          "HellaSwag"
+        ],
+        "category": "Knowledge & QA",
+        "tags": [
+          "reasoning",
+          "commonsense"
+        ],
+        "description": "HellaSwag: commonsense NLI benchmark where models must choose the most plausible continuation of a given context. 70K multiple-choice questions.",
+        "hf_meta": {
+          "bench_name": "hellaswag",
+          "hf_repo": "Rowan/hellaswag",
+          "card_text": "HellaSwag: commonsense NLI with 70K multiple-choice questions.",
+          "tags": [
+            "reasoning",
+            "commonsense"
+          ],
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "Rowan/hellaswag",
+          "revision": null,
+          "subsets": [
+            {
+              "subset": "default",
+              "splits": [
+                {
+                  "name": "validation",
+                  "num_examples": 10042
+                }
+              ]
+            }
+          ],
+          "ok": true,
+          "error": null
+        },
+        "download_config": {
+          "config": "default",
+          "split": "validation",
+          "reason": "validation split is used for evaluation as test split labels are not publicly available."
+        },
+        "key_mapping": {
+          "input_question_key": "ctx",
+          "input_choices_key": "endings",
+          "input_label_key": "label"
+        },
+        "key_mapping_reason": "ctx is the context/question, endings is the list of 4 possible continuations, label is the correct index."
+      }
+    },
+    {
+      "bench_name": "boolq",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/google/boolq",
+      "bench_dataflow_eval_type": "key3_q_choices_a",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "question",
+        "answer",
+        "passage"
+      ],
+      "meta": {
+        "bench_name": "boolq",
+        "source": "bench_table",
+        "aliases": [
+          "boolq",
+          "BoolQ"
+        ],
+        "category": "Knowledge & QA",
+        "tags": [
+          "reading comprehension",
+          "yes/no"
+        ],
+        "description": "BoolQ: a reading comprehension dataset for yes/no questions with 15942 examples drawn from Wikipedia passages.",
+        "hf_meta": {
+          "bench_name": "boolq",
+          "hf_repo": "google/boolq",
+          "card_text": "BoolQ: reading comprehension dataset for yes/no questions.",
+          "tags": [
+            "reading comprehension"
+          ],
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "google/boolq",
+          "revision": null,
+          "subsets": [
+            {
+              "subset": "default",
+              "splits": [
+                {
+                  "name": "validation",
+                  "num_examples": 3270
+                }
+              ]
+            }
+          ],
+          "ok": true,
+          "error": null
+        },
+        "download_config": {
+          "config": "default",
+          "split": "validation",
+          "reason": "validation split is standard for BoolQ evaluation."
+        },
+        "key_mapping": {
+          "input_question_key": "question",
+          "input_choices_key": [
+            "true",
+            "false"
+          ],
+          "input_label_key": "answer",
+          "input_context_key": "passage"
+        },
+        "key_mapping_reason": "question is the yes/no question, passage is the context, answer is the boolean ground truth."
+      }
+    },
+    {
+      "bench_name": "bbh",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/lukaemon/bbh",
+      "bench_dataflow_eval_type": "key2_qa",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "input",
+        "target"
+      ],
+      "meta": {
+        "bench_name": "bbh",
+        "source": "bench_table",
+        "aliases": [
+          "bbh",
+          "BBH",
+          "BIG-Bench Hard",
+          "big-bench-hard"
+        ],
+        "category": "Reasoning",
+        "tags": [
+          "reasoning"
+        ],
+        "description": "BIG-Bench Hard: 23 challenging tasks from BIG-Bench where language models fail to exceed average human performance, requiring multi-step reasoning.",
+        "hf_meta": {
+          "bench_name": "bbh",
+          "hf_repo": "lukaemon/bbh",
+          "card_text": "BIG-Bench Hard: 23 challenging tasks requiring multi-step reasoning.",
+          "tags": [
+            "reasoning"
+          ],
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "lukaemon/bbh",
+          "revision": null,
+          "subsets": [
+            {
+              "subset": "boolean_expressions",
+              "splits": [
+                {
+                  "name": "test",
+                  "num_examples": 250
+                }
+              ]
+            },
+            {
+              "subset": "causal_judgement",
+              "splits": [
+                {
+                  "name": "test",
+                  "num_examples": 187
+                }
+              ]
+            },
+            {
+              "subset": "date_understanding",
+              "splits": [
+                {
+                  "name": "test",
+                  "num_examples": 369
+                }
+              ]
+            },
+            {
+              "subset": "logical_deduction_five_objects",
+              "splits": [
+                {
+                  "name": "test",
+                  "num_examples": 250
+                }
+              ]
+            },
+            {
+              "subset": "multistep_arithmetic_two",
+              "splits": [
+                {
+                  "name": "test",
+                  "num_examples": 250
+                }
+              ]
+            },
+            {
+              "subset": "word_sorting",
+              "splits": [
+                {
+                  "name": "test",
+                  "num_examples": 250
+                }
+              ]
+            }
+          ],
+          "ok": true,
+          "error": null
+        },
+        "download_config": {
+          "config": "boolean_expressions",
+          "split": "test",
+          "reason": "boolean_expressions is a representative and commonly used BBH subset."
+        },
+        "key_mapping": {
+          "input_question_key": "input",
+          "input_target_key": "target"
+        },
+        "key_mapping_reason": "input is the question/task description, target is the correct answer."
+      }
+    },
+    {
+      "bench_name": "aime2025",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/opencompass/AIME2025",
+      "bench_dataflow_eval_type": "key2_qa",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "question",
+        "answer"
+      ],
+      "meta": {
+        "bench_name": "aime2025",
+        "source": "bench_table",
+        "aliases": [
+          "aime2025",
+          "AIME2025",
+          "aime-2025"
+        ],
+        "category": "Math",
+        "tags": [
+          "math"
+        ],
+        "description": "AIME 2025: Problems from the American Invitational Mathematics Examination 2025, covering both Part I and Part II.",
+        "hf_meta": {
+          "bench_name": "aime2025",
+          "hf_repo": "opencompass/AIME2025",
+          "card_text": "AIME 2025 competition math problems.",
+          "tags": [
+            "math"
+          ],
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "opencompass/AIME2025",
+          "revision": null,
+          "subsets": [
+            {
+              "subset": "AIME2025-I",
+              "splits": [
+                {
+                  "name": "test",
+                  "num_examples": 15
+                }
+              ]
+            },
+            {
+              "subset": "AIME2025-II",
+              "splits": [
+                {
+                  "name": "test",
+                  "num_examples": 15
+                }
+              ]
+            }
+          ],
+          "ok": true,
+          "error": null
+        },
+        "download_config": {
+          "config": "AIME2025-I",
+          "split": "test",
+          "reason": "AIME2025-I is Part I of the 2025 exam, 15 problems."
+        },
+        "key_mapping": {
+          "input_question_key": "question",
+          "input_target_key": "answer"
+        },
+        "key_mapping_reason": "question is the math problem, answer is the numerical answer."
+      }
+    },
+    {
+      "bench_name": "medmcqa",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/openlifescienceai/medmcqa",
+      "bench_dataflow_eval_type": "key3_q_choices_a",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "id",
+        "question",
+        "opa",
+        "opb",
+        "opc",
+        "opd",
+        "cop",
+        "choice_type",
+        "exp",
+        "subject_name",
+        "topic_name"
+      ],
+      "meta": {
+        "bench_name": "medmcqa",
+        "source": "bench_table",
+        "aliases": [
+          "medmcqa",
+          "MedMCQA"
+        ],
+        "category": "Domain-Specific",
+        "tags": [
+          "medical",
+          "multiple-choice"
+        ],
+        "description": "MedMCQA: Large-scale multi-subject medical multiple-choice QA dataset with 194K questions from AIIMS and NEET PG exams covering 21 medical subjects.",
+        "hf_meta": {
+          "bench_name": "medmcqa",
+          "hf_repo": "openlifescienceai/medmcqa",
+          "card_text": "Large-scale medical multiple-choice QA from AIIMS and NEET PG exams.",
+          "tags": [
+            "medical"
+          ],
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "openlifescienceai/medmcqa",
+          "revision": null,
+          "subsets": [
+            {
+              "subset": "default",
+              "splits": [
+                {
+                  "name": "validation",
+                  "num_examples": 4183
+                }
+              ]
+            }
+          ],
+          "ok": true,
+          "error": null
+        },
+        "download_config": {
+          "config": "default",
+          "split": "validation",
+          "reason": "validation split is used for evaluation; test split labels are not publicly available."
+        },
+        "key_mapping": {
+          "input_question_key": "question",
+          "input_choices_key": [
+            "opa",
+            "opb",
+            "opc",
+            "opd"
+          ],
+          "input_label_key": "cop"
+        },
+        "key_mapping_reason": "question is the medical question, opa-opd are the four options, cop is the correct option index (0-3)."
+      }
+    },
+    {
+      "bench_name": "pubmedqa",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/qiaojin/PubMedQA",
+      "bench_dataflow_eval_type": "key3_q_choices_a",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "pubid",
+        "question",
+        "context",
+        "long_answer",
+        "final_decision"
+      ],
+      "meta": {
+        "bench_name": "pubmedqa",
+        "source": "bench_table",
+        "aliases": [
+          "pubmedqa",
+          "PubMedQA"
+        ],
+        "category": "Domain-Specific",
+        "tags": [
+          "medical",
+          "biomedical"
+        ],
+        "description": "PubMedQA: Biomedical research question answering dataset with 1K expert-annotated yes/no/maybe questions based on PubMed abstracts.",
+        "hf_meta": {
+          "bench_name": "pubmedqa",
+          "hf_repo": "qiaojin/PubMedQA",
+          "card_text": "Biomedical yes/no/maybe QA from PubMed abstracts.",
+          "tags": [
+            "medical",
+            "biomedical"
+          ],
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "qiaojin/PubMedQA",
+          "revision": null,
+          "subsets": [
+            {
+              "subset": "pqa_labeled",
+              "splits": [
+                {
+                  "name": "train",
+                  "num_examples": 1000
+                }
+              ]
+            }
+          ],
+          "ok": true,
+          "error": null
+        },
+        "download_config": {
+          "config": "pqa_labeled",
+          "split": "train",
+          "reason": "pqa_labeled contains the 1K expert-annotated questions used for evaluation."
+        },
+        "key_mapping": {
+          "input_question_key": "question",
+          "input_choices_key": [
+            "yes",
+            "no",
+            "maybe"
+          ],
+          "input_label_key": "final_decision",
+          "input_context_key": "context"
+        },
+        "key_mapping_reason": "question is the research question, context contains the abstract, final_decision is yes/no/maybe."
+      }
+    },
+    {
+      "bench_name": "medqa-usmle",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/GBaker/MedQA-USMLE-4-options",
+      "bench_dataflow_eval_type": "key3_q_choices_a",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "question",
+        "answer",
+        "options",
+        "meta_info",
+        "answer_idx",
+        "metamap_phrases"
+      ],
+      "meta": {
+        "bench_name": "medqa-usmle",
+        "source": "bench_table",
+        "aliases": [
+          "medqa-usmle",
+          "MedQA",
+          "medqa",
+          "USMLE"
+        ],
+        "category": "Domain-Specific",
+        "tags": [
+          "medical",
+          "multiple-choice"
+        ],
+        "description": "MedQA USMLE: 4-option multiple choice questions from the US Medical Licensing Examination, testing clinical knowledge and reasoning.",
+        "hf_meta": {
+          "bench_name": "medqa-usmle",
+          "hf_repo": "GBaker/MedQA-USMLE-4-options",
+          "card_text": "USMLE-style 4-option medical multiple choice questions.",
+          "tags": [
+            "medical"
+          ],
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "GBaker/MedQA-USMLE-4-options",
+          "revision": null,
+          "subsets": [
+            {
+              "subset": "default",
+              "splits": [
+                {
+                  "name": "test",
+                  "num_examples": 1273
+                }
+              ]
+            }
+          ],
+          "ok": true,
+          "error": null
+        },
+        "download_config": {
+          "config": "default",
+          "split": "test",
+          "reason": "test split is the standard evaluation split for MedQA USMLE."
+        },
+        "key_mapping": {
+          "input_question_key": "question",
+          "input_choices_key": "options",
+          "input_label_key": "answer_idx"
+        },
+        "key_mapping_reason": "question is the clinical question, options is a dict of A-D choices, answer_idx is the correct option key."
+      }
+    },
+    {
+      "bench_name": "convfinqa",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/AdaptLLM/finance-tasks",
+      "bench_dataflow_eval_type": "key2_qa",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "id",
+        "input",
+        "label"
+      ],
+      "meta": {
+        "bench_name": "convfinqa",
+        "source": "bench_table",
+        "aliases": [
+          "convfinqa",
+          "ConvFinQA",
+          "finance-tasks"
+        ],
+        "category": "Domain-Specific",
+        "tags": [
+          "finance",
+          "QA"
+        ],
+        "description": "ConvFinQA: Conversational financial question answering requiring numerical reasoning over financial reports.",
+        "hf_meta": {
+          "bench_name": "convfinqa",
+          "hf_repo": "AdaptLLM/finance-tasks",
+          "card_text": "Financial QA tasks including ConvFinQA requiring numerical reasoning.",
+          "tags": [
+            "finance"
+          ],
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "AdaptLLM/finance-tasks",
+          "revision": null,
+          "subsets": [
+            {
+              "subset": "ConvFinQA",
+              "splits": [
+                {
+                  "name": "test",
+                  "num_examples": 421
+                }
+              ]
+            }
+          ],
+          "ok": true,
+          "error": null
+        },
+        "download_config": {
+          "config": "ConvFinQA",
+          "split": "test",
+          "reason": "ConvFinQA test split is the standard evaluation split."
+        },
+        "key_mapping": {
+          "input_question_key": "input",
+          "input_target_key": "label"
+        },
+        "key_mapping_reason": "input is the financial question with context, label is the correct answer."
+      }
+    },
+    {
+      "bench_name": "nq-open",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/nq_open",
+      "bench_dataflow_eval_type": "key2_qa",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "question",
+        "answer"
+      ],
+      "meta": {
+        "bench_name": "nq-open",
+        "source": "bench_table",
+        "aliases": [
+          "nq-open",
+          "nq_open",
+          "NaturalQuestions",
+          "NQ"
+        ],
+        "category": "Knowledge & QA",
+        "tags": [
+          "open-domain QA"
+        ],
+        "description": "Natural Questions Open: open-domain QA dataset derived from Google Search queries with short Wikipedia answers. 3.6K validation examples.",
+        "hf_meta": {
+          "bench_name": "nq-open",
+          "hf_repo": "nq_open",
+          "card_text": "Open-domain QA from Google Search queries with Wikipedia answers.",
+          "tags": [
+            "QA"
+          ],
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "nq_open",
+          "revision": null,
+          "subsets": [
+            {
+              "subset": "nq_open",
+              "splits": [
+                {
+                  "name": "validation",
+                  "num_examples": 3610
+                }
+              ]
+            }
+          ],
+          "ok": true,
+          "error": null
+        },
+        "download_config": {
+          "config": "nq_open",
+          "split": "validation",
+          "reason": "validation split is standard for NQ open-domain QA evaluation."
+        },
+        "key_mapping": {
+          "input_question_key": "question",
+          "input_target_key": "answer"
+        },
+        "key_mapping_reason": "question is the search query, answer is a list of acceptable short answers."
+      }
+    },
+    {
+      "bench_name": "scienceqa",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/derek-thomas/ScienceQA",
+      "bench_dataflow_eval_type": "key3_q_choices_a",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "image",
+        "question",
+        "choices",
+        "answer",
+        "hint",
+        "task",
+        "grade",
+        "subject",
+        "topic",
+        "category",
+        "skill",
+        "lecture",
+        "solution"
+      ],
+      "meta": {
+        "bench_name": "scienceqa",
+        "source": "bench_table",
+        "aliases": [
+          "scienceqa",
+          "ScienceQA"
+        ],
+        "category": "Knowledge & QA",
+        "tags": [
+          "science",
+          "multiple-choice"
+        ],
+        "description": "ScienceQA: 21K multimodal multiple-choice science questions from elementary and high school curricula spanning natural science, social science, and language science.",
+        "hf_meta": {
+          "bench_name": "scienceqa",
+          "hf_repo": "derek-thomas/ScienceQA",
+          "card_text": "Multimodal science QA covering natural, social, and language science.",
+          "tags": [
+            "science",
+            "multimodal"
+          ],
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "derek-thomas/ScienceQA",
+          "revision": null,
+          "subsets": [
+            {
+              "subset": "default",
+              "splits": [
+                {
+                  "name": "test",
+                  "num_examples": 4241
+                }
+              ]
+            }
+          ],
+          "ok": true,
+          "error": null
+        },
+        "download_config": {
+          "config": "default",
+          "split": "test",
+          "reason": "test split is the standard evaluation split for ScienceQA."
+        },
+        "key_mapping": {
+          "input_question_key": "question",
+          "input_choices_key": "choices",
+          "input_label_key": "answer",
+          "input_context_key": "hint"
+        },
+        "key_mapping_reason": "question is the science question, choices is the list of options, answer is the correct index, hint provides additional context."
+      }
+    },
+    {
+      "bench_name": "arc-challenge",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/allenai/ai2_arc",
+      "bench_dataflow_eval_type": "key3_q_choices_a",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "id",
+        "question",
+        "choices",
+        "answerKey"
+      ],
+      "meta": {
+        "bench_name": "arc-challenge",
+        "source": "bench_table",
+        "aliases": [
+          "arc-challenge",
+          "ARC-Challenge",
+          "ARC-c"
+        ],
+        "category": "Reasoning",
+        "tags": [
+          "reasoning",
+          "science"
+        ],
+        "description": "ARC Challenge Set: 1172 difficult science exam questions requiring reasoning beyond simple retrieval, from the AI2 Reasoning Challenge.",
+        "hf_meta": {
+          "bench_name": "arc-challenge",
+          "hf_repo": "allenai/ai2_arc",
+          "card_text": "AI2 Reasoning Challenge - Challenge Set: hard science questions.",
+          "tags": [
+            "reasoning"
+          ],
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "allenai/ai2_arc",
+          "revision": null,
+          "subsets": [
+            {
+              "subset": "ARC-Challenge",
+              "splits": [
+                {
+                  "name": "test",
+                  "num_examples": 1172
+                }
+              ]
+            }
+          ],
+          "ok": true,
+          "error": null
+        },
+        "download_config": {
+          "config": "ARC-Challenge",
+          "split": "test",
+          "reason": "ARC-Challenge test split is the harder subset used for evaluation."
+        },
+        "key_mapping": {
+          "input_question_key": "question",
+          "input_choices_key": "choices",
+          "input_label_key": "answerKey"
+        },
+        "key_mapping_reason": "question is the science question, choices contains the options list, answerKey is the correct letter."
       }
     }
   ]

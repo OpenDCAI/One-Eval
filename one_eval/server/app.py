@@ -34,6 +34,10 @@ ENV_FILE = REPO_ROOT / "env.sh"
 DB_PATH = (SERVER_DIR.parents[2] / "checkpoints" / "eval.db").resolve()
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
+# 内存缓存：记录每个 thread 是否处于 interrupted 状态
+# ainvoke 返回时立即写入，避免 get_status 依赖 checkpoint 竞态
+_thread_interrupt_cache: Dict[str, bool] = {}
+
 def _load_env_file():
     """Parse env.sh and set os.environ if not already set."""
     if not ENV_FILE.exists():
@@ -500,8 +504,10 @@ async def run_graph_background(thread_id: str, input_state: Any, resume_command:
             # Check if workflow was interrupted
             if result and "__interrupt__" in result:
                 log.info(f"Graph interrupted for {thread_id}, interrupts: {result['__interrupt__']}")
+                _thread_interrupt_cache[thread_id] = True
             else:
                 log.info(f"Graph execution finished for {thread_id}")
+                _thread_interrupt_cache.pop(thread_id, None)
         except Exception as e:
             log.error(f"Error executing graph for {thread_id}: {e}")
 
@@ -520,9 +526,10 @@ async def get_status(thread_id: str):
         graph = build_complete_workflow(checkpointer=checkpointer)
         config = {"configurable": {"thread_id": thread_id}}
 
-        # 最多重试3次，每次间隔100ms
-        max_retries = 3
-        retry_delay = 0.1
+        # 竞态重试：interrupt() 写入 checkpoint 需要一点时间
+        # 最多重试 8 次，间隔从 100ms 线性增加到 300ms
+        max_retries = 8
+        retry_delays = [0.1, 0.15, 0.2, 0.25, 0.3, 0.3, 0.3, 0.3]
 
         for attempt in range(max_retries):
             try:
@@ -547,16 +554,21 @@ async def get_status(thread_id: str):
 
             # 判断状态
             if not next_nodes and not is_interrupted:
-                # next=() 且没检测到中断
-                # 检查是否在竞态窗口：有 benches 但没进入 Phase 2
-                benches = current_values.get("benches", [])
-                has_phase2_data = bool(current_values.get("eval_results"))
+                # 优先查内存缓存：ainvoke 返回时已确认有 interrupt
+                if _thread_interrupt_cache.get(thread_id):
+                    status = "interrupted"
+                else:
+                    # next=() 且没检测到中断——可能是竞态窗口：
+                    # interrupt() 已触发但尚未持久化进 checkpoint
+                    benches = current_values.get("benches", [])
+                    has_phase2_data = bool(current_values.get("eval_results"))
 
-                if benches and not has_phase2_data and attempt < max_retries - 1:
-                    log.info(f"[get_status] Race condition detected (attempt {attempt+1}), retrying in {retry_delay}s...")
-                    await asyncio.sleep(retry_delay)
-                    continue
-                status = "completed"
+                    if benches and not has_phase2_data and attempt < max_retries - 1:
+                        delay = retry_delays[attempt]
+                        log.info(f"[get_status] Race condition detected (attempt {attempt+1}), retrying in {delay}s...")
+                        await asyncio.sleep(delay)
+                        continue
+                    status = "completed"
             elif is_interrupted:
                 status = "interrupted"
             else:
@@ -614,7 +626,7 @@ async def resume_workflow(req: ResumeWorkflowRequest):
             # Convert dicts back to BenchInfo objects
             benches_data = req.state_updates["benches"]
             req.state_updates["benches"] = [
-                BenchInfo(**b) if isinstance(b, dict) else b 
+                _bench_from_dict(b) if isinstance(b, dict) else b 
                 for b in benches_data
             ]
 
@@ -625,7 +637,10 @@ async def resume_workflow(req: ResumeWorkflowRequest):
             await graph.aupdate_state(config, req.state_updates)
 
     command = Command(resume=req.action)
-    
+
+    # 清除 interrupt 缓存，workflow 即将继续运行
+    _thread_interrupt_cache.pop(req.thread_id, None)
+
     asyncio.create_task(run_graph_background(req.thread_id, None, resume_command=command))
     return {"status": "resuming"}
 
@@ -680,7 +695,7 @@ async def rerun_execution(thread_id: str, req: RerunExecutionRequest):
             if "benches" in updates and isinstance(updates["benches"], list):
                 benches_data = updates["benches"]
                 updates["benches"] = [
-                    BenchInfo(**b) if isinstance(b, dict) else b
+                    _bench_from_dict(b) if isinstance(b, dict) else b
                     for b in benches_data
                 ]
 
@@ -886,6 +901,13 @@ def _bench_download_sync(bench: Dict[str, Any], *, repo_root: Path, overrides: D
         bench["download_status"] = "failed"
         meta["download_error"] = last_err or "download failed"
     return bench
+
+def _bench_from_dict(b: Any) -> BenchInfo:
+    """从前端传来的 dict 安全构建 BenchInfo，过滤掉 BenchInfo 不认识的字段"""
+    import dataclasses
+    valid_fields = {f.name for f in dataclasses.fields(BenchInfo)}
+    filtered = {k: v for k, v in b.items() if k in valid_fields}
+    return BenchInfo(**filtered)
 
 def _bench_to_dict(b: Any) -> Optional[Dict[str, Any]]:
     if b is None:

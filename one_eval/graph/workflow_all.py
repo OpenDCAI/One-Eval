@@ -226,6 +226,6 @@ if __name__ == "__main__":
         
     asyncio.run(run_full_pipeline(
         user_query=query,
-        thread_id="demo_run_hyh_21", 
+        thread_id="panmingh_21", 
         mode="run"
     ))
