@@ -6,11 +6,10 @@
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/OpenDCAI/One-Eval)
 [![Repo Size](https://img.shields.io/github/repo-size/OpenDCAI/One-Eval?color=green)](https://github.com/OpenDCAI/One-Eval)
 
-<!-- TODO: Uncomment after adding ArXiv link -->
-<!-- [![ArXiv](https://img.shields.io/badge/ArXiv-Paper-b31b1b.svg?logo=arxiv)](https://arxiv.org/abs/xxxx.xxxxx) -->
+[![ArXiv](https://img.shields.io/badge/ArXiv-Paper-b31b1b.svg?logo=arxiv)](https://arxiv.org/abs/2603.09821)
 
 <!-- TODO: Uncomment after adding WeChat Group QR link -->
-<!-- [![WeChat Group](https://img.shields.io/badge/WeChat-Group-brightgreen?logo=wechat&logoColor=white)](YOUR_WECHAT_QR_LINK) -->
+[![WeChat Group](https://img.shields.io/badge/WeChat-Group-brightgreen?logo=wechat&logoColor=white)](./static/logo/318QRcode.jpg)
 
 </div>
 
@@ -23,6 +22,11 @@ English | [简体中文](./README_zh.md)
 
 - **[2026-03] 🎉 One-Eval (v0.1.0) is officially open-sourced!**  
   We released the first version, supporting full-link automation from natural language to evaluation reports (NL2Eval). Say goodbye to tedious manual scripts and make LLM evaluation as simple, intuitive, and controllable as chatting. Welcome to Star 🌟 and follow!
+
+## 💡 Why One-Eval?
+
+Traditional evaluation frameworks often require users to manually search for benchmarks, download data, and fill in extensive configuration parameters.  
+**One-Eval** aims to change this: **Everything that can be automated is handled by the Agent**. From benchmark recommendation to model evaluation, we are committed to providing the most direct and intuitive evaluation experience.
 
 ## 🔍 2. Overview
 
@@ -88,10 +92,10 @@ This Graph demonstrates the complete closed loop from Query parsing to report ge
 
 One-Eval has a built-in rich **Bench Gallery** for unified management of meta-information of various evaluation benchmarks (such as task type, data format, Prompt template).
 
-Currently covering mainstream text-only capability dimensions (no complex sandbox environment required):
-- 🧮 **Reasoning**: MATH, GSM8K, BBH, AIME...
-- 🌐 **General Knowledge**: MMLU, CEval, CMMLU...
-- 🔧 **Instruction Following**: IFEval...
+> Currently covering mainstream text-only capability dimensions (no complex sandbox environment required):
+> - 🧮 **Reasoning**: MATH, GSM8K, BBH, AIME...
+> - 🌐 **General Knowledge**: MMLU, CEval, CMMLU...
+> - 🔧 **Instruction Following**: IFEval...
 
 <!-- TODO: Add Bench Gallery Image Here -->
 ![Bench Gallery](./static/logo/gallery.png)
