@@ -2,7 +2,7 @@ from typing import List, Any, Dict, Union, Optional
 from sklearn.metrics import roc_auc_score, accuracy_score, matthews_corrcoef
 from scipy.stats import pearsonr, spearmanr
 import numpy as np
-from one_eval.utils.extractor import safe_float, AnswerExtractor
+from one_eval.utils.extractor import safe_float, AnswerExtractor, extract_choice
 from one_eval.core.metric_registry import register_metric, MetricCategory
 
 @register_metric(
@@ -240,7 +240,7 @@ def compute_auc_roc(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, An
 
 @register_metric(
     name="accuracy",
-    desc="通用 accuracy (当 evaluator 支持时)",
+    desc="通用 accuracy (增强版: 支持自动选项匹配)",
     usage="分类任务辅助指标",
     categories=[MetricCategory.CHOICE_SINGLE],
     aliases=["acc", "acc_norm"]
@@ -249,19 +249,35 @@ def compute_accuracy(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, A
     """
     通用 Accuracy (基于完全匹配)。
     不同于 choice_accuracy (会自动提取 A/B/C/D)，这个函数做简单的相等性检查。
+    
+    Update: 增加了对 choices 格式的自动兼容 (int -> 'A', '(A)' -> 'A')
     """
     scores = []
     for p, r in zip(preds, refs):
         # Handle multi-ref
         r_list = r if isinstance(r, list) else [r]
         
-        # 只要命中一个 ref 就算对
         is_match = False
         p_str = str(p).strip()
+        
+        # 1. 尝试直接字符串匹配 (Exact Match)
         for gold in r_list:
             if p_str == str(gold).strip():
                 is_match = True
                 break
+        
+        # 2. 如果直接匹配失败，尝试作为选项进行匹配 (Fallback)
+        if not is_match:
+            # 尝试提取 Pred 的选项
+            p_choice = extract_choice(p)
+            
+            if p_choice:
+                for gold in r_list:
+                    # 尝试提取 Ref 的选项
+                    gold_choice = extract_choice(gold)
+                    if gold_choice and p_choice == gold_choice:
+                        is_match = True
+                        break
         
         scores.append(1.0 if is_match else 0.0)
         

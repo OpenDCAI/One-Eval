@@ -1,6 +1,8 @@
 # one_eval/serving/custom_llm_caller.py
 from __future__ import annotations
+import asyncio
 import httpx
+import os
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional
 from langchain_core.messages import BaseMessage, AIMessage
@@ -45,7 +47,7 @@ class CustomLLMCaller(BaseLLMCaller):
         state,
         tool_manager,
         agent_role: str,
-        model_name: str,
+        model_name: Optional[str],
         base_url: str,
         api_key: str,
         temperature: float = 0.0
@@ -60,8 +62,13 @@ class CustomLLMCaller(BaseLLMCaller):
         self.agent_role = agent_role   # 保存 agent 的真实角色名
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
+        timeout_s = int(os.getenv("OE_TIMEOUT_S") or os.getenv("DF_TIMEOUT_S") or 60)
+        if timeout_s <= 0:
+            timeout_s = 60
+        if not self.model_name:
+            self.model_name = os.getenv("DF_MODEL_NAME") or os.getenv("OE_MODEL_NAME") or "gpt-4o"
         self._client = httpx.AsyncClient(
-            timeout=60,
+            timeout=timeout_s,
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
@@ -130,12 +137,26 @@ class CustomLLMCaller(BaseLLMCaller):
             "messages": formatted_messages,
         }
 
-        r = await self._client.post(api_url, json=payload)
-        r.raise_for_status()
-        data = r.json()
+        retry_statuses = {429, 502, 503, 504}
+        last_err = None
+        for attempt in range(3):
+            try:
+                r = await self._client.post(api_url, json=payload)
+                if r.status_code in retry_statuses and attempt < 2:
+                    await asyncio.sleep(0.6 * (attempt + 1))
+                    continue
+                r.raise_for_status()
+                data = r.json()
+                content = data["choices"][0]["message"].get("content", "")
+                return AIMessage(content=content)
+            except Exception as e:
+                last_err = e
+                if attempt < 2:
+                    await asyncio.sleep(0.6 * (attempt + 1))
+                    continue
+                raise
 
-        content = data["choices"][0]["message"].get("content", "")
-        return AIMessage(content=content)
+        raise last_err
 
 
     # ------------------------------

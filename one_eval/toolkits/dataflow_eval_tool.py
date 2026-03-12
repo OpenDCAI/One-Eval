@@ -26,16 +26,56 @@ class DataFlowEvalTool:
     - BenchAnswerGenerator
     - UnifiedBenchDatasetEvaluator
     """
+    
+    # Class-level cache to prevent reloading vLLM on every request
+    _cached_llm_serving: Optional[LLMServingABC] = None
+    _cached_model_config: Optional[ModelConfig] = None
 
     def __init__(self, output_root: str = "cache/eval_results"):
         self.output_root = output_root
         os.makedirs(self.output_root, exist_ok=True)
-        self.llm_serving: Optional[LLMServingABC] = None
-        self._current_model_config: Optional[ModelConfig] = None
+        # Initialize instance members from cache if available, otherwise None
+        self.llm_serving: Optional[LLMServingABC] = DataFlowEvalTool._cached_llm_serving
+        self._current_model_config: Optional[ModelConfig] = DataFlowEvalTool._cached_model_config
 
     def _init_llm_serving(self, config: ModelConfig):
         """初始化或更新 LLM Serving"""
-        # 如果配置相同且 serving 已存在，复用
+        def _is_broken_local(serving: Any) -> bool:
+            if serving is None:
+                return False
+            if isinstance(serving, LocalModelLLMServing_vllm):
+                if getattr(serving, "backend_initialized", False) and not hasattr(serving, "tokenizer"):
+                    return True
+            return False
+
+        # Check global cache first
+        if DataFlowEvalTool._cached_llm_serving and DataFlowEvalTool._cached_model_config == config:
+            if _is_broken_local(DataFlowEvalTool._cached_llm_serving):
+                log.warning("Detected broken cached local serving (missing tokenizer), rebuilding...")
+                try:
+                    if hasattr(DataFlowEvalTool._cached_llm_serving, "cleanup"):
+                        DataFlowEvalTool._cached_llm_serving.cleanup()
+                except Exception:
+                    pass
+                DataFlowEvalTool._cached_llm_serving = None
+                DataFlowEvalTool._cached_model_config = None
+            else:
+                self.llm_serving = DataFlowEvalTool._cached_llm_serving
+                self._current_model_config = config
+                return
+
+        # If cache exists but config differs, cleanup old one
+        if DataFlowEvalTool._cached_llm_serving:
+            try:
+                log.info("Cleaning up old LLM serving instance...")
+                if hasattr(DataFlowEvalTool._cached_llm_serving, "cleanup"):
+                    DataFlowEvalTool._cached_llm_serving.cleanup()
+            except Exception as e:
+                log.warning(f"Failed to cleanup old serving: {e}")
+            DataFlowEvalTool._cached_llm_serving = None
+            DataFlowEvalTool._cached_model_config = None
+
+        # 如果配置相同且 serving 已存在 (instance level check, just in case)
         if self.llm_serving and self._current_model_config == config:
             return
 
@@ -49,7 +89,7 @@ class DataFlowEvalTool:
                     rest = m.group(2).replace("/", "\\")
                     p = f"{drive}:\\{rest}"
             else:
-                m = re.match(r"^([a-zA-Z]):\\\\(.+)$", p)
+                m = re.match(r"^([a-zA-Z]):\\(.+)$", p)
                 if m:
                     drive = m.group(1).lower()
                     rest = m.group(2).replace("\\", "/")
@@ -80,8 +120,25 @@ class DataFlowEvalTool:
                 vllm_gpu_memory_utilization=getattr(config, "gpu_memory_utilization", 0.9),
                 # trust_remote_code=True, # 默认信任，State 中已移除该配置
             )
+            try:
+                self.llm_serving.start_serving()
+                if not hasattr(self.llm_serving, "tokenizer"):
+                    raise RuntimeError("vLLM serving initialized without tokenizer")
+            except Exception as e:
+                try:
+                    if hasattr(self.llm_serving, "backend_initialized"):
+                        self.llm_serving.backend_initialized = False
+                except Exception:
+                    pass
+                DataFlowEvalTool._cached_llm_serving = None
+                DataFlowEvalTool._cached_model_config = None
+                raise RuntimeError(f"Local vLLM serving init failed: {e}") from e
         
         self._current_model_config = config
+        
+        # Update class-level cache
+        DataFlowEvalTool._cached_llm_serving = self.llm_serving
+        DataFlowEvalTool._cached_model_config = config
 
     def _preprocess_dataframe(self, df, bench_name, key_mapping, cache_path="", eval_type=""):
         """Ad-hoc 数据预处理"""

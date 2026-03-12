@@ -115,6 +115,18 @@ def build_complete_workflow(checkpointer=None):
     node_metric = MetricRecommendNode()
     builder.add_node(name=node_metric.name, func=node_metric.run)
 
+    # === Phase 5.5: Metric Review ===
+    node_metric_review = InterruptNode(
+        name="MetricReviewNode",
+        validators=[validators.metric_plan_review],
+        success_node="ScoreCalcNode",
+        failure_node=END,
+        rewind_nodes=["MetricRecommendNode"],
+        model_name="gpt-4o",
+        node_docs=node_docs,
+    )
+    builder.add_node(name=node_metric_review.name, func=node_metric_review.run)
+
     # === Phase 6: Score Calc ===
     node_score = ScoreCalcNode()
     builder.add_node(name=node_score.name, func=node_score.run)
@@ -148,8 +160,16 @@ def build_complete_workflow(checkpointer=None):
 
     # Phase 4 -> Phase 5 -> Phase 6 -> End
     builder.add_conditional_edge(node_eval.name, _route_after_eval)
-    builder.add_edge(node_metric.name, node_score.name)
+    
+    # Metric -> Review
+    builder.add_edge(node_metric.name, node_metric_review.name)
+    
+    # Review -> Score (via InterruptNode Command, but explicit edge for clarity/validity)
+    # builder.add_edge(node_metric_review.name, node_score.name) 
+    
+    # Score -> Report
     builder.add_edge(node_score.name, node_report.name)
+
     builder.add_edge(node_report.name, END)
 
     return builder.build(checkpointer=checkpointer)
@@ -197,7 +217,7 @@ async def run_full_pipeline(user_query: str, thread_id: str = "demo_full_run", m
         else:
             # Resume (e.g. from Human Interrupt)
             # Check if we are at interrupt
-            if snap and snap.next and ("HumanReviewNode" in snap.next or "PreEvalReviewNode" in snap.next):
+            if snap and snap.next and ("HumanReviewNode" in snap.next or "PreEvalReviewNode" in snap.next or "MetricReviewNode" in snap.next):
                 log.info("Resuming from Human Review...")
                 # You can provide feedback here if automating, or CLI input
                 # For demo purposes, we assume acceptance

@@ -3,6 +3,9 @@ import asyncio
 import uuid
 import json
 import os
+import re
+from dataclasses import fields
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from contextlib import asynccontextmanager
@@ -23,6 +26,7 @@ DATA_DIR = SERVER_DIR / "_data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 CONFIG_FILE = DATA_DIR / "config.json"
 MODELS_FILE = DATA_DIR / "models.json"
+THREAD_META_FILE = DATA_DIR / "thread_meta.json"
 # SERVER_DIR is .../one_eval/server
 # parents[0]=one_eval, parents[1]=One-Eval (Repo Root)
 REPO_ROOT = SERVER_DIR.parents[1]
@@ -80,6 +84,54 @@ def _write_json_file(path: Path, data: Any) -> None:
         path.write_text(json.dumps(data, indent=2, ensure_ascii=False))
     except Exception:
         log.error(f"Error writing {path}: ", exc_info=True)
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+def _load_thread_meta() -> Dict[str, Any]:
+    data = _load_json_file(THREAD_META_FILE, default={})
+    return data if isinstance(data, dict) else {}
+
+def _set_thread_created_at(thread_id: str, created_at: Optional[str] = None) -> str:
+    ts = created_at or _now_iso()
+    meta = _load_thread_meta()
+    item = meta.get(thread_id)
+    if not isinstance(item, dict):
+        item = {}
+    item["created_at"] = ts
+    item["updated_at"] = ts
+    meta[thread_id] = item
+    _write_json_file(THREAD_META_FILE, meta)
+    return ts
+
+def _touch_thread_updated_at(thread_id: str, updated_at: Optional[str] = None) -> None:
+    meta = _load_thread_meta()
+    item = meta.get(thread_id)
+    if not isinstance(item, dict):
+        item = {}
+    if "created_at" not in item or not item.get("created_at"):
+        item["created_at"] = updated_at or _now_iso()
+    item["updated_at"] = updated_at or _now_iso()
+    meta[thread_id] = item
+    _write_json_file(THREAD_META_FILE, meta)
+
+def _normalize_model_path_for_host(raw: str) -> str:
+    p = (raw or "").strip()
+    if not p:
+        return p
+    if os.name == "nt":
+        m = re.match(r"^/mnt/([a-zA-Z])/(.+)$", p)
+        if m:
+            drive = m.group(1).upper()
+            rest = m.group(2).replace("/", "\\")
+            return f"{drive}:\\{rest}"
+        return p
+    m = re.match(r"^([a-zA-Z]):\\(.+)$", p)
+    if m:
+        drive = m.group(1).lower()
+        rest = m.group(2).replace("\\", "/")
+        return f"/mnt/{drive}/{rest}"
+    return p
 
 def load_server_config() -> Dict[str, Any]:
     cfg = _load_json_file(CONFIG_FILE, default={})
@@ -165,6 +217,7 @@ def apply_agent_env_from_config(cfg: Dict[str, Any]) -> None:
     base_url = agent.get("base_url")
     api_key = agent.get("api_key")
     model = agent.get("model")
+    timeout_s = agent.get("timeout_s")
     if isinstance(base_url, str) and base_url.strip():
         os.environ["OE_API_BASE"] = _normalize_openai_base_url(base_url.strip())
         os.environ["DF_API_BASE_URL"] = _normalize_openai_base_url(base_url.strip())
@@ -173,6 +226,10 @@ def apply_agent_env_from_config(cfg: Dict[str, Any]) -> None:
         os.environ["DF_API_KEY"] = api_key.strip()
     if isinstance(model, str) and model.strip():
         os.environ["DF_MODEL_NAME"] = model.strip()
+        os.environ["OE_MODEL_NAME"] = model.strip()
+    if isinstance(timeout_s, int) and timeout_s > 0:
+        os.environ["OE_TIMEOUT_S"] = str(timeout_s)
+        os.environ["DF_TIMEOUT_S"] = str(timeout_s)
 
 # Initialize Env ASAP
 _cfg0 = load_server_config()
@@ -184,10 +241,11 @@ apply_agent_env_from_config(_cfg0)
 
 from one_eval.graph.workflow_all import build_complete_workflow
 from one_eval.utils.checkpoint import get_checkpointer
-from one_eval.core.state import NodeState, ModelConfig, BenchInfo
+from one_eval.core.state import NodeState, ModelConfig, BenchInfo, MainRequest
 from one_eval.utils.deal_json import _save_state_json
 from langgraph.types import Command
 from one_eval.utils.bench_registry import BenchRegistry
+from one_eval.core.metric_registry import get_registered_metrics_meta, MetricMeta
 
 # Bench Registry - 使用 bench_gallery.json 作为数据源
 BENCH_GALLERY_PATH = REPO_ROOT / "one_eval" / "utils" / "bench_table" / "bench_gallery.json"
@@ -225,6 +283,7 @@ class AgentTestResponse(BaseModel):
     mode: str
 
 app = FastAPI(title="One Eval API")
+RUNNING_WORKFLOW_TASKS: Dict[str, asyncio.Task] = {}
 
 app.add_middleware(
     CORSMiddleware,
@@ -367,11 +426,16 @@ async def test_agent_config(req: Optional[AgentTestRequest] = None):
     if isinstance(api_key, str) and api_key.strip():
         headers["Authorization"] = f"Bearer {api_key.strip()}"
 
+    models_ok = False
+    models_status: Optional[int] = None
+    models_detail = ""
     async with httpx.AsyncClient(timeout=timeout_s) as client:
         try:
             r = await client.get(f"{base_url}/models", headers=headers)
             if r.status_code == 200:
-                return {"ok": True, "status_code": 200, "detail": "GET /models ok", "mode": "models"}
+                models_ok = True
+                models_status = r.status_code
+                models_detail = "GET /models ok"
         except Exception:
             pass
 
@@ -383,7 +447,10 @@ async def test_agent_config(req: Optional[AgentTestRequest] = None):
         try:
             r = await client.post(f"{base_url}/chat/completions", headers=headers, json=payload)
             if 200 <= r.status_code < 300:
-                return {"ok": True, "status_code": r.status_code, "detail": "POST /chat/completions ok", "mode": "chat"}
+                detail = "POST /chat/completions ok"
+                if models_ok:
+                    detail = f"{models_detail}; {detail}"
+                return {"ok": True, "status_code": r.status_code, "detail": detail, "mode": "chat"}
             
             try:
                 err_detail = r.json()
@@ -395,12 +462,15 @@ async def test_agent_config(req: Optional[AgentTestRequest] = None):
             
             return {"ok": False, "status_code": r.status_code, "detail": f"Request failed: {err_detail}", "mode": "chat"}
         except Exception as e:
+            if models_ok:
+                return {"ok": False, "status_code": models_status, "detail": f"{models_detail}; chat failed: {e}", "mode": "chat"}
             return {"ok": False, "status_code": None, "detail": f"Connection error: {e}", "mode": "chat"}
 
 class StartWorkflowRequest(BaseModel):
     user_query: str
     target_model_name: str
     target_model_path: str
+    language: str = "zh"
     tensor_parallel_size: int = 1
     max_tokens: int = 2048
     use_rag: bool = True
@@ -439,6 +509,7 @@ class ManualBenchRequest(BaseModel):
 class ManualStartRequest(BaseModel):
     user_query: str = "manual eval"
     target_model_name: Optional[str] = None
+    language: str = "zh"
     target_model: Dict[str, Any]
     benches: List[ManualBenchRequest]
 
@@ -460,12 +531,14 @@ class HistoryItem(BaseModel):
 @app.post("/api/workflow/start")
 async def start_workflow(req: StartWorkflowRequest):
     thread_id = str(uuid.uuid4())
+    _set_thread_created_at(thread_id)
     log.info(f"Starting workflow for thread_id={thread_id}")
 
     # Initialize State
     initial_state = NodeState(
         user_query=req.user_query,
         target_model_name=req.target_model_name,
+        request=MainRequest(language=req.language),
         use_rag=req.use_rag,
         target_model=ModelConfig(
             model_name_or_path=req.target_model_path,
@@ -480,7 +553,7 @@ async def start_workflow(req: StartWorkflowRequest):
         )
     )
     
-    asyncio.create_task(run_graph_background(thread_id, initial_state))
+    _launch_graph_task(thread_id, initial_state)
     
     return {"thread_id": thread_id, "status": "started"}
 
@@ -494,6 +567,7 @@ async def run_graph_background(thread_id: str, input_state: Any, resume_command:
         config = {"configurable": {"thread_id": thread_id}}
         
         try:
+            _touch_thread_updated_at(thread_id)
             log.info(f"Invoking graph for {thread_id}")
             if resume_command:
                 # If resume_command is passed, we assume state updates were handled before calling this if needed
@@ -504,12 +578,40 @@ async def run_graph_background(thread_id: str, input_state: Any, resume_command:
             # Check if workflow was interrupted
             if result and "__interrupt__" in result:
                 log.info(f"Graph interrupted for {thread_id}, interrupts: {result['__interrupt__']}")
-                _thread_interrupt_cache[thread_id] = True
+                _touch_thread_updated_at(thread_id)
             else:
                 log.info(f"Graph execution finished for {thread_id}")
-                _thread_interrupt_cache.pop(thread_id, None)
+                _touch_thread_updated_at(thread_id)
+        except asyncio.CancelledError:
+            log.warning(f"Graph execution cancelled by user for {thread_id}")
+            _touch_thread_updated_at(thread_id)
+            raise
         except Exception as e:
             log.error(f"Error executing graph for {thread_id}: {e}")
+            _touch_thread_updated_at(thread_id)
+        finally:
+            task = RUNNING_WORKFLOW_TASKS.get(thread_id)
+            if task is asyncio.current_task():
+                RUNNING_WORKFLOW_TASKS.pop(thread_id, None)
+
+def _launch_graph_task(thread_id: str, input_state: Any = None, resume_command: Optional[Command] = None):
+    old = RUNNING_WORKFLOW_TASKS.get(thread_id)
+    if old and not old.done():
+        old.cancel()
+    task = asyncio.create_task(run_graph_background(thread_id, input_state, resume_command=resume_command))
+    RUNNING_WORKFLOW_TASKS[thread_id] = task
+    return task
+
+@app.post("/api/workflow/stop/{thread_id}")
+async def stop_workflow(thread_id: str):
+    task = RUNNING_WORKFLOW_TASKS.get(thread_id)
+    if not task:
+        return {"thread_id": thread_id, "status": "idle", "detail": "no running workflow"}
+    if task.done():
+        RUNNING_WORKFLOW_TASKS.pop(thread_id, None)
+        return {"thread_id": thread_id, "status": "idle", "detail": "workflow already finished"}
+    task.cancel()
+    return {"thread_id": thread_id, "status": "stopping"}
 
 @app.get("/api/workflow/status/{thread_id}")
 async def get_status(thread_id: str):
@@ -545,7 +647,7 @@ async def get_status(thread_id: str):
             current_values = snap.values or {}
             interrupts = snap.interrupts
 
-            INTERRUPT_NODES = ("HumanReviewNode", "PreEvalReviewNode")
+            INTERRUPT_NODES = ("HumanReviewNode", "PreEvalReviewNode", "MetricReviewNode")
 
             # 检测中断
             is_interrupted = bool(interrupts and len(interrupts) > 0)
@@ -626,7 +728,7 @@ async def resume_workflow(req: ResumeWorkflowRequest):
             # Convert dicts back to BenchInfo objects
             benches_data = req.state_updates["benches"]
             req.state_updates["benches"] = [
-                _bench_from_dict(b) if isinstance(b, dict) else b 
+                _coerce_bench_info(b) if isinstance(b, dict) else b 
                 for b in benches_data
             ]
 
@@ -636,12 +738,40 @@ async def resume_workflow(req: ResumeWorkflowRequest):
             log.info(f"Applying state updates for {req.thread_id}: {req.state_updates.keys()}")
             await graph.aupdate_state(config, req.state_updates)
 
+    async with get_checkpointer(DB_PATH, mode="run") as checkpointer:
+        graph = build_complete_workflow(checkpointer=checkpointer)
+        config = {"configurable": {"thread_id": req.thread_id}}
+        try:
+            snap = await graph.aget_state(config)
+        except Exception:
+            raise HTTPException(status_code=404, detail="thread not found")
+        next_nodes = snap.next or []
+        values = snap.values or {}
+        if req.action == "approved" and "PreEvalReviewNode" in next_nodes:
+            benches_any = values.get("benches") or []
+            missing = []
+            for b in benches_any:
+                bench_name = None
+                eval_type = None
+                if isinstance(b, dict):
+                    bench_name = b.get("bench_name")
+                    eval_type = b.get("bench_dataflow_eval_type")
+                    if not eval_type and isinstance(b.get("meta"), dict):
+                        eval_type = b["meta"].get("bench_dataflow_eval_type")
+                else:
+                    bench_name = getattr(b, "bench_name", None)
+                    eval_type = getattr(b, "bench_dataflow_eval_type", None)
+                    meta = getattr(b, "meta", None)
+                    if not eval_type and isinstance(meta, dict):
+                        eval_type = meta.get("bench_dataflow_eval_type")
+                if not eval_type:
+                    missing.append(str(bench_name or "unknown"))
+            if missing:
+                raise HTTPException(status_code=400, detail=f"missing eval_type for benches: {', '.join(missing)}")
+
     command = Command(resume=req.action)
-
-    # 清除 interrupt 缓存，workflow 即将继续运行
-    _thread_interrupt_cache.pop(req.thread_id, None)
-
-    asyncio.create_task(run_graph_background(req.thread_id, None, resume_command=command))
+    
+    _launch_graph_task(req.thread_id, None, resume_command=command)
     return {"status": "resuming"}
 
 @app.post("/api/workflow/rerun_execution/{thread_id}")
@@ -695,7 +825,7 @@ async def rerun_execution(thread_id: str, req: RerunExecutionRequest):
             if "benches" in updates and isinstance(updates["benches"], list):
                 benches_data = updates["benches"]
                 updates["benches"] = [
-                    _bench_from_dict(b) if isinstance(b, dict) else b
+                    _coerce_bench_info(b) if isinstance(b, dict) else b
                     for b in benches_data
                 ]
 
@@ -713,7 +843,7 @@ async def rerun_execution(thread_id: str, req: RerunExecutionRequest):
             if isinstance(b, BenchInfo):
                 benches_list.append(b)
             elif isinstance(b, dict):
-                benches_list.append(BenchInfo(**b))
+                benches_list.append(_coerce_bench_info(b))
 
         for b in benches_list:
             if req.bench_name and b.bench_name != req.bench_name:
@@ -728,12 +858,13 @@ async def rerun_execution(thread_id: str, req: RerunExecutionRequest):
         await graph.aupdate_state(config, {"benches": benches_list, "eval_cursor": 0})
 
     goto_node = "PreEvalReviewNode" if req.goto_confirm else "DataFlowEvalNode"
-    asyncio.create_task(run_graph_background(thread_id, None, resume_command=Command(goto=goto_node)))
+    _launch_graph_task(thread_id, None, resume_command=Command(goto=goto_node))
     return {"ok": True, "status": "queued", "goto": goto_node}
 
 @app.post("/api/workflow/manual_start")
 async def manual_start(req: ManualStartRequest):
     thread_id = str(uuid.uuid4())
+    _set_thread_created_at(thread_id)
 
     tm = req.target_model or {}
     model_name_or_path = (
@@ -777,6 +908,7 @@ async def manual_start(req: ManualStartRequest):
 
     initial_state = NodeState(
         user_query=req.user_query,
+        request=MainRequest(language=req.language),
         target_model_name=req.target_model_name or str(model_name_or_path),
         target_model=model_cfg,
         benches=benches,
@@ -797,10 +929,26 @@ async def manual_start(req: ManualStartRequest):
             },
         )
 
-    asyncio.create_task(run_graph_background(thread_id, None, resume_command=Command(goto="DataFlowEvalNode")))
+    _launch_graph_task(thread_id, None, resume_command=Command(goto="DataFlowEvalNode"))
     return {"thread_id": thread_id, "status": "started"}
 
 def _bench_download_sync(bench: Dict[str, Any], *, repo_root: Path, overrides: Dict[str, Any], max_retries: int = 3) -> Dict[str, Any]:
+    def _pick_best_split(splits: List[str], preferred: str) -> str:
+        if not splits:
+            return preferred
+        if preferred in splits:
+            return preferred
+        for cand in ("test", "validation", "dev", "val", "train"):
+            if cand in splits:
+                return cand
+        fuzzy = [s for s in splits if "test" in s.lower()]
+        if fuzzy:
+            return fuzzy[0]
+        fuzzy = [s for s in splits if "valid" in s.lower() or "dev" in s.lower()]
+        if fuzzy:
+            return fuzzy[0]
+        return splits[0]
+
     meta = bench.get("meta") or {}
     if not isinstance(meta, dict):
         meta = {}
@@ -846,6 +994,21 @@ def _bench_download_sync(bench: Dict[str, Any], *, repo_root: Path, overrides: D
                     config_name = "main"
                 else:
                     config_name = available_configs[0]
+            matched_subset = next((s for s in subsets if isinstance(s, dict) and s.get("subset") == config_name), None)
+            raw_splits = (matched_subset or {}).get("splits", []) if isinstance(matched_subset, dict) else []
+            available_splits: List[str] = []
+            for sp in raw_splits:
+                if isinstance(sp, dict) and sp.get("name"):
+                    available_splits.append(str(sp.get("name")))
+                elif isinstance(sp, str):
+                    available_splits.append(sp)
+            split_name = _pick_best_split(available_splits, split_name) if available_splits else split_name
+
+    meta["download_config"] = {
+        "config": config_name,
+        "split": split_name,
+        "reason": "auto-corrected by server",
+    }
 
     cache_root = repo_root / "cache"
     cache_root.mkdir(parents=True, exist_ok=True)
@@ -919,6 +1082,20 @@ def _bench_to_dict(b: Any) -> Optional[Dict[str, Any]]:
         return d if isinstance(d, dict) else None
     return None
 
+_BENCHINFO_FIELDS = {f.name for f in fields(BenchInfo)}
+
+def _coerce_bench_info(value: Any) -> BenchInfo:
+    if isinstance(value, BenchInfo):
+        return value
+    if not isinstance(value, dict):
+        raise ValueError("invalid bench payload")
+    b = dict(value)
+    if not b.get("bench_dataflow_eval_type") and isinstance(b.get("eval_type"), str):
+        b["bench_dataflow_eval_type"] = b.get("eval_type")
+    b.pop("eval_type", None)
+    filtered = {k: v for k, v in b.items() if k in _BENCHINFO_FIELDS}
+    return BenchInfo(**filtered)
+
 async def _redownload_bench_background(thread_id: str, bench_name: str, overrides: Dict[str, Any]):
     async with get_checkpointer(DB_PATH, mode="run") as checkpointer:
         graph = build_complete_workflow(checkpointer=checkpointer)
@@ -943,7 +1120,7 @@ async def _redownload_bench_background(thread_id: str, bench_name: str, override
         bench = benches[idx]
         updated = await asyncio.to_thread(_bench_download_sync, bench, repo_root=REPO_ROOT, overrides=overrides)
         benches[idx] = updated
-        await graph.aupdate_state(config, {"benches": [BenchInfo(**b) for b in benches]})
+        await graph.aupdate_state(config, {"benches": [_coerce_bench_info(b) for b in benches]})
 
 @app.post("/api/workflow/redownload/{thread_id}")
 async def redownload_bench(thread_id: str, req: RedownloadBenchRequest):
@@ -981,7 +1158,7 @@ async def redownload_bench(thread_id: str, req: RedownloadBenchRequest):
         meta.pop("download_error", None)
         bench["meta"] = meta
         benches[idx] = bench
-        await graph.aupdate_state(config, {"benches": [BenchInfo(**b) for b in benches]})
+        await graph.aupdate_state(config, {"benches": [_coerce_bench_info(b) for b in benches]})
 
     overrides = {"repo_id": req.repo_id, "config": req.config, "split": req.split, "force": req.force}
     asyncio.create_task(_redownload_bench_background(thread_id, req.bench_name, overrides))
@@ -989,56 +1166,76 @@ async def redownload_bench(thread_id: str, req: RedownloadBenchRequest):
 
 @app.get("/api/workflow/history", response_model=List[HistoryItem])
 async def get_history():
-    import aiosqlite
-    import datetime
-    
     if not DB_PATH.exists():
         return []
         
     items = []
+    thread_meta = _load_thread_meta()
+    meta_dirty = False
     try:
-        async with aiosqlite.connect(DB_PATH) as db:
-            # Query distinct thread_ids from checkpoints
-            # Schema usually: thread_id, checkpoint_id, checkpoint, metadata...
-            # We want the latest checkpoint for each thread.
-            # But LangGraph 0.2 schema might differ.
-            # Usually 'checkpoints' table has 'thread_id'.
-            
-            # Simple query to get unique threads
-            cursor = await db.execute("SELECT DISTINCT thread_id FROM checkpoints ORDER BY thread_id DESC LIMIT 50")
-            rows = await cursor.fetchall()
+        # Optimize: Reuse single connection/checkpointer for all lookups
+        async with get_checkpointer(DB_PATH, mode="run") as cp:
+            # 1. Get thread_ids using the same connection
+            async with cp.conn.execute("SELECT DISTINCT thread_id FROM checkpoints ORDER BY thread_id DESC LIMIT 50") as cursor:
+                rows = await cursor.fetchall()
+
+            # 2. Build graph once
+            graph = build_complete_workflow(checkpointer=cp)
             
             for (tid,) in rows:
-                # Get latest state for this thread to find query/status
-                async with get_checkpointer(DB_PATH, mode="run") as cp:
-                    graph = build_complete_workflow(checkpointer=cp)
-                    cfg = {"configurable": {"thread_id": tid}}
-                    try:
-                        snap = await graph.aget_state(cfg)
-                        if snap and snap.values:
-                            q = snap.values.get("user_query", "Unknown Query")
-                            # Determine status
-                            status = "completed"
-                            if snap.next:
-                                status = "interrupted" if ("HumanReviewNode" in snap.next or "PreEvalReviewNode" in snap.next) else "running"
-                            # If no next and no error -> completed
-                            
-                            ts = snap.metadata.get("created_at") if snap.metadata else None
-                            # If not in metadata, use current time or skip
-                            date_str = ts or datetime.datetime.now().isoformat()
-                            
-                            items.append(HistoryItem(
-                                thread_id=tid,
-                                updated_at=str(date_str),
-                                user_query=str(q),
-                                status=status
-                            ))
-                    except Exception:
-                        pass
+                cfg = {"configurable": {"thread_id": tid}}
+                try:
+                    # aget_state uses the passed checkpointer (cp)
+                    snap = await graph.aget_state(cfg)
+                    if snap and snap.values:
+                        q = snap.values.get("user_query", "Unknown Query")
+                        # Determine status
+                        status = "completed"
+                        if snap.next:
+                            status = "interrupted" if ("HumanReviewNode" in snap.next or "PreEvalReviewNode" in snap.next or "MetricReviewNode" in snap.next) else "running"
+                        # If no next and no error -> completed
+                        
+                        ts = snap.metadata.get("created_at") if snap.metadata else None
+                        meta_item = thread_meta.get(tid) if isinstance(thread_meta.get(tid), dict) else {}
+                        created_ts = meta_item.get("created_at")
+                        if not created_ts and isinstance(ts, str) and ts.strip():
+                            created_ts = ts.strip()
+                        if not created_ts:
+                            legacy_ts = meta_item.get("updated_at")
+                            if isinstance(legacy_ts, str) and legacy_ts.strip():
+                                created_ts = legacy_ts.strip()
+                        if not created_ts:
+                            created_ts = "1970-01-01T00:00:00+00:00"
+                        if not meta_item.get("created_at"):
+                            next_meta = dict(meta_item)
+                            next_meta["created_at"] = created_ts
+                            if not next_meta.get("updated_at"):
+                                next_meta["updated_at"] = created_ts
+                            thread_meta[tid] = next_meta
+                            meta_dirty = True
+                        date_str = str(created_ts)
+                        
+                        items.append(HistoryItem(
+                            thread_id=tid,
+                            updated_at=str(date_str),
+                            user_query=str(q),
+                            status=status
+                        ))
+                except Exception:
+                    pass
     except Exception as e:
         log.error(f"Error fetching history: {e}")
         return []
-        
+    if meta_dirty:
+        _write_json_file(THREAD_META_FILE, thread_meta)
+
+    def _parse_dt(v: str):
+        try:
+            return datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+        except Exception:
+            return datetime(1970, 1, 1)
+
+    items.sort(key=lambda x: _parse_dt(x.updated_at), reverse=True)
     return items
 
 
@@ -1056,9 +1253,46 @@ def add_model(model: Dict[str, Any]):
     _write_json_file(MODELS_FILE, models)
     return {"status": "success"}
 
+class ModelLoadTestRequest(BaseModel):
+    model_path: str
+    tensor_parallel_size: int = 1
+    max_tokens: int = 32
+
+@app.post("/api/models/test_load")
+def test_model_load(req: ModelLoadTestRequest):
+    raw = (req.model_path or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="model_path is required")
+    resolved = _normalize_model_path_for_host(raw)
+    exists_local = Path(resolved).exists()
+    if not exists_local and (":" in raw or raw.startswith("/mnt/")):
+        raise HTTPException(status_code=400, detail=f"Model path not found on current host: {resolved}")
+    try:
+        from dataflow.serving.local_model_llm_serving import LocalModelLLMServing_vllm
+        serving = LocalModelLLMServing_vllm(
+            hf_model_name_or_path=resolved,
+            vllm_tensor_parallel_size=max(1, int(req.tensor_parallel_size or 1)),
+            vllm_max_tokens=max(1, int(req.max_tokens or 32)),
+            vllm_temperature=0.0,
+        )
+        serving.start_serving()
+        has_tokenizer = hasattr(serving, "tokenizer")
+        serving.cleanup()
+        if not has_tokenizer:
+            raise RuntimeError("serving started but tokenizer is missing")
+        return {"ok": True, "detail": f"Model load test passed: {resolved}"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Model load test failed: {e}")
+
 @app.get("/api/benches/gallery")
 def get_bench_gallery():
     return bench_registry.get_all_benches()
+
+
+@app.get("/api/metrics/registry")
+def get_metrics_registry():
+    """获取所有注册的 Metric 元数据"""
+    return get_registered_metrics_meta()
 
 
 class AddBenchRequest(BaseModel):
@@ -1105,4 +1339,5 @@ def add_bench_to_gallery(req: AddBenchRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Disable uvloop to allow nest_asyncio patching in synchronous nodes
+    uvicorn.run(app, host="0.0.0.0", port=8000, loop="asyncio")

@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
-import { Home, Play, Settings, Library, Layers } from "lucide-react";
+import { Home, Play, Settings, Library } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useLang } from "@/lib/i18n";
 
 const SidebarItem = ({
   icon: Icon,
@@ -35,39 +36,38 @@ const SidebarItem = ({
 
 export const Sidebar = () => {
   const location = useLocation();
+  const { t } = useLang();
 
   return (
     <aside className="fixed left-0 top-0 bottom-0 w-16 bg-white border-r border-slate-200 flex flex-col items-center py-6 z-[100]">
       {/* Logo */}
       <div className="mb-8">
-        <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-violet-600 rounded-xl flex items-center justify-center text-white shadow-md shadow-blue-600/20">
-           <Layers className="w-6 h-6" />
-        </div>
+        <img src="/static/logo/logo.png" className="w-10 h-10 rounded-xl object-cover" alt="One-Eval" />
       </div>
 
       {/* Nav Items */}
       <nav className="flex flex-col gap-4 w-full items-center">
         <SidebarItem
           icon={Home}
-          label="Home"
+          label={t({ zh: "首页", en: "Home" })}
           to="/"
           active={location.pathname === "/"}
         />
         <SidebarItem
           icon={Play}
-          label="Run Evaluation"
+          label={t({ zh: "运行评测", en: "Run Evaluation" })}
           to="/eval"
           active={location.pathname === "/eval"}
         />
         <SidebarItem
           icon={Library}
-          label="Benchmark Gallery"
+          label={t({ zh: "基准库", en: "Benchmark Gallery" })}
           to="/gallery"
           active={location.pathname === "/gallery"}
         />
         <SidebarItem
           icon={Settings}
-          label="Settings"
+          label={t({ zh: "设置", en: "Settings" })}
           to="/settings"
           active={location.pathname === "/settings"}
         />

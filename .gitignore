@@ -212,6 +212,6 @@ checkpoints/
 outputs/
 cache/
 cache_test/
-one_eval/server/_data/
+one_eval/server/_data/*
 .DS_Store
 .vscode/
