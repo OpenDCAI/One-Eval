@@ -19,6 +19,13 @@ interface StatusResponse {
   state_values: WorkflowState | null;
   current_node?: string; 
   interrupts?: Array<{ value?: unknown }>;
+  eval_progress?: {
+    bench_name?: string;
+    stage?: string;
+    generated?: number;
+    total?: number;
+    percent?: number;
+  } | null;
 }
 
 interface HistoryItem {
@@ -56,6 +63,7 @@ export const Eval = () => {
   const [state, setState] = useState<WorkflowState | null>(null);
   const [currentNode, setCurrentNode] = useState<string | null>(null);
   const [interruptToken, setInterruptToken] = useState<string | null>(null);
+  const [evalProgress, setEvalProgress] = useState<StatusResponse["eval_progress"]>(null);
   
   // History
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -199,6 +207,7 @@ export const Eval = () => {
                 }
 
         setStatus(data.status);
+        setEvalProgress(data.eval_progress ?? null);
         if (data.status === "interrupted") {
             const interruptValue = data.interrupts?.[0]?.value;
             const token = `${threadId || ""}|${data.next_node?.[0] || ""}|${JSON.stringify(interruptValue ?? "")}`;
@@ -1761,17 +1770,19 @@ export const Eval = () => {
                                    const res = b.meta?.eval_result;
                                        const pickScore = (r: any) => {
                                            if (!r || typeof r !== 'object') return null;
-                                           for (const k of ['score','accuracy','exact_match']) {
+                                           for (const k of ['score','exact_match','accuracy']) {
                                                const v = (r as any)[k];
                                                if (typeof v === 'number') return v;
-                                               if (typeof v === 'string') return v;
-                                           }
-                                           for (const v of Object.values(r)) {
-                                               if (typeof v === 'number' || typeof v === 'string') return v;
                                            }
                                            return null;
                                        };
                                        const score = pickScore(res);
+                                       const isRunningBench = b.eval_status === "running";
+                                       const runningThisBench = isRunningBench && evalProgress?.bench_name === b.bench_name;
+                                       const runningPercent = Math.max(0, Math.min(100, Number(evalProgress?.percent ?? 0)));
+                                       const generated = Number(evalProgress?.generated ?? 0);
+                                       const total = Number(evalProgress?.total ?? 0);
+                                       const stage = String(evalProgress?.stage || "generator");
                                    
                                    return (
                                        <div key={i} className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden transition-all hover:border-emerald-200">
@@ -1808,8 +1819,15 @@ export const Eval = () => {
                                                            {b.eval_status === "success" && <span className="flex items-center gap-1 text-emerald-600"><Check className="w-3 h-3" /> {t({ zh: "已评测", en: "Evaluated" })}</span>}
                                                        </div>
                                                        {b.eval_status === "running" && (
-                                                           <div className="mt-2 h-1.5 w-56 bg-slate-100 rounded-full overflow-hidden">
-                                                               <div className="h-full w-1/2 bg-blue-500/70 rounded-full animate-pulse" />
+                                                           <div className="mt-2 w-72">
+                                                               <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                                                                   <div className={cn("h-full bg-blue-500/80 rounded-full transition-all", !runningThisBench ? "animate-pulse w-1/2" : "")} style={runningThisBench ? { width: `${runningPercent}%` } : undefined} />
+                                                               </div>
+                                                               <div className="mt-1 text-[10px] text-slate-500 font-mono">
+                                                                   {runningThisBench
+                                                                       ? t({ zh: `${stage === "evaluator" ? "评估中" : "生成中"} ${generated}/${total || "?"} (${runningPercent.toFixed(0)}%)`, en: `${stage === "evaluator" ? "Evaluating" : "Generating"} ${generated}/${total || "?"} (${runningPercent.toFixed(0)}%)` })
+                                                                       : t({ zh: "准备评测中...", en: "Preparing evaluation..." })}
+                                                               </div>
                                                            </div>
                                                        )}
                                                    </div>

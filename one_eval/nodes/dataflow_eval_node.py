@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any, Optional
 
 from one_eval.core.node import BaseNode
 from one_eval.core.state import NodeState, ModelConfig
 from one_eval.toolkits.dataflow_eval_tool import DataFlowEvalTool
 from one_eval.logger import get_logger
 from langgraph.types import Command
+from one_eval.runtime.progress_store import set_progress, clear_progress
 
 log = get_logger("DataFlowEvalNode")
 
@@ -29,8 +31,14 @@ class DataFlowEvalNode(BaseNode):
         self.output_root = os.path.join(os.getcwd(), "cache", "eval_results")
         self._tool = DataFlowEvalTool(output_root=self.output_root)
 
-    async def run(self, state: NodeState) -> NodeState:
+    async def run(self, state: NodeState, config: Optional[Any] = None) -> NodeState:
         state.current_node = self.name
+        thread_id = None
+        try:
+            if isinstance(config, dict):
+                thread_id = ((config.get("configurable") or {}).get("thread_id"))
+        except Exception:
+            thread_id = None
 
         benches = getattr(state, "benches", None)
         if not benches:
@@ -72,23 +80,65 @@ class DataFlowEvalNode(BaseNode):
         if not bench.dataset_cache:
             self.logger.warning(f"[{bench.bench_name}] 缺少 dataset_cache，跳过")
             bench.eval_status = "failed"
-            state.eval_cursor = cursor + 1
-            return state
+            approved = list(getattr(state, "approved_warning_ids", []) or [])
+            confirm_id = "PreEvalReviewNode_confirm"
+            approved = [x for x in approved if x != confirm_id]
+            return Command(
+                goto="PreEvalReviewNode",
+                update={
+                    "approved_warning_ids": approved,
+                    "waiting_for_human": True,
+                    "error_flag": True,
+                    "error_msg": f"[{bench.bench_name}] 缺少dataset_cache，请检查下载步骤后重试评测。",
+                },
+            )
 
         if not bench.bench_dataflow_eval_type:
             self.logger.warning(f"[{bench.bench_name}] 缺少 eval_type，跳过")
             bench.eval_status = "failed"
-            state.eval_cursor = cursor + 1
-            return state
+            approved = list(getattr(state, "approved_warning_ids", []) or [])
+            confirm_id = "PreEvalReviewNode_confirm"
+            approved = [x for x in approved if x != confirm_id]
+            return Command(
+                goto="PreEvalReviewNode",
+                update={
+                    "approved_warning_ids": approved,
+                    "waiting_for_human": True,
+                    "error_flag": True,
+                    "error_msg": f"[{bench.bench_name}] 缺少eval_type，请修正Key Mapping/任务类型后重试评测。",
+                },
+            )
 
         try:
             self.logger.info(f"[{bench.bench_name}] 开始评测... Type={bench.bench_dataflow_eval_type}")
             bench.eval_status = "running"
-
-            result = tool.run_eval(bench, model_config)
-
             if not bench.meta:
                 bench.meta = {}
+            bench.meta["eval_progress"] = {
+                "bench_name": bench.bench_name,
+                "stage": "queued",
+                "generated": 0,
+                "total": 0,
+                "percent": 0.0,
+            }
+
+            def _on_progress(p: dict):
+                if not bench.meta:
+                    bench.meta = {}
+                bench.meta["eval_progress"] = p
+                if thread_id:
+                    set_progress(thread_id, p)
+
+            result = tool.run_eval(bench, model_config, progress_callback=_on_progress)
+
+            if thread_id:
+                set_progress(thread_id, {
+                    "bench_name": bench.bench_name,
+                    "stage": "done",
+                    "generated": int((bench.meta.get("eval_progress") or {}).get("generated") or 0),
+                    "total": int((bench.meta.get("eval_progress") or {}).get("total") or 0),
+                    "percent": 100.0,
+                })
 
             stats = result["stats"]
             bench.meta["eval_result"] = stats
@@ -175,20 +225,30 @@ class DataFlowEvalNode(BaseNode):
             if not bench.meta:
                 bench.meta = {}
             bench.meta["eval_error"] = str(e)
+            bench.meta["eval_progress"] = {
+                "bench_name": bench.bench_name,
+                "stage": "failed",
+                "generated": int((bench.meta.get("eval_progress") or {}).get("generated") or 0),
+                "total": int((bench.meta.get("eval_progress") or {}).get("total") or 0),
+                "percent": float((bench.meta.get("eval_progress") or {}).get("percent") or 0.0),
+            }
+            if thread_id:
+                set_progress(thread_id, bench.meta["eval_progress"])
             err_text = str(e)
-            if "Local vLLM serving init failed" in err_text or "Repo id must use alphanumeric chars" in err_text:
-                approved = list(getattr(state, "approved_warning_ids", []) or [])
-                confirm_id = "PreEvalReviewNode_confirm"
-                approved = [x for x in approved if x != confirm_id]
-                return Command(
-                    goto="PreEvalReviewNode",
-                    update={
-                        "approved_warning_ids": approved,
-                        "waiting_for_human": True,
-                        "error_flag": True,
-                        "error_msg": f"模型加载失败，请重新配置 target_model_path: {err_text}",
-                    },
-                )
+            approved = list(getattr(state, "approved_warning_ids", []) or [])
+            confirm_id = "PreEvalReviewNode_confirm"
+            approved = [x for x in approved if x != confirm_id]
+            return Command(
+                goto="PreEvalReviewNode",
+                update={
+                    "approved_warning_ids": approved,
+                    "waiting_for_human": True,
+                    "error_flag": True,
+                    "error_msg": f"[{bench.bench_name}] DataFlow评测失败，请修复配置后重试: {err_text}",
+                },
+            )
 
         state.eval_cursor = cursor + 1
+        if thread_id and state.eval_cursor >= len(benches):
+            clear_progress(thread_id)
         return state

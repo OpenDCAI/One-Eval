@@ -14,13 +14,22 @@ from one_eval.logger import get_logger
 
 log = get_logger("ReportGenAgent")
 
-EVAL_TYPE_LABELS = [
+EVAL_TYPE_LABELS_ZH = [
     ("key1_text_score", "文本评分"),
     ("key2_qa", "单参考问答"),
     ("key2_q_ma", "多参考问答"),
     ("key3_q_choices_a", "单选题"),
     ("key3_q_choices_as", "多选题"),
     ("key3_q_a_rejected", "偏好对比"),
+]
+
+EVAL_TYPE_LABELS_EN = [
+    ("key1_text_score", "Text Scoring"),
+    ("key2_qa", "QA (Single Reference)"),
+    ("key2_q_ma", "QA (Multi Reference)"),
+    ("key3_q_choices_a", "Single Choice"),
+    ("key3_q_choices_as", "Multi Select"),
+    ("key3_q_a_rejected", "Preference Pair"),
 ]
 
 
@@ -49,8 +58,9 @@ class ReportGenAgent(CustomAgent):
         bench_summaries = self._build_bench_summaries(benches, eval_results, metric_plan)
         overall_score = self._compute_overall_score(bench_summaries)
 
-        macro_view = self._build_macro_view(bench_summaries, eval_results)
-        diagnostic_view = self._build_diagnostic_view(benches, eval_results, metric_plan)
+        lang = self._get_lang(state)
+        macro_view = self._build_macro_view(bench_summaries, eval_results, lang)
+        diagnostic_view = self._build_diagnostic_view(benches, eval_results, metric_plan, lang)
         analyst_view = self._collect_analyst_outputs(benches, eval_results)
         analyst_compact = self._compact_analyst_view(analyst_view)
 
@@ -119,7 +129,11 @@ class ReportGenAgent(CustomAgent):
             plan = metric_plan.get(bench_name, []) or []
             primary_name = self._get_primary_metric_name(plan, metrics)
             primary = metrics.get(primary_name, {}) if primary_name else {}
-            score = self._safe_float(primary.get("score"))
+            raw_bench_score = ((bench.meta or {}).get("eval_result") or {}).get("score")
+            has_bench_score = raw_bench_score is not None
+            bench_score = self._safe_float(raw_bench_score)
+            metric_score = self._safe_float(primary.get("score"))
+            score = bench_score if has_bench_score else metric_score
             num_samples = int(bench_result.get("num_samples", 0) or 0)
             summaries.append({
                 "bench": bench_name,
@@ -147,14 +161,15 @@ class ReportGenAgent(CustomAgent):
             return sum(self._safe_float(s.get("primary_score")) for s in summaries) / len(summaries)
         return 0.0
 
-    def _build_macro_view(self, summaries: List[Dict[str, Any]], eval_results: Dict[str, Any]) -> Dict[str, Any]:
-        radar = self._build_radar(summaries)
+    def _build_macro_view(self, summaries: List[Dict[str, Any]], eval_results: Dict[str, Any], lang: str) -> Dict[str, Any]:
+        radar = self._build_radar(summaries, lang)
         sunburst = self._build_sunburst(summaries)
         table = self._build_macro_table(summaries, eval_results)
         return {"radar": radar, "sunburst": sunburst, "table": table}
 
-    def _build_radar(self, summaries: List[Dict[str, Any]]) -> Dict[str, Any]:
-        accum = {k: {"score": 0.0, "weight": 0} for k, _ in EVAL_TYPE_LABELS}
+    def _build_radar(self, summaries: List[Dict[str, Any]], lang: str) -> Dict[str, Any]:
+        labels_cfg = EVAL_TYPE_LABELS_EN if str(lang).lower().startswith("en") else EVAL_TYPE_LABELS_ZH
+        accum = {k: {"score": 0.0, "weight": 0} for k, _ in labels_cfg}
         for s in summaries:
             eval_type = s.get("eval_type")
             if eval_type not in accum:
@@ -165,14 +180,22 @@ class ReportGenAgent(CustomAgent):
                 num = 1
             accum[eval_type]["score"] += score * num
             accum[eval_type]["weight"] += num
-        labels = [label for _, label in EVAL_TYPE_LABELS]
+        labels = [label for _, label in labels_cfg]
         scores = []
-        for key, _ in EVAL_TYPE_LABELS:
+        for key, _ in labels_cfg:
             if accum[key]["weight"] > 0:
                 scores.append(accum[key]["score"] / accum[key]["weight"])
             else:
                 scores.append(0.0)
         return {"labels": labels, "scores": scores}
+
+    def _get_lang(self, state: NodeState) -> str:
+        req = getattr(state, "request", None)
+        if isinstance(req, dict):
+            return str(req.get("language") or "zh")
+        if req is not None:
+            return str(getattr(req, "language", "zh") or "zh")
+        return "zh"
 
     def _build_sunburst(self, summaries: List[Dict[str, Any]]) -> Dict[str, Any]:
         rows = []
@@ -205,7 +228,8 @@ class ReportGenAgent(CustomAgent):
         self,
         benches: List[BenchInfo],
         eval_results: Dict[str, Any],
-        metric_plan: Dict[str, Any]
+        metric_plan: Dict[str, Any],
+        lang: str = "zh",
     ) -> Dict[str, Any]:
         error_counter = Counter()
         correct_lengths = []
@@ -284,6 +308,7 @@ class ReportGenAgent(CustomAgent):
                     self._safe_float(extraction_value) if extraction_value is not None else None,
                     self._safe_float(missing_value) if missing_value is not None else None,
                     self._safe_float(format_value) if format_value is not None else None,
+                    lang=lang,
                 )
 
                 if not is_correct:
@@ -384,17 +409,19 @@ class ReportGenAgent(CustomAgent):
         extraction_value: Optional[float],
         missing_value: Optional[float],
         format_value: Optional[float],
+        lang: str = "zh",
     ) -> str:
+        is_en = str(lang).lower().startswith("en")
         if is_correct:
-            return "Correct"
+            return "Correct" if is_en else "正确"
         if extraction_value is not None and extraction_value <= 0:
-            return "Extraction Error"
+            return "Extraction Error" if is_en else "抽取错误"
         if missing_value is not None and missing_value >= 1:
-            return "Refusal / Empty Response" 
+            return "Refusal / Empty Response" if is_en else "拒答 / 空输出"
         if format_value is not None and format_value < 0.5:
-            return "Format Error" 
+            return "Format Error" if is_en else "格式错误"
 
-        return "Incorrect Answer (Reasoning/Logic)" 
+        return "Incorrect Answer (Reasoning/Logic)" if is_en else "答案错误（推理/逻辑）"
 
     def _build_length_hist(self, correct: List[int], incorrect: List[int], bins: int = 10) -> Dict[str, Any]:
         max_len = max(correct + incorrect) if (correct or incorrect) else 0
@@ -475,25 +502,36 @@ class ReportGenAgent(CustomAgent):
             return 1.0 if value else 0.0
         if isinstance(value, (int, float)):
             return float(value)
+        if isinstance(value, str):
+            s = value.strip()
+            if not s:
+                return 0.0
+            try:
+                return float(s)
+            except Exception:
+                return 0.0
         if isinstance(value, dict):
             for v in value.values():
                 if isinstance(v, (int, float)):
                     return float(v)
+                if isinstance(v, str):
+                    s = v.strip()
+                    if not s:
+                        continue
+                    try:
+                        return float(s)
+                    except Exception:
+                        continue
         return 0.0
 
     async def _generate_llm_summary(self, payload: Dict[str, Any], state: NodeState) -> str:
-        req = getattr(state, "request", None)
-        lang = "zh"
-        if isinstance(req, dict):
-            lang = str(req.get("language") or "zh")
-        elif req is not None:
-            lang = str(getattr(req, "language", "zh") or "zh")
+        lang = self._get_lang(state)
         if lang.lower().startswith("en"):
-            system_prompt = "You are an evaluation report analyst. Summarize model performance in one concise paragraph."
-            user_prompt = f"Here is the evaluation summary. Provide a concise English summary:\n{json.dumps(payload, ensure_ascii=False)}"
+            system_prompt = "You are an evaluation report analyst."
+            user_prompt = f"Summarize the evaluation in concise English. Do not use markdown horizontal rules like --- . You may include simple emoji. Input:\n{json.dumps(payload, ensure_ascii=False)}"
         else:
-            system_prompt = "你是评测报告分析专家，请用一段话总结模型表现。"
-            user_prompt = f"评测结果摘要如下，请给出简洁中文总结：\n{json.dumps(payload, ensure_ascii=False)}"
+            system_prompt = "你是评测报告分析专家。"
+            user_prompt = f"请用简洁中文总结模型表现。不要输出 markdown 分割线（例如 ---）。可以使用简单表情。输入如下：\n{json.dumps(payload, ensure_ascii=False)}"
 
         try:
             llm = self.create_llm(state)
@@ -502,14 +540,16 @@ class ReportGenAgent(CustomAgent):
             return resp.content if hasattr(resp, "content") else str(resp)
         except Exception as e:
             log.warning(f"LLM summary failed: {e}")
-            return self._fallback_summary(payload)
+            return self._fallback_summary(payload, lang)
 
-    def _fallback_summary(self, payload: Dict[str, Any]) -> str:
+    def _fallback_summary(self, payload: Dict[str, Any], lang: str = "zh") -> str:
         benches = payload.get("benches") or []
         if not benches:
-            return "暂无可用评测结果。"
+            return "暂无可用评测结果。" if not str(lang).lower().startswith("en") else "No evaluation results available yet."
         sorted_benches = sorted(benches, key=lambda x: self._safe_float(x.get("primary_score")), reverse=True)
         best = sorted_benches[0]
         worst = sorted_benches[-1]
         overall = self._safe_float(payload.get("overall_score"))
+        if str(lang).lower().startswith("en"):
+            return f"Overall score is about {overall:.4f}. Best benchmark is {best.get('bench')}, weakest is {worst.get('bench')}."
         return f"整体得分约 {overall:.4f}。最佳数据集为 {best.get('bench')}，较弱数据集为 {worst.get('bench')}。"
