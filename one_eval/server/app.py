@@ -579,9 +579,11 @@ async def run_graph_background(thread_id: str, input_state: Any, resume_command:
             # Check if workflow was interrupted
             if result and "__interrupt__" in result:
                 log.info(f"Graph interrupted for {thread_id}, interrupts: {result['__interrupt__']}")
+                _thread_interrupt_cache[thread_id] = True
                 _touch_thread_updated_at(thread_id)
             else:
                 log.info(f"Graph execution finished for {thread_id}")
+                _thread_interrupt_cache.pop(thread_id, None)
                 _touch_thread_updated_at(thread_id)
         except asyncio.CancelledError:
             log.warning(f"Graph execution cancelled by user for {thread_id}")
@@ -663,13 +665,16 @@ async def get_status(thread_id: str):
                     status = "interrupted"
                 else:
                     # next=() 且没检测到中断——可能是竞态窗口：
+                    # background task 仍在运行（ainvoke 尚未返回），或
                     # interrupt() 已触发但尚未持久化进 checkpoint
                     benches = current_values.get("benches", [])
                     has_phase2_data = bool(current_values.get("eval_results"))
+                    task = RUNNING_WORKFLOW_TASKS.get(thread_id)
+                    task_still_running = task is not None and not task.done()
 
-                    if benches and not has_phase2_data and attempt < max_retries - 1:
+                    if (task_still_running or (benches and not has_phase2_data)) and attempt < max_retries - 1:
                         delay = retry_delays[attempt]
-                        log.info(f"[get_status] Race condition detected (attempt {attempt+1}), retrying in {delay}s...")
+                        log.info(f"[get_status] Race condition detected (attempt {attempt+1}, task_running={task_still_running}), retrying in {delay}s...")
                         await asyncio.sleep(delay)
                         continue
                     status = "completed"
@@ -773,7 +778,8 @@ async def resume_workflow(req: ResumeWorkflowRequest):
                 raise HTTPException(status_code=400, detail=f"missing eval_type for benches: {', '.join(missing)}")
 
     command = Command(resume=req.action)
-    
+
+    _thread_interrupt_cache.pop(req.thread_id, None)
     _launch_graph_task(req.thread_id, None, resume_command=command)
     return {"status": "resuming"}
 

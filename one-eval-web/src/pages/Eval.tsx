@@ -1342,9 +1342,9 @@ export const Eval = () => {
                                                                    <X className="w-4 h-4" />
                                                                </Button>
                                                            </div>
-                                                           {b.meta?.desc && (
-                                                               <span className="text-xs text-slate-400 pl-1 truncate" title={typeof b.meta.desc === 'string' ? b.meta.desc : (b.meta.desc ? JSON.stringify(b.meta.desc) : '')}>
-                                                                   {typeof b.meta.desc === 'string' ? b.meta.desc : (b.meta.desc ? JSON.stringify(b.meta.desc) : '')}
+                                                           {((lang === 'zh' ? (b.meta?.description_zh || b.meta?.description) : b.meta?.description) || b.meta?.desc) && (
+                                                               <span className="text-xs text-slate-400 pl-1 line-clamp-2" title={(lang === 'zh' ? (b.meta?.description_zh || b.meta?.description) : b.meta?.description) || b.meta?.desc}>
+                                                                   {(lang === 'zh' ? (b.meta?.description_zh || b.meta?.description) : b.meta?.description) || b.meta?.desc}
                                                                </span>
                                                            )}
                                                        </div>
@@ -1352,9 +1352,9 @@ export const Eval = () => {
                                                        <div className="flex flex-col">
                                                            {/* Updated to show desc */}
                                                            <span className="font-mono font-medium text-sm text-slate-700">{b.bench_name}</span>
-                                                           {b.meta?.desc && (
-                                                               <span className="text-xs text-slate-400 max-w-md truncate" title={typeof b.meta.desc === 'string' ? b.meta.desc : (b.meta.desc ? JSON.stringify(b.meta.desc) : '')}>
-                                                                   {typeof b.meta.desc === 'string' ? b.meta.desc : (b.meta.desc ? JSON.stringify(b.meta.desc) : '')}
+                                                           {((lang === 'zh' ? (b.meta?.description_zh || b.meta?.description) : b.meta?.description) || b.meta?.desc) && (
+                                                               <span className="text-xs text-slate-400 max-w-md line-clamp-2" title={(lang === 'zh' ? (b.meta?.description_zh || b.meta?.description) : b.meta?.description) || b.meta?.desc}>
+                                                                   {(lang === 'zh' ? (b.meta?.description_zh || b.meta?.description) : b.meta?.description) || b.meta?.desc}
                                                                </span>
                                                            )}
                                                        </div>

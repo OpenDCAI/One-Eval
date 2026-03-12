@@ -168,7 +168,7 @@ export const BenchCard = ({ bench, activeNode, lang, onUpdate, onRetryDownload }
         const found = EVAL_TYPE_OPTIONS.find(x => x.value === (selectedEvalType || evalType));
         return found ? found.label : "";
     })();
-    const descriptionRaw = meta.card_text ?? meta.description ?? meta.desc ?? "No description available.";
+    const descriptionRaw = meta.card_text ?? (lang === 'zh' ? (meta.description_zh || meta.description) : meta.description) ?? meta.desc ?? "No description available.";
     const description = typeof descriptionRaw === 'string' ? descriptionRaw : (descriptionRaw ? JSON.stringify(descriptionRaw) : "No description available.");
     const tags = Array.isArray(meta.tags) ? meta.tags : [];
     const availableKeys = Array.from(new Set([...(Array.isArray(meta.keys) ? meta.keys : []), ...(Array.isArray((bench as any).bench_keys) ? (bench as any).bench_keys : [])].map((x: any) => String(x))));
@@ -1250,7 +1250,8 @@ export const GalleryModal = ({ isOpen, onClose, onSelect, apiBaseUrl, lang }: { 
 
     // 从 bench_gallery.json 获取描述和标签
     const getDescription = (b: any): string => {
-        // 优先从 meta.description 获取
+        // 优先从 meta.description 获取，中文模式下优先使用 description_zh
+        if (lang === 'zh' && b.meta?.description_zh) return b.meta.description_zh;
         if (b.meta?.description) return b.meta.description;
         // 兼容旧格式
         if (typeof b.description === 'string') return b.description;
