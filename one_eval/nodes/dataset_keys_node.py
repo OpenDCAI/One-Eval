@@ -41,21 +41,33 @@ class DatasetKeysNode(BaseNode):
                 continue
 
             try:
-                # 只读取第一行
+                # 读取前 5 行，提取 keys + 预览数据
                 with cache_path.open("r", encoding="utf-8") as f:
-                    first_line = f.readline()
-                    if not first_line:
+                    preview_rows = []
+                    keys = None
+                    for _ in range(5):
+                        line = f.readline()
+                        if not line:
+                            break
+                        try:
+                            row = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if isinstance(row, dict):
+                            if keys is None:
+                                keys = list(row.keys())
+                            preview_rows.append(row)
+                    if not preview_rows:
                         self.logger.warning(f"[{bench.bench_name}] 文件为空")
                         continue
-                    
-                    try:
-                        data = json.loads(first_line)
-                        keys = list(data.keys())
-                        bench.bench_keys = keys
-                        self.logger.info(f"[{bench.bench_name}] 提取 keys: {keys}")
-                    except json.JSONDecodeError:
-                        self.logger.error(f"[{bench.bench_name}] 第一行 JSON 解析失败")
-                        continue
+
+                    bench.bench_keys = keys or []
+                    if bench.meta is None:
+                        bench.meta = {}
+                    if isinstance(bench.meta, dict):
+                        bench.meta["preview_data"] = preview_rows
+                        bench.meta["local_path"] = str(cache_path)
+                    self.logger.info(f"[{bench.bench_name}] 提取 keys: {bench.bench_keys}，预览行数: {len(preview_rows)}")
 
             except Exception as e:
                 self.logger.error(f"[{bench.bench_name}] 读取异常: {e}")

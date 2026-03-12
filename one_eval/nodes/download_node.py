@@ -24,6 +24,22 @@ class DownloadNode(BaseNode):
         self.logger = log
         self.max_retries = max_retries
 
+    def _pick_best_split(self, splits: list[str], preferred: str) -> str:
+        if not splits:
+            return preferred
+        if preferred in splits:
+            return preferred
+        for cand in ("test", "validation", "dev", "val", "train"):
+            if cand in splits:
+                return cand
+        fuzzy = [s for s in splits if "test" in s.lower()]
+        if fuzzy:
+            return fuzzy[0]
+        fuzzy = [s for s in splits if "valid" in s.lower() or "dev" in s.lower()]
+        if fuzzy:
+            return fuzzy[0]
+        return splits[0]
+
     async def run(self, state: NodeState) -> NodeState:
         state.current_node = self.name
 
@@ -81,6 +97,28 @@ class DownloadNode(BaseNode):
                         else:
                             config_name = available_configs[0]
                         self.logger.info(f"[{hf_repo}] 修正后的 Config: {config_name}")
+
+                    matched_subset = next((s for s in subsets if s.get("subset") == config_name), None)
+                    raw_splits = (matched_subset or {}).get("splits", []) if isinstance(matched_subset, dict) else []
+                    available_splits = []
+                    for sp in raw_splits:
+                        if isinstance(sp, dict) and sp.get("name"):
+                            available_splits.append(str(sp.get("name")))
+                        elif isinstance(sp, str):
+                            available_splits.append(sp)
+                    if available_splits:
+                        fixed_split = self._pick_best_split(available_splits, split_name)
+                        if fixed_split != split_name:
+                            self.logger.info(f"[{hf_repo}] Split '{split_name}' 不在可用列表中 {available_splits}，修正为 '{fixed_split}'")
+                            split_name = fixed_split
+                if bench.meta is None:
+                    bench.meta = {}
+                if isinstance(bench.meta, dict):
+                    bench.meta["download_config"] = {
+                        "config": config_name,
+                        "split": split_name,
+                        "reason": "auto-corrected by DownloadNode",
+                    }
 
                 # 2. 确定输出路径
                 # 结构: cache/repo__config__split.jsonl

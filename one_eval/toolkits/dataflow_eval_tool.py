@@ -40,11 +40,29 @@ class DataFlowEvalTool:
 
     def _init_llm_serving(self, config: ModelConfig):
         """初始化或更新 LLM Serving"""
+        def _is_broken_local(serving: Any) -> bool:
+            if serving is None:
+                return False
+            if isinstance(serving, LocalModelLLMServing_vllm):
+                if getattr(serving, "backend_initialized", False) and not hasattr(serving, "tokenizer"):
+                    return True
+            return False
+
         # Check global cache first
         if DataFlowEvalTool._cached_llm_serving and DataFlowEvalTool._cached_model_config == config:
-            self.llm_serving = DataFlowEvalTool._cached_llm_serving
-            self._current_model_config = config
-            return
+            if _is_broken_local(DataFlowEvalTool._cached_llm_serving):
+                log.warning("Detected broken cached local serving (missing tokenizer), rebuilding...")
+                try:
+                    if hasattr(DataFlowEvalTool._cached_llm_serving, "cleanup"):
+                        DataFlowEvalTool._cached_llm_serving.cleanup()
+                except Exception:
+                    pass
+                DataFlowEvalTool._cached_llm_serving = None
+                DataFlowEvalTool._cached_model_config = None
+            else:
+                self.llm_serving = DataFlowEvalTool._cached_llm_serving
+                self._current_model_config = config
+                return
 
         # If cache exists but config differs, cleanup old one
         if DataFlowEvalTool._cached_llm_serving:
@@ -71,7 +89,7 @@ class DataFlowEvalTool:
                     rest = m.group(2).replace("/", "\\")
                     p = f"{drive}:\\{rest}"
             else:
-                m = re.match(r"^([a-zA-Z]):\\\\(.+)$", p)
+                m = re.match(r"^([a-zA-Z]):\\(.+)$", p)
                 if m:
                     drive = m.group(1).lower()
                     rest = m.group(2).replace("\\", "/")
@@ -102,6 +120,19 @@ class DataFlowEvalTool:
                 vllm_gpu_memory_utilization=getattr(config, "gpu_memory_utilization", 0.9),
                 # trust_remote_code=True, # 默认信任，State 中已移除该配置
             )
+            try:
+                self.llm_serving.start_serving()
+                if not hasattr(self.llm_serving, "tokenizer"):
+                    raise RuntimeError("vLLM serving initialized without tokenizer")
+            except Exception as e:
+                try:
+                    if hasattr(self.llm_serving, "backend_initialized"):
+                        self.llm_serving.backend_initialized = False
+                except Exception:
+                    pass
+                DataFlowEvalTool._cached_llm_serving = None
+                DataFlowEvalTool._cached_model_config = None
+                raise RuntimeError(f"Local vLLM serving init failed: {e}") from e
         
         self._current_model_config = config
         

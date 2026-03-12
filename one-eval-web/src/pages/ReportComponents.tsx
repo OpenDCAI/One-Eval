@@ -1,8 +1,8 @@
-import React, { useMemo } from "react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { SimpleMarkdown } from "@/components/ui/simple-markdown";
-import { AlertCircle, CheckCircle2, XCircle, HelpCircle, BarChart2, PieChart, Activity } from "lucide-react";
+import { BarChart2, PieChart, Activity } from "lucide-react";
+import type { Lang } from "@/lib/i18n";
 
 // --- Types ---
 interface RadarData {
@@ -309,8 +309,9 @@ export const HistogramChart = ({ data, height = 200 }: { data: HistogramData; he
 };
 
 // --- Main Report View Component ---
-export const ReportView = ({ report }: { report: ReportData }) => {
+export const ReportView = ({ report, lang }: { report: ReportData, lang: Lang }) => {
     if (!report) return null;
+    const tt = (zh: string, en: string) => (lang === "zh" ? zh : en);
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500 pb-20">
@@ -322,21 +323,21 @@ export const ReportView = ({ report }: { report: ReportData }) => {
                     <div>
                         <div className="flex items-center gap-2 mb-2">
                             <Activity className="w-5 h-5 text-emerald-400" />
-                            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Evaluation Report</span>
+                            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{tt("评测报告", "Evaluation Report")}</span>
                         </div>
                         <h1 className="text-3xl font-bold mb-2">{report.model}</h1>
-                        <p className="text-slate-400 text-sm max-w-xl leading-relaxed">
-                            {report.llm_summary || "No summary available."}
-                        </p>
+                        <div className="text-slate-300 text-sm max-w-xl leading-relaxed">
+                            <SimpleMarkdown content={report.llm_summary || tt("暂无摘要。", "No summary available.")} />
+                        </div>
                     </div>
                     
                     <div className="text-right">
-                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Overall Score</div>
+                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{tt("综合得分", "Overall Score")}</div>
                         <div className="text-5xl font-black font-mono text-emerald-400 tracking-tight">
                             {report.overall.score.toFixed(4)}
                         </div>
                         <div className="text-xs text-slate-500 mt-2">
-                            Generated at {new Date(report.generated_at * 1000).toLocaleDateString()}
+                            {tt("生成时间", "Generated at")} {new Date(report.generated_at * 1000).toLocaleDateString()}
                         </div>
                     </div>
                 </div>
@@ -350,7 +351,7 @@ export const ReportView = ({ report }: { report: ReportData }) => {
                         <div className="p-2 bg-violet-100 text-violet-600 rounded-lg">
                             <Activity className="w-5 h-5" />
                         </div>
-                        <h3 className="font-bold text-slate-800">Capabilities Radar</h3>
+                        <h3 className="font-bold text-slate-800">{tt("能力雷达图", "Capabilities Radar")}</h3>
                     </div>
                     <div className="flex justify-center">
                         <RadarChart data={report.macro.radar} />
@@ -363,7 +364,7 @@ export const ReportView = ({ report }: { report: ReportData }) => {
                         <div className="p-2 bg-blue-100 text-blue-600 rounded-lg">
                             <BarChart2 className="w-5 h-5" />
                         </div>
-                        <h3 className="font-bold text-slate-800">Benchmark Scores</h3>
+                        <h3 className="font-bold text-slate-800">{tt("基准得分", "Benchmark Scores")}</h3>
                     </div>
                     <div className="max-h-[300px] overflow-y-auto pr-2 scrollbar-thin">
                         <BarChart 
@@ -383,21 +384,21 @@ export const ReportView = ({ report }: { report: ReportData }) => {
                     <div className="p-2 bg-amber-100 text-amber-600 rounded-lg">
                         <PieChart className="w-5 h-5" />
                     </div>
-                    <h3 className="font-bold text-slate-800">Error Diagnostics</h3>
+                    <h3 className="font-bold text-slate-800">{tt("错误诊断", "Error Diagnostics")}</h3>
                 </div>
                 
                 {/* 中间 Grid：左边甜甜圈，右边直方图 */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
                     {/* Left: Error Distribution */}
                     <div className="flex flex-col items-center">
-                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Error Distribution</h4>
+                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">{tt("错误分布", "Error Distribution")}</h4>
                         <DonutChart data={report.diagnostic.error_distribution} />
                     </div>
                     
                     {/* Right: Length Histogram */}
                     <div className="flex flex-col w-full">
                         <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">
-                             Output Length Distribution
+                             {tt("输出长度分布", "Output Length Distribution")}
                         </h4>
                         {report.diagnostic.length_histogram ? (
                             <div className="h-48 w-full">
@@ -405,7 +406,7 @@ export const ReportView = ({ report }: { report: ReportData }) => {
                             </div>
                         ) : (
                             <div className="h-48 flex items-center justify-center bg-slate-50 rounded-lg border border-dashed border-slate-200 text-slate-400 text-xs italic">
-                                No length data available
+                                {tt("暂无长度分布数据", "No length data available")}
                             </div>
                         )}
                     </div>
@@ -413,7 +414,7 @@ export const ReportView = ({ report }: { report: ReportData }) => {
 
                 {/* 底部 Footer：Analyst Insights */}
                 <div className="mt-8 pt-8 border-t border-slate-100">
-                     <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Analyst Insights</h4>
+                     <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">{tt("分析洞察", "Analyst Insights")}</h4>
                      {/* 使用 Grid 布局让文字卡片并排显示，避免单列太长 */}
                      <div className="space-y-4">
                          {Object.entries(report.analyst.metric_summary).slice(0, 6).map(([bench, text], i) => (

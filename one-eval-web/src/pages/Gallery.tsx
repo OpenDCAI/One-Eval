@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { useLang } from "@/lib/i18n";
 
 // ============================================================================
 // Types - 匹配 bench_gallery.json 的数据结构
@@ -116,17 +117,17 @@ type BenchItem = {
 // Constants
 // ============================================================================
 
-const CATEGORIES: Array<{ id: BenchCategory | "All"; label: string }> = [
-  { id: "All", label: "All" },
-  { id: "Knowledge & QA", label: "Knowledge & QA" },
-  { id: "Reasoning", label: "Reasoning" },
-  { id: "Math", label: "Math" },
-  { id: "Coding", label: "Coding" },
-  { id: "Long Context & RAG", label: "Long Context & RAG" },
-  { id: "Instruction & Chat", label: "Instruction & Chat" },
-  { id: "Agents & Tools", label: "Agents & Tools" },
-  { id: "Safety & Alignment", label: "Safety & Alignment" },
-  { id: "Domain-Specific", label: "Domain-Specific" },
+const CATEGORIES: Array<{ id: BenchCategory | "All" }> = [
+  { id: "All" },
+  { id: "Knowledge & QA" },
+  { id: "Reasoning" },
+  { id: "Math" },
+  { id: "Coding" },
+  { id: "Long Context & RAG" },
+  { id: "Instruction & Chat" },
+  { id: "Agents & Tools" },
+  { id: "Safety & Alignment" },
+  { id: "Domain-Specific" },
 ];
 
 // ============================================================================
@@ -222,6 +223,42 @@ const BENCH_TYPES = [
 ];
 
 export const Gallery = () => {
+  const { lang } = useLang();
+  const tt = (zh: string, en: string) => (lang === "zh" ? zh : en);
+  const categoryLabel = (id: BenchCategory | "All") => {
+    const map: Record<BenchCategory | "All", { zh: string; en: string }> = {
+      All: { zh: "全部", en: "All" },
+      "Knowledge & QA": { zh: "知识问答", en: "Knowledge & QA" },
+      Reasoning: { zh: "推理", en: "Reasoning" },
+      Math: { zh: "数学", en: "Math" },
+      Coding: { zh: "编程", en: "Coding" },
+      "Long Context & RAG": { zh: "长上下文与 RAG", en: "Long Context & RAG" },
+      "Instruction & Chat": { zh: "指令与对话", en: "Instruction & Chat" },
+      "Agents & Tools": { zh: "Agent 与工具", en: "Agents & Tools" },
+      "Safety & Alignment": { zh: "安全与对齐", en: "Safety & Alignment" },
+      "Domain-Specific": { zh: "领域专项", en: "Domain-Specific" },
+    };
+    return tt(map[id].zh, map[id].en);
+  };
+  const benchTypeLabel = (value: string) => {
+    const map: Record<string, { zh: string; en: string }> = {
+      knowledge: { zh: "知识", en: "knowledge" },
+      "language & reasoning": { zh: "语言与推理", en: "language & reasoning" },
+      math: { zh: "数学", en: "math" },
+      coding: { zh: "编程", en: "coding" },
+      "information retrieval & RAG": { zh: "信息检索与 RAG", en: "information retrieval & RAG" },
+      "instruction-following": { zh: "指令跟随", en: "instruction-following" },
+      "conversation & chatbots": { zh: "对话与聊天机器人", en: "conversation & chatbots" },
+      "agents & tools use": { zh: "Agent 与工具使用", en: "agents & tools use" },
+      safety: { zh: "安全", en: "safety" },
+      "bias & ethics": { zh: "偏见与伦理", en: "bias & ethics" },
+      "domain-specific": { zh: "领域专项", en: "domain-specific" },
+      multilingual: { zh: "多语言", en: "multilingual" },
+      other: { zh: "其他", en: "other" },
+    };
+    const hit = map[value];
+    return hit ? tt(hit.zh, hit.en) : value;
+  };
   const navigate = useNavigate();
   const [benches, setBenches] = useState<BenchItem[]>([]);
   const [query, setQuery] = useState("");
@@ -256,7 +293,7 @@ export const Gallery = () => {
       saveGalleryBenches(transformed);
     } catch (err) {
       console.error("Failed to fetch benches:", err);
-      setError(err instanceof Error ? err.message : "Failed to fetch benches");
+      setError(err instanceof Error ? err.message : tt("获取 Bench 失败", "Failed to fetch benches"));
       // 尝试从 localStorage 加载缓存数据
       const cached = loadGalleryBenches();
       if (cached.length > 0) {
@@ -327,7 +364,7 @@ export const Gallery = () => {
 
       if (!response.ok) {
         const err = await response.json();
-        throw new Error(err.detail || "Failed to add bench");
+        throw new Error(err.detail || tt("新增 Bench 失败", "Failed to add bench"));
       }
 
       // 成功后刷新列表并关闭弹窗
@@ -335,7 +372,7 @@ export const Gallery = () => {
       setIsAddModalOpen(false);
       setAddForm({ bench_name: "", type: "knowledge", description: "", dataset_url: "" });
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to add bench");
+      alert(err instanceof Error ? err.message : tt("新增 Bench 失败", "Failed to add bench"));
     } finally {
       setIsSubmitting(false);
     }
@@ -345,8 +382,8 @@ export const Gallery = () => {
     <div className="p-12 max-w-7xl mx-auto space-y-8">
       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-4xl font-bold tracking-tight text-slate-900">Benchmark Gallery</h1>
-          <p className="text-slate-600 text-lg">Search, filter, and configure your curated benchmarks.</p>
+          <h1 className="text-4xl font-bold tracking-tight text-slate-900">{tt("基准库", "Benchmark Gallery")}</h1>
+          <p className="text-slate-600 text-lg">{tt("搜索、筛选并配置你的精选基准。", "Search, filter, and configure your curated benchmarks.")}</p>
         </div>
         <div className="flex gap-3">
           <Button
@@ -354,7 +391,7 @@ export const Gallery = () => {
             onClick={() => setIsAddModalOpen(true)}
           >
             <Plus className="w-4 h-4 mr-2" />
-            Add Bench
+            {tt("新增 Bench", "Add Bench")}
           </Button>
           <Button
             variant="outline"
@@ -367,14 +404,14 @@ export const Gallery = () => {
             ) : (
               <RefreshCw className="w-4 h-4 mr-2" />
             )}
-            Refresh
+            {tt("刷新", "Refresh")}
           </Button>
         </div>
       </div>
 
       {error && (
         <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-          {error}. Showing cached data.
+          {error}. {tt("已展示缓存数据。", "Showing cached data.")}
         </div>
       )}
 
@@ -385,7 +422,7 @@ export const Gallery = () => {
             <Input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search benches, tags, categories..."
+              placeholder={tt("搜索基准、标签、分类...", "Search benches, tags, categories...")}
               className="pl-9 bg-white border-slate-200"
             />
           </div>
@@ -401,7 +438,7 @@ export const Gallery = () => {
                     : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
                     )}
                   >
-                    {c.label}
+                    {categoryLabel(c.id)}
                   </button>
             ))}
           </div>
@@ -411,13 +448,13 @@ export const Gallery = () => {
       {isLoading && benches.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-slate-500">
           <Loader2 className="w-8 h-8 animate-spin mb-4" />
-          <p>Loading benchmarks...</p>
+          <p>{tt("正在加载基准...", "Loading benchmarks...")}</p>
         </div>
       ) : benches.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-slate-500">
-          <p>No benchmarks available.</p>
+          <p>{tt("暂无可用基准。", "No benchmarks available.")}</p>
           <Button variant="outline" className="mt-4" onClick={handleRefresh}>
-            Try Again
+            {tt("重试", "Try Again")}
           </Button>
         </div>
       ) : (
@@ -435,7 +472,7 @@ export const Gallery = () => {
                         </div>
                         <div>
                           <CardTitle className="text-xl text-slate-900">{bench.name}</CardTitle>
-                          <div className="text-xs text-slate-500 mt-0.5">{bench.meta.category}</div>
+                          <div className="text-xs text-slate-500 mt-0.5">{categoryLabel(bench.meta.category)}</div>
                         </div>
                       </div>
                     </div>
@@ -463,7 +500,7 @@ export const Gallery = () => {
                       className="flex-1 text-white bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-500 hover:to-violet-500 shadow-sm shadow-blue-600/20"
                       onClick={() => handleUseBench(bench.id)}
                     >
-                      Use
+                      {tt("使用", "Use")}
                     </Button>
                     {bench.meta.datasetUrl && (
                       <Button
@@ -505,7 +542,7 @@ export const Gallery = () => {
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-xs text-slate-500 uppercase tracking-wider">Configure Bench</div>
+                  <div className="text-xs text-slate-500 uppercase tracking-wider">{tt("配置 Bench", "Configure Bench")}</div>
                   <div className="text-2xl font-bold text-slate-900 mt-1">{activeBench.name}</div>
                 </div>
                 <button
@@ -518,7 +555,7 @@ export const Gallery = () => {
 
               <div className="mt-6 space-y-5">
                 <div className="space-y-2">
-                  <Label>Display Name</Label>
+                  <Label>{tt("显示名称", "Display Name")}</Label>
                   <Input
                     value={activeBench.name}
                     onChange={(e) => handleUpdateBench({ ...activeBench, name: e.target.value })}
@@ -527,7 +564,7 @@ export const Gallery = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Description</Label>
+                  <Label>{tt("描述", "Description")}</Label>
                   <textarea
                     value={activeBench.meta.description}
                     onChange={(e) =>
@@ -538,7 +575,7 @@ export const Gallery = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Category</Label>
+                  <Label>{tt("分类", "Category")}</Label>
                   <select
                     value={activeBench.meta.category}
                     onChange={(e) =>
@@ -551,14 +588,14 @@ export const Gallery = () => {
                   >
                     {CATEGORIES.filter((c) => c.id !== "All").map((c) => (
                       <option key={c.id} value={c.id}>
-                        {c.label}
+                        {categoryLabel(c.id as BenchCategory)}
                       </option>
                     ))}
                   </select>
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Tags (comma-separated)</Label>
+                  <Label>{tt("标签（逗号分隔）", "Tags (comma-separated)")}</Label>
                   <Input
                     value={activeBench.meta.tags.join(", ")}
                     onChange={(e) =>
@@ -579,7 +616,7 @@ export const Gallery = () => {
 
                 {activeBench.meta.datasetUrl && (
                   <div className="space-y-2">
-                    <Label>Dataset URL</Label>
+                    <Label>{tt("数据集链接", "Dataset URL")}</Label>
                     <div className="flex gap-2">
                       <Input
                         value={activeBench.meta.datasetUrl}
@@ -599,7 +636,7 @@ export const Gallery = () => {
 
                 {activeBench.meta.datasetKeys && activeBench.meta.datasetKeys.length > 0 && (
                   <div className="space-y-2">
-                    <Label>Dataset Keys</Label>
+                    <Label>{tt("数据字段 Keys", "Dataset Keys")}</Label>
                     <div className="flex flex-wrap gap-1.5 p-3 rounded-md border border-slate-200 bg-slate-50">
                       {activeBench.meta.datasetKeys.map((key) => (
                         <span key={key} className="text-xs px-2 py-1 rounded bg-white border border-slate-200 text-slate-600 font-mono">
@@ -615,7 +652,7 @@ export const Gallery = () => {
                   <>
                     {activeBench._raw.meta?.download_config && (
                       <div className="space-y-2">
-                        <Label>Download Config</Label>
+                        <Label>{tt("下载配置", "Download Config")}</Label>
                         <div className="p-3 rounded-md border border-slate-200 bg-slate-50 text-xs font-mono space-y-1">
                           <div><span className="text-slate-500">config:</span> {activeBench._raw.meta.download_config.config}</div>
                           <div><span className="text-slate-500">split:</span> {activeBench._raw.meta.download_config.split}</div>
@@ -625,7 +662,7 @@ export const Gallery = () => {
 
                     {activeBench._raw.meta?.key_mapping && (
                       <div className="space-y-2">
-                        <Label>Key Mapping</Label>
+                        <Label>{tt("字段映射", "Key Mapping")}</Label>
                         <div className="p-3 rounded-md border border-slate-200 bg-slate-50 text-xs font-mono space-y-1">
                           {activeBench._raw.meta.key_mapping.input_question_key && (
                             <div><span className="text-slate-500">question:</span> {activeBench._raw.meta.key_mapping.input_question_key}</div>
@@ -642,7 +679,7 @@ export const Gallery = () => {
 
                     {activeBench._raw.bench_dataflow_eval_type && (
                       <div className="space-y-2">
-                        <Label>Eval Type</Label>
+                        <Label>{tt("评测类型", "Eval Type")}</Label>
                         <div className="px-3 py-2 rounded-md border border-slate-200 bg-slate-50 text-sm text-slate-600">
                           {activeBench._raw.bench_dataflow_eval_type}
                         </div>
@@ -654,10 +691,10 @@ export const Gallery = () => {
 
               <div className="mt-8 flex gap-2">
                 <Button className="flex-1 bg-slate-900 text-white hover:bg-slate-800" onClick={() => handleUseBench(activeBench.id)}>
-                  Use This Bench
+                  {tt("使用该 Bench", "Use This Bench")}
                 </Button>
                 <Button variant="outline" className="border-slate-200" onClick={() => setActiveBenchId(null)}>
-                  Close
+                  {tt("关闭", "Close")}
                 </Button>
               </div>
             </motion.div>
@@ -682,7 +719,7 @@ export const Gallery = () => {
               className="relative bg-white rounded-2xl shadow-2xl p-6 w-full max-w-lg mx-4"
             >
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold text-slate-900">Add New Benchmark</h2>
+                <h2 className="text-xl font-bold text-slate-900">{tt("新增 Benchmark", "Add New Benchmark")}</h2>
                 <button
                   className="p-2 rounded-lg hover:bg-slate-100 text-slate-500"
                   onClick={() => setIsAddModalOpen(false)}
@@ -693,48 +730,48 @@ export const Gallery = () => {
 
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Benchmark Name *</Label>
+                  <Label>{tt("Benchmark 名称 *", "Benchmark Name *")}</Label>
                   <Input
                     value={addForm.bench_name}
                     onChange={(e) => setAddForm({ ...addForm, bench_name: e.target.value })}
-                    placeholder="e.g., org/dataset_name"
+                    placeholder={tt("例如：org/dataset_name", "e.g., org/dataset_name")}
                     className="border-slate-200"
                   />
-                  <p className="text-xs text-slate-500">Use HuggingFace format: org/dataset_name</p>
+                  <p className="text-xs text-slate-500">{tt("请使用 HuggingFace 格式：org/dataset_name", "Use HuggingFace format: org/dataset_name")}</p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Type *</Label>
+                  <Label>{tt("类型 *", "Type *")}</Label>
                   <select
                     value={addForm.type}
                     onChange={(e) => setAddForm({ ...addForm, type: e.target.value })}
                     className="w-full h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
                   >
                     {BENCH_TYPES.map((t) => (
-                      <option key={t} value={t}>{t}</option>
+                      <option key={t} value={t}>{benchTypeLabel(t)}</option>
                     ))}
                   </select>
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Description *</Label>
+                  <Label>{tt("描述 *", "Description *")}</Label>
                   <textarea
                     value={addForm.description}
                     onChange={(e) => setAddForm({ ...addForm, description: e.target.value })}
-                    placeholder="Describe what this benchmark evaluates..."
+                    placeholder={tt("描述这个 benchmark 评测什么能力...", "Describe what this benchmark evaluates...")}
                     className="w-full min-h-[100px] rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Dataset URL (optional)</Label>
+                  <Label>{tt("数据集链接（可选）", "Dataset URL (optional)")}</Label>
                   <Input
                     value={addForm.dataset_url}
                     onChange={(e) => setAddForm({ ...addForm, dataset_url: e.target.value })}
                     placeholder="https://huggingface.co/datasets/..."
                     className="border-slate-200"
                   />
-                  <p className="text-xs text-slate-500">Leave empty to auto-generate from bench name</p>
+                  <p className="text-xs text-slate-500">{tt("留空将根据 bench 名自动生成", "Leave empty to auto-generate from bench name")}</p>
                 </div>
               </div>
 
@@ -747,17 +784,17 @@ export const Gallery = () => {
                   {isSubmitting ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Adding...
+                      {tt("新增中...", "Adding...")}
                     </>
                   ) : (
                     <>
                       <Plus className="w-4 h-4 mr-2" />
-                      Add Benchmark
+                      {tt("新增 Benchmark", "Add Benchmark")}
                     </>
                   )}
                 </Button>
                 <Button variant="outline" className="border-slate-200" onClick={() => setIsAddModalOpen(false)}>
-                  Cancel
+                  {tt("取消", "Cancel")}
                 </Button>
               </div>
             </motion.div>

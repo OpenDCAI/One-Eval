@@ -9,14 +9,16 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { ChatPanel, WorkflowBlock, SummaryPanel, Bench, WorkflowState, BenchCard, GalleryModal } from "./EvalComponents";
 import { SimpleMarkdown } from "@/components/ui/simple-markdown";
+import { useLang } from "@/lib/i18n";
 
 // --- Types ---
 interface StatusResponse {
   thread_id: string;
-  status: "idle" | "running" | "interrupted" | "completed" | "failed" | "not_found";
+  status: "idle" | "running" | "interrupted" | "completed" | "failed" | "not_found" | "stopped";
   next_node: string[] | null;
   state_values: WorkflowState | null;
   current_node?: string; 
+  interrupts?: Array<{ value?: unknown }>;
 }
 
 interface HistoryItem {
@@ -42,6 +44,7 @@ interface MetricMeta {
 }
 
 export const Eval = () => {
+  const { lang, setLang, t } = useLang();
     const [metricRegistry, setMetricRegistry] = useState<MetricMeta[]>([]);
   const [workMode, setWorkMode] = useState<"agent" | "manual">(() => {
       const v = localStorage.getItem("oneEval.workMode");
@@ -52,6 +55,7 @@ export const Eval = () => {
   const [status, setStatus] = useState<StatusResponse["status"]>("idle");
   const [state, setState] = useState<WorkflowState | null>(null);
   const [currentNode, setCurrentNode] = useState<string | null>(null);
+  const [interruptToken, setInterruptToken] = useState<string | null>(null);
   
   // History
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -88,8 +92,15 @@ export const Eval = () => {
   
   // Chat State
   const [messages, setMessages] = useState<ChatMessage[]>([
-      { id: "init", role: "ai", content: "Hello! Describe your evaluation task to get started.", timestamp: Date.now() }
+      { id: "init", role: "ai", content: t({ zh: "你好！请先描述你的评测目标，我们将自动开始流程。", en: "Hello! Describe your evaluation task to get started." }), timestamp: Date.now() }
   ]);
+
+  useEffect(() => {
+      setMessages(prev => prev.map(m => m.id === "init"
+        ? { ...m, content: t({ zh: "你好！请先描述你的评测目标，我们将自动开始流程。", en: "Hello! Describe your evaluation task to get started." }) }
+        : m
+      ));
+  }, [lang]);
 
   // Editable State (for manual modification)
   const [editBenches, setEditBenches] = useState<Bench[]>([]);
@@ -97,10 +108,29 @@ export const Eval = () => {
   const [useRAG, setUseRAG] = useState(true);
 
   const apiBaseUrl = useMemo(() => localStorage.getItem("oneEval.apiBaseUrl") || "http://localhost:8000", []);
+  const draftKey = useMemo(() => "oneEval.evalDraft", []);
 
   useEffect(() => {
       localStorage.setItem("oneEval.workMode", workMode);
   }, [workMode]);
+
+  useEffect(() => {
+      if (threadId) return;
+      try {
+          const raw = localStorage.getItem(draftKey);
+          if (!raw) return;
+          const draft = JSON.parse(raw);
+          if (draft?.query) setQuery(draft.query);
+          if (draft?.manualModelPath) setManualModelPath(draft.manualModelPath);
+          if (Array.isArray(draft?.manualBenches)) setManualBenches(draft.manualBenches);
+          if (Array.isArray(draft?.editBenches)) setEditBenches(draft.editBenches);
+          if (draft?.evalParams && typeof draft.evalParams === "object") {
+              setEvalParams(prev => ({ ...prev, ...draft.evalParams }));
+          }
+          if (draft?.workMode === "manual" || draft?.workMode === "agent") setWorkMode(draft.workMode);
+          if (typeof draft?.useRAG === "boolean") setUseRAG(draft.useRAG);
+      } catch {}
+  }, [draftKey, threadId]);
 
   useEffect(() => {
       if (selectedModel?.path && !manualModelPath) {
@@ -145,7 +175,7 @@ export const Eval = () => {
 
   // Polling
   useEffect(() => {
-    if (!threadId || status === "completed" || status === "failed" || isResuming) return;
+    if (!threadId || status === "completed" || status === "failed" || status === "stopped" || isResuming) return;
 
     const interval = setInterval(async () => {
       try {
@@ -159,7 +189,7 @@ export const Eval = () => {
                         const lastMsg = prev[prev.length - 1];
                         
                         if (data.status === "failed") {
-                            const failText = "Evaluation failed. Please check logs.";
+                            const failText = t({ zh: "评测失败，请查看日志。", en: "Evaluation failed. Please check logs." });
                             if (lastMsg?.content !== failText) {
                                  return [...prev, { id: Date.now().toString(), role: "system", content: failText, timestamp: Date.now() }];
                             }
@@ -169,6 +199,13 @@ export const Eval = () => {
                 }
 
         setStatus(data.status);
+        if (data.status === "interrupted") {
+            const interruptValue = data.interrupts?.[0]?.value;
+            const token = `${threadId || ""}|${data.next_node?.[0] || ""}|${JSON.stringify(interruptValue ?? "")}`;
+            setInterruptToken(token);
+        } else {
+            setInterruptToken(null);
+        }
         if (data.state_values) {
             setState(data.state_values);
 
@@ -213,7 +250,7 @@ export const Eval = () => {
     }, 1500); 
 
     return () => clearInterval(interval);
-  }, [threadId, status, isResuming]);
+  }, [threadId, status, isResuming, t]);
 
   // Init Edit Benches when entering interrupted state (handled in polling now for better control)
   // But also fallback here
@@ -275,23 +312,45 @@ export const Eval = () => {
         user_query: userQuery,
         target_model_name: targetModelName,
         target_model_path: targetModelPath,
-        use_rag: useRAG
+        use_rag: useRAG,
+        language: lang
       });
       setThreadId(res.data.thread_id);
       setStatus("running");
       
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: "ai", content: "I've started the evaluation workflow. I'll analyze your query first.", timestamp: Date.now() }]);
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: "ai", content: t({ zh: "我已启动评测流程，先为你解析需求。", en: "I've started the evaluation workflow. I'll analyze your query first." }), timestamp: Date.now() }]);
 
     } catch (e) {
       console.error(e);
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: "system", content: "Failed to start workflow. Check connection.", timestamp: Date.now() }]);
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: "system", content: t({ zh: "启动流程失败，请检查服务连接。", en: "Failed to start workflow. Check connection." }), timestamp: Date.now() }]);
     }
   };
 
   const handleResume = async () => {
     if (!threadId) return;
+
+    if (status === "interrupted" && currentNode?.includes("PreEvalReviewNode")) {
+        const benchesToCheck = (editBenches.length ? editBenches : (state?.benches || [])) as any[];
+        const missingEvalType = benchesToCheck
+            .filter((b: any) => !(b?.bench_dataflow_eval_type || b?.eval_type || b?.meta?.bench_dataflow_eval_type))
+            .map((b: any) => b?.bench_name || "unknown");
+        if (missingEvalType.length > 0) {
+            setMessages(prev => [...prev, {
+                id: Date.now().toString(),
+                role: "system",
+                content: t(
+                    {
+                        zh: `以下基准缺少 eval_type：${missingEvalType.join(", ")}。请打开对应数据集详情，在“评测类型”下拉中选择类型并保存后，再点击确认继续。eval_type 用于定义数据字段映射和评测方式。`,
+                        en: `The following benches are missing eval_type: ${missingEvalType.join(", ")}. Open dataset details, select Evaluation Type from dropdown, save, then confirm to continue. eval_type defines field mapping and evaluation mode.`
+                    }
+                ),
+                timestamp: Date.now()
+            }]);
+            return;
+        }
+    }
     
-    setIsResuming(true); // Lock polling
+    setIsResuming(true);
 
     // Optimistic Update
     if (state) {
@@ -328,6 +387,7 @@ export const Eval = () => {
           payload.state_updates = {
               benches: editBenches,
               target_model_name: selectedModel?.name ?? state?.target_model_name,
+              request: { language: lang }
           };
           if (modelForUpdate) {
               payload.state_updates.target_model = modelForUpdate;
@@ -339,7 +399,7 @@ export const Eval = () => {
 
       await axios.post(`${apiBaseUrl}/api/workflow/resume/${threadId}`, payload);
       setStatus("running"); 
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: "ai", content: "Configuration approved. Proceeding with evaluation...", timestamp: Date.now() }]);
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: "ai", content: t({ zh: "已确认配置，继续执行评测流程。", en: "Configuration approved. Proceeding with evaluation..." }), timestamp: Date.now() }]);
       
       // Re-enable polling after a delay to allow backend to process
       setTimeout(() => setIsResuming(false), 3000);
@@ -356,7 +416,7 @@ export const Eval = () => {
       setQuery(item.user_query);
       // Reset Chat
       setMessages([
-          { id: "init", role: "ai", content: "Loaded past session.", timestamp: Date.now() },
+          { id: "init", role: "ai", content: t({ zh: "已载入历史会话。", en: "Loaded past session." }), timestamp: Date.now() },
           { id: "hist", role: "user", content: item.user_query, timestamp: Date.now() }
       ]);
       
@@ -380,7 +440,30 @@ export const Eval = () => {
       
       // Reset Chat
       setMessages([
-          { id: "init", role: "ai", content: "Hello! Describe your evaluation task to get started.", timestamp: Date.now() }
+          { id: "init", role: "ai", content: t({ zh: "你好！请先描述你的评测目标，我们将自动开始流程。", en: "Hello! Describe your evaluation task to get started." }), timestamp: Date.now() }
+      ]);
+  };
+
+  const handleSaveDraft = () => {
+      const payload = {
+          query,
+          workMode,
+          evalParams,
+          manualModelPath,
+          manualBenches,
+          editBenches,
+          useRAG,
+          savedAt: Date.now(),
+      };
+      localStorage.setItem(draftKey, JSON.stringify(payload));
+      setMessages(prev => [
+          ...prev,
+          {
+              id: Date.now().toString(),
+              role: "system",
+              content: t({ zh: "当前状态已保存到本地草稿。", en: "Current state has been saved to local draft." }),
+              timestamp: Date.now(),
+          },
       ]);
   };
 
@@ -505,17 +588,17 @@ export const Eval = () => {
       });
 
       setStatus("running");
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: "ai", content: "Re-running execution. Please confirm configuration to start evaluation.", timestamp: Date.now() }]);
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: "ai", content: t({ zh: "已重新进入执行阶段，请确认配置后开始评测。", en: "Re-running execution. Please confirm configuration to start evaluation." }), timestamp: Date.now() }]);
   };
 
   const handleManualStart = async () => {
       const targetModelPath = manualModelPath || selectedModel?.path || "";
       if (!targetModelPath) {
-          setMessages(prev => [...prev, { id: Date.now().toString(), role: "system", content: "Manual mode: please set a model path.", timestamp: Date.now() }]);
+          setMessages(prev => [...prev, { id: Date.now().toString(), role: "system", content: t({ zh: "手动模式：请先填写模型路径。", en: "Manual mode: please set a model path." }), timestamp: Date.now() }]);
           return;
       }
       if (!manualBenches.length) {
-          setMessages(prev => [...prev, { id: Date.now().toString(), role: "system", content: "Manual mode: please add at least one bench.", timestamp: Date.now() }]);
+          setMessages(prev => [...prev, { id: Date.now().toString(), role: "system", content: t({ zh: "手动模式：请至少添加一个 Bench。", en: "Manual mode: please add at least one bench." }), timestamp: Date.now() }]);
           return;
       }
 
@@ -549,12 +632,64 @@ export const Eval = () => {
 
       setThreadId(res.data.thread_id);
       setStatus("running");
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: "ai", content: "Manual evaluation started. Running DataFlowEval...", timestamp: Date.now() }]);
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: "ai", content: t({ zh: "已启动手动评测，正在运行 DataFlowEval...", en: "Manual evaluation started. Running DataFlowEval..." }), timestamp: Date.now() }]);
+  };
+
+  const handleRunClick = async () => {
+      if (status === "running") {
+          if (!threadId) return;
+          try {
+              await axios.post(`${apiBaseUrl}/api/workflow/stop/${threadId}`);
+              setStatus("stopped");
+              setMessages(prev => [
+                  ...prev,
+                  {
+                      id: Date.now().toString(),
+                      role: "system",
+                      content: t({ zh: "已发送停止请求。", en: "Stop request has been sent." }),
+                      timestamp: Date.now(),
+                  },
+              ]);
+          } catch (e) {
+              setMessages(prev => [
+                  ...prev,
+                  {
+                      id: Date.now().toString(),
+                      role: "system",
+                      content: t({ zh: "停止失败，请重试。", en: "Failed to stop. Please retry." }),
+                      timestamp: Date.now(),
+                  },
+              ]);
+          }
+          return;
+      }
+      if (workMode === "manual") {
+          await handleManualStart();
+          return;
+      }
+      if (status === "interrupted" && threadId) {
+          await handleResume();
+          return;
+      }
+      if (!query.trim()) {
+          setMessages(prev => [
+              ...prev,
+              {
+                  id: Date.now().toString(),
+                  role: "system",
+                  content: t({ zh: "请先在右侧聊天框输入评测需求，然后点击 Run。", en: "Please type your evaluation request in the right chat panel first, then click Run." }),
+                  timestamp: Date.now(),
+              },
+          ]);
+          return;
+      }
+      await handleStart(query.trim());
   };
   
   // Helper to determine block status
   const getBlockStatus = (block: 'search' | 'prep' | 'exec') => {
       if (status === 'idle') return 'idle';
+      if (status === 'stopped') return 'interrupted';
       
       const nodes = currentNode ? [currentNode] : [];
       const isSearchActive = ["QueryUnderstandNode", "BenchSearchNode", "HumanReviewNode"].some(n => nodes.some(cn => cn.includes(n)));
@@ -597,7 +732,7 @@ export const Eval = () => {
                        <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-lg shadow-blue-500/20 shrink-0">
                            <Clock className="w-4 h-4" />
                        </div>
-                       <span className="font-bold text-slate-800 truncate">History</span>
+                       <span className="font-bold text-slate-800 truncate">{t({ zh: "历史记录", en: "History" })}</span>
                    </div>
                ) : (
                    <div className="w-full flex justify-center">
@@ -624,10 +759,10 @@ export const Eval = () => {
                        showHistory ? "bg-slate-900 text-white hover:bg-slate-800 shadow-md" : "h-10 w-10 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100"
                    )}
                    onClick={handleNewTask}
-                   title="Start New Task"
+                   title={t({ zh: "新建任务", en: "Start New Task" })}
                >
                    <Plus className={cn("w-4 h-4", !showHistory && "w-5 h-5")} />
-                   {showHistory && <span>New Task</span>}
+                   {showHistory && <span>{t({ zh: "新任务", en: "New Task" })}</span>}
                </Button>
            </div>
            
@@ -656,7 +791,7 @@ export const Eval = () => {
                        {deleteConfirmId === safeThreadId ? (
                            <div className="absolute inset-0 bg-white/95 z-10 flex flex-col items-center justify-center rounded-lg border border-red-100 p-2 text-center" onClick={e => e.stopPropagation()}>
                                <span className="text-[10px] text-red-600 font-bold mb-1 flex items-center gap-1">
-                                   <AlertTriangle className="w-3 h-3" /> Confirm Delete?
+                                   <AlertTriangle className="w-3 h-3" /> {t({ zh: "确认删除？", en: "Confirm Delete?" })}
                                </span>
                                <div className="flex gap-2 w-full">
                                    <Button 
@@ -668,14 +803,14 @@ export const Eval = () => {
                                            setDeleteConfirmId(null);
                                        }}
                                    >
-                                       Cancel
+                                       {t({ zh: "取消", en: "Cancel" })}
                                    </Button>
                                    <Button 
                                        size="sm" 
                                        className="h-6 flex-1 text-[10px] p-0 bg-red-500 hover:bg-red-600 text-white" 
                                        onClick={(e) => handleDeleteHistory(e, safeThreadId)}
                                    >
-                                       Delete
+                                       {t({ zh: "删除", en: "Delete" })}
                                    </Button>
                                </div>
                            </div>
@@ -688,7 +823,7 @@ export const Eval = () => {
                                    e.stopPropagation();
                                    setDeleteConfirmId(safeThreadId);
                                }}
-                               title="Delete Task"
+                               title={t({ zh: "删除任务", en: "Delete Task" })}
                            >
                                <Trash2 className="w-3 h-3" />
                            </Button>
@@ -700,11 +835,11 @@ export const Eval = () => {
                                item.status === "completed" ? "bg-green-100 text-green-700" :
                                item.status === "interrupted" ? "bg-amber-100 text-amber-700" :
                                "bg-slate-100 text-slate-600"
-                           )}>{item.status || "UNKNOWN"}</span>
+                           )}>{item.status || t({ zh: "未知", en: "UNKNOWN" })}</span>
                            <span className="text-[10px] text-slate-400">{safeDate}</span>
                        </div>
                        <p className="text-xs text-slate-700 font-medium line-clamp-2 pr-4" title={item.user_query}>
-                           {item.user_query || "Untitled Task"}
+                           {item.user_query || t({ zh: "未命名任务", en: "Untitled Task" })}
                        </p>
                    </div>
                    );
@@ -719,13 +854,21 @@ export const Eval = () => {
            <header className="px-6 h-16 flex justify-between items-center bg-white/80 backdrop-blur-md border-b border-slate-200 z-20">
              <div className="flex items-center gap-2">
                 <h2 className="font-bold text-lg text-slate-900 tracking-tight flex items-center gap-2">
-                    OneEval <span className="text-blue-600">Studio</span>
+                    OneEval <span className="text-blue-600">{t({ zh: "工作台", en: "Studio" })}</span>
                 </h2>
              </div>
              
              <div className="flex items-center gap-3">
+                 <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-2"
+                    onClick={() => setLang(lang === "zh" ? "en" : "zh")}
+                 >
+                    {lang === "zh" ? "EN" : "中文"}
+                 </Button>
                  <div className="flex items-center gap-2">
-                     <span className="text-xs font-bold text-slate-500">Agent</span>
+                     <span className="text-xs font-bold text-slate-500">{t({ zh: "智能", en: "Agent" })}</span>
                      <button
                          type="button"
                          onClick={() => setWorkMode(workMode === "agent" ? "manual" : "agent")}
@@ -741,16 +884,16 @@ export const Eval = () => {
                              )}
                          />
                      </button>
-                     <span className="text-xs font-bold text-slate-500">Manual</span>
+                     <span className="text-xs font-bold text-slate-500">{t({ zh: "手动", en: "Manual" })}</span>
                  </div>
                  <Button variant="outline" size="sm" className="gap-2">
-                     <Database className="w-4 h-4" /> Benches
+                     <Database className="w-4 h-4" /> {t({ zh: "基准", en: "Benches" })}
                  </Button>
-                 <Button variant="outline" size="sm" className="gap-2">
-                     <Layers className="w-4 h-4" /> Task
+                 <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowHistory(true)}>
+                     <Layers className="w-4 h-4" /> {t({ zh: "任务", en: "Task" })}
                  </Button>
-                 <Button variant="outline" size="sm" className="gap-2">
-                     <Save className="w-4 h-4" /> Save
+                 <Button variant="outline" size="sm" className="gap-2" onClick={handleSaveDraft}>
+                     <Save className="w-4 h-4" /> {t({ zh: "保存", en: "Save" })}
                  </Button>
                  <div className="w-px h-6 bg-slate-200 mx-1" />
                  <Button 
@@ -759,14 +902,12 @@ export const Eval = () => {
                         "gap-2 transition-all",
                         status === "running" ? "bg-red-500 hover:bg-red-600" : "bg-blue-600 hover:bg-blue-700"
                     )}
-                    onClick={() => {
-                        if (status === "running") return;
-                        if (workMode === "manual") {
-                            handleManualStart();
-                        }
-                    }}
+                   onClick={handleRunClick}
                  >
-                     {status === "running" ? <><X className="w-4 h-4" /> Stop</> : <><Play className="w-4 h-4" /> Run</>}
+                     {status === "running"
+                        ? <><X className="w-4 h-4" />{t({ zh: "停止", en: "Stop" })}</>
+                        : <><Play className="w-4 h-4" />{t({ zh: "运行", en: "Run" })}</>
+                      }
                  </Button>
              </div>
            </header>
@@ -800,7 +941,10 @@ export const Eval = () => {
                                        value={(selectedModel?.name ?? state?.target_model_name ?? "") as any}
                                        onChange={(e) => {
                                            const found = availableModels.find((m: any) => m?.name === e.target.value);
-                                           if (found) setSelectedModel(found);
+                                           if (found) {
+                                               setSelectedModel(found);
+                                               if (found?.path) setManualModelPath(found.path);
+                                           }
                                        }}
                                        disabled={status === "running"}
                                        className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all disabled:opacity-50 disabled:bg-slate-50/50"
@@ -1069,34 +1213,35 @@ export const Eval = () => {
                    
                    {/* Block 1: Discovery */}
                    <WorkflowBlock 
-                        title="Discovery Phase" 
+                        title={t({ zh: "发现阶段", en: "Discovery Phase" })} 
                         icon={Search}
                         activeNodeId={activeNode}
                         status={getBlockStatus('search') as any}
                         colorTheme="violet"
+                        lang={lang}
                         nodes={[
-                            { id: "QueryUnderstandNode", label: "Understand" },
-                            { id: "BenchSearchNode", label: "Search" },
-                            { id: "HumanReviewNode", label: "Review" }
+                            { id: "QueryUnderstandNode", label: t({ zh: "理解", en: "Understand" }) },
+                            { id: "BenchSearchNode", label: t({ zh: "检索", en: "Search" }) },
+                            { id: "HumanReviewNode", label: t({ zh: "复核", en: "Review" }) }
                         ]}
                    >
                        <div className="space-y-8 relative">
                            {/* Node 1: Understand */}
                            <div className="pl-6 border-l-2 border-violet-100 relative">
                                <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-violet-50 border-2 border-violet-200" />
-                               <h4 className="text-xs font-bold text-violet-600 uppercase tracking-wider mb-3">1. Understand</h4>
+                              <h4 className="text-xs font-bold text-violet-600 uppercase tracking-wider mb-3">{t({ zh: "1. 理解需求", en: "1. Understand" })}</h4>
                                
                                <div className="space-y-3">
                                    <div>
-                                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">User Query</label>
+                                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">{t({ zh: "用户需求", en: "User Query" })}</label>
                                        <div className="p-3 bg-slate-50/50 rounded-lg border border-slate-100 text-sm text-slate-700 shadow-inner">
-                                           {query || <span className="text-slate-400 italic">Waiting for input...</span>}
+                                          {query || <span className="text-slate-400 italic">{t({ zh: "等待输入...", en: "Waiting for input..." })}</span>}
                                        </div>
                                    </div>
                                    {/* Domain (Placeholder/Mock if not in state) */}
                                    {(state as any)?.domain && (
                                        <div>
-                                           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">Identified Domain</label>
+                                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">{t({ zh: "识别领域", en: "Identified Domain" })}</label>
                                            <div className="flex flex-wrap gap-2 mt-1">
                                                {Array.isArray((state as any).domain) 
                                                    ? (state as any).domain.map((d: string) => <span key={d} className="px-2 py-1 bg-violet-100 text-violet-700 text-xs rounded-md font-bold">{d}</span>)
@@ -1113,7 +1258,7 @@ export const Eval = () => {
                                <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-violet-50 border-2 border-violet-200" />
                                <div className="flex items-center justify-between py-2">
                                    <div className="flex items-center gap-2">
-                                       <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Use RAG for Benchmark Recommendation</label>
+                                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t({ zh: "使用 RAG 推荐基准", en: "Use RAG for Benchmark Recommendation" })}</label>
                                    </div>
                                    <button
                                        onClick={() => setUseRAG(!useRAG)}
@@ -1133,20 +1278,20 @@ export const Eval = () => {
                            {/* Node 2: Search */}
                            <div className="pl-6 border-l-2 border-violet-100 relative">
                                <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-violet-50 border-2 border-violet-200" />
-                               <h4 className="text-xs font-bold text-violet-600 uppercase tracking-wider mb-3">2. Search</h4>
+                              <h4 className="text-xs font-bold text-violet-600 uppercase tracking-wider mb-3">{t({ zh: "2. 检索基准", en: "2. Search" })}</h4>
                                
                                {/* Editable Benches List */}
                                {state?.benches?.length ? (
                                    <div className="space-y-3">
                                        <div className="flex justify-between items-center px-1">
-                                           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Target Benchmarks</label>
+                                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t({ zh: "目标基准", en: "Target Benchmarks" })}</label>
                                            {status === "interrupted" && (
                                                <div className="flex gap-2">
                                                    <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] gap-1 bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100" onClick={handleManualAdd}>
-                                                        <Plus className="w-3 h-3" /> Add Custom
+                                                        <Plus className="w-3 h-3" /> {t({ zh: "新增自定义", en: "Add Custom" })}
                                                    </Button>
                                                    <Button size="sm" variant="outline" className="h-6 px-2 text-[10px] gap-1 bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100" onClick={() => setIsGalleryOpen(true)}>
-                                                        <BookOpen className="w-3 h-3" /> From Gallery
+                                                        <BookOpen className="w-3 h-3" /> {t({ zh: "从基准库添加", en: "From Gallery" })}
                                                    </Button>
                                                </div>
                                            )}
@@ -1167,7 +1312,7 @@ export const Eval = () => {
                                                        <div className="flex flex-1 flex-col gap-1">
                                                            <div className="flex items-center gap-2">
                                                               <Input 
-                                                                  placeholder="Enter benchmark name..."
+                                                                  placeholder={t({ zh: "输入 benchmark 名称...", en: "Enter benchmark name..." })}
                                                                   value={b.bench_name}
                                                                   onChange={(e) => {
                                                                         const nb = [...editBenches];
@@ -1210,21 +1355,21 @@ export const Eval = () => {
                                        </div>
                                    </div>
                                ) : (
-                                   <div className="text-sm text-slate-400 italic pl-1">No benchmarks selected yet.</div>
+                                   <div className="text-sm text-slate-400 italic pl-1">{t({ zh: "暂无已选基准。", en: "No benchmarks selected yet." })}</div>
                                )}
                            </div>
 
                            {/* Node 3: Review */}
                            <div className="pl-6 border-l-2 border-transparent relative">
                                <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-violet-50 border-2 border-violet-200" />
-                               <h4 className="text-xs font-bold text-violet-600 uppercase tracking-wider mb-3">3. Review</h4>
+                              <h4 className="text-xs font-bold text-violet-600 uppercase tracking-wider mb-3">{t({ zh: "3. 人工复核", en: "3. Review" })}</h4>
                                
                                <div className="space-y-2">
-                                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">User Notes</label>
+                                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">{t({ zh: "补充说明", en: "User Notes" })}</label>
                                    <textarea 
                                        className="w-full p-3 bg-slate-50/50 rounded-lg border border-slate-100 text-sm text-slate-700 shadow-inner resize-none focus:outline-none focus:ring-1 focus:ring-violet-200"
                                        rows={2}
-                                       placeholder="Add any specific instructions or notes for this evaluation..."
+                                      placeholder={t({ zh: "补充本次评测的特殊要求或备注...", en: "Add any specific instructions or notes for this evaluation..." })}
                                    />
                                </div>
                            </div>
@@ -1233,16 +1378,17 @@ export const Eval = () => {
 
                    {/* Block 2: Preparation */}
                    <WorkflowBlock 
-                        title="Preparation Phase" 
+                        title={t({ zh: "准备阶段", en: "Preparation Phase" })} 
                         icon={Database}
                         activeNodeId={activeNode}
                         status={getBlockStatus('prep') as any}
                         colorTheme="amber"
+                        lang={lang}
                         nodes={[
-                            { id: "DatasetStructureNode", label: "Structure" },
-                            { id: "BenchConfigRecommendNode", label: "Config" },
-                            { id: "BenchTaskInferNode", label: "Inference" },
-                            { id: "DownloadNode", label: "Download" }
+                            { id: "DatasetStructureNode", label: t({ zh: "结构", en: "Structure" }) },
+                            { id: "BenchConfigRecommendNode", label: t({ zh: "配置", en: "Config" }) },
+                            { id: "BenchTaskInferNode", label: t({ zh: "推断", en: "Inference" }) },
+                            { id: "DownloadNode", label: t({ zh: "下载", en: "Download" }) }
                         ]}
                    >
                        {/* Config View */}
@@ -1253,6 +1399,7 @@ export const Eval = () => {
                                    <BenchCard 
                                        bench={b} 
                                        activeNode={activeNode} 
+                                       lang={lang}
                                        onUpdate={(updated) => handleBenchUpdate(updated, i)}
                                        onRetryDownload={handleRetryDownload}
                                    />
@@ -1261,25 +1408,39 @@ export const Eval = () => {
                            {!(state?.benches?.length || editBenches.length) && (
                                <div className="col-span-2 py-8 flex flex-col items-center justify-center text-slate-300 border-2 border-dashed border-slate-100 rounded-xl">
                                    <Database className="w-8 h-8 mb-2 opacity-50" />
-                                   <span className="text-sm">No benchmarks configured</span>
+                                  <span className="text-sm">{t({ zh: "暂无已配置基准", en: "No benchmarks configured" })}</span>
                                </div>
                            )}
                        </div>
+                       {(state?.benches?.length || editBenches.length) ? (
+                           <div className="mt-4 text-xs text-slate-500 bg-amber-50/60 border border-amber-100 rounded-lg px-3 py-2">
+                               {(() => {
+                                   const source = (status === "interrupted" ? editBenches : state?.benches) || [];
+                                   const total = source.length;
+                                   const parsed = source.filter((b: any) => !!b?.meta?.structure?.ok || !!b?.meta?.structure_error).length;
+                                   const downloaded = source.filter((b: any) => b?.download_status === "success").length;
+                                   return t(
+                                       { zh: `准备进度：结构解析 ${parsed}/${total}，数据下载 ${downloaded}/${total}`, en: `Preparation progress: structure ${parsed}/${total}, download ${downloaded}/${total}` }
+                                   );
+                               })()}
+                           </div>
+                       ) : null}
                    </WorkflowBlock>
 
                    {/* Block 3: Execution */}
                    <WorkflowBlock 
-                        title="Execution Phase" 
+                        title={t({ zh: "执行阶段", en: "Execution Phase" })} 
                         icon={Play}
                         activeNodeId={activeNode}
                         status={getBlockStatus('exec') as any}
                         colorTheme="emerald"
+                        lang={lang}
                         nodes={[
-                            { id: "PreEvalReviewNode", label: "Confirm" },
-                            { id: "DataFlowEvalNode", label: "Evaluation" },
-                            { id: "MetricRecommendNode", label: "Metrics" },
-                            { id: "MetricReviewNode", label: "Review" },
-                            { id: "ScoreCalcNode", label: "Scoring" }
+                            { id: "PreEvalReviewNode", label: t({ zh: "确认", en: "Confirm" }) },
+                            { id: "DataFlowEvalNode", label: t({ zh: "评测", en: "Evaluation" }) },
+                            { id: "MetricRecommendNode", label: t({ zh: "指标", en: "Metrics" }) },
+                            { id: "MetricReviewNode", label: t({ zh: "复核", en: "Review" }) },
+                            { id: "ScoreCalcNode", label: t({ zh: "计分", en: "Scoring" }) }
                         ]}
                    >
                        <div className="space-y-6">
@@ -1293,14 +1454,14 @@ export const Eval = () => {
                                <div className="flex justify-between items-center">
                                    <div className="flex items-center gap-3">
                                        <div className="flex items-center gap-2 text-emerald-800 font-bold text-sm">
-                                           <Settings className="w-4 h-4" /> Evaluation Configuration
+                                           <Settings className="w-4 h-4" /> {t({ zh: "评测配置", en: "Evaluation Configuration" })}
                                        </div>
                                        {state?.benches?.length ? (
                                            <div className="text-[10px] font-bold text-slate-500 bg-white/70 border border-emerald-100 px-2 py-1 rounded">
                                                {(() => {
                                                    const total = state.benches.length;
                                                    const done = state.benches.filter((b: any) => b.eval_status === "success" || b.eval_status === "failed").length;
-                                                   return `${done}/${total} done`;
+                                                   return t({ zh: `${done}/${total} 已完成`, en: `${done}/${total} done` });
                                                })()}
                                            </div>
                                        ) : null}
@@ -1314,27 +1475,58 @@ export const Eval = () => {
                                                className="h-7 text-xs gap-1"
                                                onClick={handleRerunExecution}
                                            >
-                                               <RefreshCw className="w-3 h-3" /> Re-run Execution
+                                               <RefreshCw className="w-3 h-3" /> {t({ zh: "重新执行", en: "Re-run Execution" })}
                                            </Button>
                                        )}
 
                                        {/* Status Indicator */}
                                        {status === "interrupted" && currentNode?.includes("PreEvalReviewNode") && (
                                            <span className="text-[10px] font-bold text-amber-600 bg-amber-100 px-2 py-1 rounded animate-pulse">
-                                               Waiting for Confirmation
+                                               {t({ zh: "等待确认", en: "Waiting for Confirmation" })}
                                            </span>
                                        )}
                                    </div>
                                </div>
+                               {status === "interrupted" && currentNode?.includes("PreEvalReviewNode") && (() => {
+                                   const source = (editBenches.length ? editBenches : (state?.benches || [])) as any[];
+                                   const missing = source.filter((b: any) => !(b?.bench_dataflow_eval_type || b?.eval_type || b?.meta?.bench_dataflow_eval_type));
+                                   const modelError = (state as any)?.error_msg;
+                                   if (modelError && String(modelError).trim()) {
+                                       return (
+                                           <div className="mb-4 p-3 rounded-lg border border-red-200 bg-red-50 text-red-800 text-xs">
+                                               {t(
+                                                   {
+                                                       zh: `模型加载失败：${modelError}。请先到 Settings 测试并修正模型路径，再返回此处点击确认继续。`,
+                                                       en: `Model load failed: ${modelError}. Please test/fix model path in Settings, then return and confirm to continue.`
+                                                   }
+                                               )}
+                                           </div>
+                                       );
+                                   }
+                                   if (missing.length === 0) return null;
+                                   return (
+                                       <div className="mb-4 p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 text-xs">
+                                           {t(
+                                               {
+                                                   zh: `有 ${missing.length} 个数据集缺少 eval_type。请进入对应数据集“详细信息”中的“评测类型”下拉完成配置后，再点击确认继续。`,
+                                                   en: `${missing.length} datasets are missing eval_type. Open their details and set Evaluation Type from dropdown before confirming.`
+                                               }
+                                           )}
+                                       </div>
+                                   );
+                               })()}
                                <div className="grid grid-cols-12 gap-x-4 gap-y-4">
                                    <div className="col-span-12 min-w-0">
-                                       <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Target Model</label>
+                                       <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">{t({ zh: "目标模型", en: "Target Model" })}</label>
                                        {availableModels && availableModels.length > 0 ? (
                                            <select
                                                value={(selectedModel?.name ?? state?.target_model_name ?? "") as any}
                                                onChange={(e) => {
                                                    const found = availableModels.find((m: any) => m?.name === e.target.value);
-                                                   if (found) setSelectedModel(found);
+                                                  if (found) {
+                                                      setSelectedModel(found);
+                                                      if (found?.path) setManualModelPath(found.path);
+                                                  }
                                                }}
                                                disabled={status === "running"}
                                                className="w-full h-9 rounded-lg border border-emerald-200 bg-white px-3 text-sm font-bold text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all disabled:opacity-50 disabled:bg-slate-50/50"
@@ -1345,7 +1537,7 @@ export const Eval = () => {
                                            </select>
                                        ) : (
                                            <div className="h-9 flex items-center px-3 rounded-lg border border-emerald-200 bg-slate-50/50 text-sm font-bold text-slate-500 italic">
-                                               {state?.target_model_name || "No model selected"}
+                                               {state?.target_model_name || t({ zh: "未选择模型", en: "No model selected" })}
                                            </div>
                                        )}
                                    </div>
@@ -1477,15 +1669,15 @@ export const Eval = () => {
                                                <Bot className="w-5 h-5" />
                                            </div>
                                            <div>
-                                               <h3 className="text-lg font-bold text-slate-800">Review Metrics Plan</h3>
-                                               <p className="text-sm text-slate-500">Customize the metrics for each benchmark before calculation.</p>
+                                               <h3 className="text-lg font-bold text-slate-800">{t({ zh: "复核指标方案", en: "Review Metrics Plan" })}</h3>
+                                               <p className="text-sm text-slate-500">{t({ zh: "在计算得分前，为每个基准调整指标方案。", en: "Customize the metrics for each benchmark before calculation." })}</p>
                                            </div>
                                        </div>
                                        <Button 
                                            onClick={handleResume}
                                            className="bg-amber-500 hover:bg-amber-600 text-white gap-2 shadow-amber-200 shadow-lg"
                                        >
-                                           <Check className="w-4 h-4" /> Confirm & Calculate Scores
+                                          <Check className="w-4 h-4" /> {t({ zh: "确认并计算得分", en: "Confirm & Calculate Scores" })}
                                        </Button>
                                    </div>
 
@@ -1494,7 +1686,7 @@ export const Eval = () => {
                                            <div key={benchName} className="border border-slate-200 rounded-lg p-4 bg-slate-50/50">
                                                <div className="flex items-center justify-between mb-3">
                                                    <span className="font-bold text-slate-700">{benchName}</span>
-                                                   <span className="text-xs font-bold text-slate-400 bg-white px-2 py-1 rounded border border-slate-100">{metrics.length} metrics</span>
+                                                  <span className="text-xs font-bold text-slate-400 bg-white px-2 py-1 rounded border border-slate-100">{t({ zh: `${metrics.length} 个指标`, en: `${metrics.length} metrics` })}</span>
                                                </div>
                                                <div className="flex flex-wrap gap-3">
                                                    {metrics.map((m, idx) => {
@@ -1612,8 +1804,8 @@ export const Eval = () => {
                                                            </span>
                                                        </div>
                                                        <div className="text-[10px] text-slate-400 flex items-center gap-2">
-                                                           {b.download_status === "success" && <span className="flex items-center gap-1"><Database className="w-3 h-3" /> Ready</span>}
-                                                           {b.eval_status === "success" && <span className="flex items-center gap-1 text-emerald-600"><Check className="w-3 h-3" /> Evaluated</span>}
+                                                           {b.download_status === "success" && <span className="flex items-center gap-1"><Database className="w-3 h-3" /> {t({ zh: "已就绪", en: "Ready" })}</span>}
+                                                           {b.eval_status === "success" && <span className="flex items-center gap-1 text-emerald-600"><Check className="w-3 h-3" /> {t({ zh: "已评测", en: "Evaluated" })}</span>}
                                                        </div>
                                                        {b.eval_status === "running" && (
                                                            <div className="mt-2 h-1.5 w-56 bg-slate-100 rounded-full overflow-hidden">
@@ -1632,7 +1824,7 @@ export const Eval = () => {
                                                            </span>
                                                        </div>
                                                    ) : (
-                                                       <span className="text-xs text-slate-400 italic">Waiting for results...</span>
+                                                       <span className="text-xs text-slate-400 italic">{t({ zh: "等待结果...", en: "Waiting for results..." })}</span>
                                                    )}
                                                    <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-400">
                                                        {isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
@@ -1645,14 +1837,14 @@ export const Eval = () => {
                                                <div className="px-4 pb-4 pt-0 bg-slate-50/30 border-t border-slate-50">
                                                    <div className="grid grid-cols-2 gap-4 mt-4">
                                                        <div className="p-3 bg-white rounded-lg border border-slate-100">
-                                                           <div className="text-[10px] text-slate-400 uppercase font-bold mb-1">Total Samples</div>
+                                                           <div className="text-[10px] text-slate-400 uppercase font-bold mb-1">{t({ zh: "样本总数", en: "Total Samples" })}</div>
                                                            <div className="text-lg font-mono font-bold text-slate-700">
                                                                {b.meta?.eval_result?.total_samples || b.meta?.download_config?.count || b.meta?.structure?.count || "N/A"}
                                                            </div>
                                                        </div>
                                                        
                                                         <div className="p-3 bg-white rounded-lg border border-slate-100">
-                                                            <div className="text-[10px] text-slate-400 uppercase font-bold mb-1">Accuracy (General)</div>
+                                                            <div className="text-[10px] text-slate-400 uppercase font-bold mb-1">{t({ zh: "准确率（通用）", en: "Accuracy (General)" })}</div>
                                                             <div className="text-lg font-mono font-bold text-slate-700">
                                                                 {/* 这里放你的数据，例如: b.meta?.eval_result?.accuracy || "0.00" */}
                                                                 {b.meta?.eval_result?.accuracy || "N/A"} 
@@ -1723,7 +1915,7 @@ export const Eval = () => {
                                                                             </div>
                                                                         );
                                                                     }) : (
-                                                                        <div className="col-span-2 text-xs text-slate-400 italic p-2">No detailed metrics available yet.</div>
+                                                                        <div className="col-span-2 text-xs text-slate-400 italic p-2">{t({ zh: "暂无详细指标结果。", en: "No detailed metrics available yet." })}</div>
                                                                     )}
                                                                 </div>
                                                             )}
@@ -1792,7 +1984,7 @@ export const Eval = () => {
                                {!state?.benches?.length && (
                                    <div className="py-8 flex flex-col items-center justify-center text-slate-300 border-2 border-dashed border-slate-100 rounded-xl">
                                        <Play className="w-8 h-8 mb-2 opacity-50" />
-                                       <span className="text-sm">Ready to execute</span>
+                                      <span className="text-sm">{t({ zh: "准备执行", en: "Ready to execute" })}</span>
                                    </div>
                                )}
                                
@@ -1801,19 +1993,19 @@ export const Eval = () => {
                                    <div className="mt-6 p-4 bg-slate-800 text-white rounded-xl shadow-lg flex justify-between items-center">
                                        <div className="flex gap-6">
                                            <div>
-                                               <div className="text-[10px] text-slate-400 uppercase font-bold">Benchmarks</div>
+                                              <div className="text-[10px] text-slate-400 uppercase font-bold">{t({ zh: "基准数量", en: "Benchmarks" })}</div>
                                                <div className="text-xl font-bold">{state.benches.length}</div>
                                            </div>
                                            <div>
-                                               <div className="text-[10px] text-slate-400 uppercase font-bold">Total Samples</div>
+                                              <div className="text-[10px] text-slate-400 uppercase font-bold">{t({ zh: "总样本数", en: "Total Samples" })}</div>
                                                <div className="text-xl font-bold">
                                                    {state.benches.reduce((acc, b) => acc + (parseInt(b.meta?.download_config?.count || b.meta?.structure?.count || 0)), 0)}
                                                </div>
                                            </div>
                                        </div>
                                        <div className="text-right">
-                                           <div className="text-[10px] text-emerald-400 uppercase font-bold">Overall Status</div>
-                                           <div className="text-sm font-bold text-emerald-100">Evaluation Completed</div>
+                                          <div className="text-[10px] text-emerald-400 uppercase font-bold">{t({ zh: "总体状态", en: "Overall Status" })}</div>
+                                          <div className="text-sm font-bold text-emerald-100">{t({ zh: "评测完成", en: "Evaluation Completed" })}</div>
                                        </div>
                                    </div>
                                )}
@@ -1830,6 +2022,7 @@ export const Eval = () => {
                 state={state} 
                 sidebarWidth={showHistory ? 240 : 60} 
                 chatWidth={chatWidth}
+                lang={lang}
            />
        </div>
 
@@ -1844,6 +2037,8 @@ export const Eval = () => {
                 activeNodeId={activeNode} 
                 isCollapsed={isChatCollapsed}
                 onToggleCollapse={() => setIsChatCollapsed(!isChatCollapsed)}
+                lang={lang}
+                interruptToken={interruptToken}
            />
        </div>
 
@@ -1853,6 +2048,7 @@ export const Eval = () => {
             onClose={() => setIsGalleryOpen(false)} 
             onSelect={handleGallerySelect}
             apiBaseUrl={apiBaseUrl}
+            lang={lang}
        />
 
     </div>

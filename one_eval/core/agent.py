@@ -148,10 +148,16 @@ class CustomAgent(BaseAgent):
         return "task_prompt_default"
 
     def create_llm(self, state):
+        resolved_model = (
+            self.model_name
+            or os.getenv("DF_MODEL_NAME")
+            or os.getenv("OE_MODEL_NAME")
+            or "gpt-4o"
+        )
         return CustomLLMCaller(
             state=state,
             tool_manager=self.tool_manager,
-            model_name=self.model_name,
+            model_name=resolved_model,
             base_url=self.api_url,
             api_key=self.api_key,
             agent_role=self.role_name,

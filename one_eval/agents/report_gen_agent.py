@@ -482,8 +482,18 @@ class ReportGenAgent(CustomAgent):
         return 0.0
 
     async def _generate_llm_summary(self, payload: Dict[str, Any], state: NodeState) -> str:
-        system_prompt = "你是评测报告分析专家，请用一段话总结模型表现。"
-        user_prompt = f"评测结果摘要如下，请给出简洁中文总结：\n{json.dumps(payload, ensure_ascii=False)}"
+        req = getattr(state, "request", None)
+        lang = "zh"
+        if isinstance(req, dict):
+            lang = str(req.get("language") or "zh")
+        elif req is not None:
+            lang = str(getattr(req, "language", "zh") or "zh")
+        if lang.lower().startswith("en"):
+            system_prompt = "You are an evaluation report analyst. Summarize model performance in one concise paragraph."
+            user_prompt = f"Here is the evaluation summary. Provide a concise English summary:\n{json.dumps(payload, ensure_ascii=False)}"
+        else:
+            system_prompt = "你是评测报告分析专家，请用一段话总结模型表现。"
+            user_prompt = f"评测结果摘要如下，请给出简洁中文总结：\n{json.dumps(payload, ensure_ascii=False)}"
 
         try:
             llm = self.create_llm(state)

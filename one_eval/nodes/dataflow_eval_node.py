@@ -175,6 +175,20 @@ class DataFlowEvalNode(BaseNode):
             if not bench.meta:
                 bench.meta = {}
             bench.meta["eval_error"] = str(e)
+            err_text = str(e)
+            if "Local vLLM serving init failed" in err_text or "Repo id must use alphanumeric chars" in err_text:
+                approved = list(getattr(state, "approved_warning_ids", []) or [])
+                confirm_id = "PreEvalReviewNode_confirm"
+                approved = [x for x in approved if x != confirm_id]
+                return Command(
+                    goto="PreEvalReviewNode",
+                    update={
+                        "approved_warning_ids": approved,
+                        "waiting_for_human": True,
+                        "error_flag": True,
+                        "error_msg": f"模型加载失败，请重新配置 target_model_path: {err_text}",
+                    },
+                )
 
         state.eval_cursor = cursor + 1
         return state

@@ -9,6 +9,7 @@ import {
   ChevronDown, CheckCircle2
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useLang } from "@/lib/i18n";
 
 interface ModelConfig {
   name: string;
@@ -76,6 +77,8 @@ const SettingsCard = ({
 };
 
 export const Settings = () => {
+  const { lang } = useLang();
+  const tt = (zh: string, en: string) => (lang === "zh" ? zh : en);
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [newModel, setNewModel] = useState({ name: "", path: "" });
   const [loading, setLoading] = useState(false);
@@ -93,6 +96,8 @@ export const Settings = () => {
   const [testingAgent, setTestingAgent] = useState(false);
   const [agentTestResult, setAgentTestResult] = useState<string | null>(null);
   const [showAgentSuccess, setShowAgentSuccess] = useState(false);
+  const [testingModelPath, setTestingModelPath] = useState<string | null>(null);
+  const [modelTestMsg, setModelTestMsg] = useState<Record<string, string>>({});
 
   const agentUrlPresets = useMemo(
     () => [
@@ -277,19 +282,38 @@ export const Settings = () => {
         setAgentTestResult(`OK (${res.data.mode})`);
       } else {
         const code = res.data.status_code ? ` [${res.data.status_code}]` : "";
-        setAgentTestResult(`FAILED${code}: ${res.data.detail}`);
+        setAgentTestResult(`${tt("失败", "FAILED")}${code}: ${res.data.detail}`);
       }
     } catch (e) {
-      setAgentTestResult("FAILED: request error");
+      setAgentTestResult(`${tt("失败", "FAILED")}: ${tt("请求异常", "request error")}`);
     }
     setTestingAgent(false);
+  };
+
+  const handleTestModelLoad = async (modelPath: string) => {
+    const path = (modelPath || "").trim();
+    if (!path) return;
+    setTestingModelPath(path);
+    setModelTestMsg((prev) => ({ ...prev, [path]: tt("测试中...", "Testing...") }));
+    try {
+      const res = await axios.post(`${apiBaseUrl}/api/models/test_load`, { model_path: path });
+      const ok = !!res.data?.ok;
+      setModelTestMsg((prev) => ({
+        ...prev,
+        [path]: ok ? tt("加载成功", "Load passed") : tt("加载失败", "Load failed"),
+      }));
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail || tt("请求异常", "request error");
+      setModelTestMsg((prev) => ({ ...prev, [path]: `${tt("加载失败", "Load failed")}: ${detail}` }));
+    }
+    setTestingModelPath(null);
   };
 
   return (
     <div className="p-12 max-w-[1600px] mx-auto space-y-8">
       <div className="space-y-2 mb-8">
-        <h1 className="text-3xl font-bold tracking-tight text-slate-900">Settings</h1>
-        <p className="text-slate-500 text-lg">Configure your evaluation environment and model registry.</p>
+        <h1 className="text-3xl font-bold tracking-tight text-slate-900">{tt("设置", "Settings")}</h1>
+        <p className="text-slate-500 text-lg">{tt("配置评测环境与模型注册表。", "Configure your evaluation environment and model registry.")}</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
@@ -297,15 +321,15 @@ export const Settings = () => {
 
         {/* 2. Agent Server */}
         <SettingsCard
-          title="Agent Server"
-          description="Configure the LLM provider (e.g. OpenAI, vLLM, etc.) used for evaluation."
+          title={tt("Agent 服务", "Agent Server")}
+          description={tt("配置用于评测流程的 LLM 提供方（如 OpenAI、vLLM 等）。", "Configure the LLM provider (e.g. OpenAI, vLLM, etc.) used for evaluation.")}
           icon={PlugZap}
           iconColorClass="bg-violet-500/10 text-violet-600"
           defaultOpen={true}
         >
           <div className="space-y-6">
             <div className="space-y-2">
-              <Label>Provider URL</Label>
+              <Label>{tt("服务地址", "Provider URL")}</Label>
               <div className="grid grid-cols-1 gap-2">
                 <select
                   value={agentUrlPresetValue}
@@ -324,14 +348,14 @@ export const Settings = () => {
                 <Input
                   value={agentBaseUrl}
                   onChange={(e) => setAgentBaseUrl(e.target.value)}
-                  placeholder="https://.../v1  or  https://.../v1/chat/completions"
+                  placeholder={tt("https://.../v1 或 https://.../v1/chat/completions", "https://.../v1  or  https://.../v1/chat/completions")}
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Model</Label>
+                <Label>{tt("模型", "Model")}</Label>
                 <select
                   value={agentModel}
                   onChange={(e) => setAgentModel(e.target.value)}
@@ -345,7 +369,7 @@ export const Settings = () => {
                 </select>
               </div>
               <div className="space-y-2">
-                <Label>Timeout (s)</Label>
+                <Label>{tt("超时（秒）", "Timeout (s)")}</Label>
                 <Input
                   type="number"
                   value={agentTimeoutS}
@@ -358,19 +382,19 @@ export const Settings = () => {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label>API Key</Label>
-                {agentApiKeySet && <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">Key Saved</span>}
+                {agentApiKeySet && <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{tt("密钥已保存", "Key Saved")}</span>}
               </div>
               <Input
                 type="password"
                 value={agentApiKeyInput}
                 onChange={(e) => setAgentApiKeyInput(e.target.value)}
-                placeholder="sk-... (won't be auto-filled for security)"
+                placeholder={tt("sk-...（出于安全考虑不会自动回填）", "sk-... (won't be auto-filled for security)")}
               />
             </div>
 
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1" onClick={handleTestAgentConnection} disabled={testingAgent}>
-                {testingAgent ? "Testing..." : "Test Connection"}
+                {testingAgent ? tt("测试中...", "Testing...") : tt("测试连接", "Test Connection")}
               </Button>
               <Button
                 className={`flex-1 text-white transition-all duration-300 ${
@@ -382,11 +406,11 @@ export const Settings = () => {
                 disabled={savingAgent}
               >
                 {savingAgent ? (
-                  "Saving..."
+                  tt("保存中...", "Saving...")
                 ) : showAgentSuccess ? (
-                  <><CheckCircle2 className="w-4 h-4 mr-2" /> Saved!</>
+                  <><CheckCircle2 className="w-4 h-4 mr-2" /> {tt("已保存", "Saved!")}</>
                 ) : (
-                  "Save Configuration"
+                  tt("保存配置", "Save Configuration")
                 )}
               </Button>
             </div>
@@ -394,7 +418,7 @@ export const Settings = () => {
             <div className="flex items-center justify-between pt-2">
                <Button variant="ghost" size="sm" className="text-red-500 hover:text-red-600 hover:bg-red-50" onClick={handleClearAgentApiKey} disabled={savingAgent}>
                 <Trash2 className="w-4 h-4 mr-2" />
-                Clear API Key
+                {tt("清除 API Key", "Clear API Key")}
               </Button>
               {agentTestResult && (
                 <div className={`text-xs px-3 py-1.5 rounded-md font-mono ${agentTestResult.startsWith("OK") ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
@@ -407,27 +431,27 @@ export const Settings = () => {
 
         {/* 3. HuggingFace */}
         <SettingsCard
-          title="HuggingFace Configuration"
-          description="Configure HF mirror endpoint and access token for downloading models/datasets."
+          title={tt("HuggingFace 配置", "HuggingFace Configuration")}
+          description={tt("配置 HF 镜像地址和访问令牌，用于下载模型与数据集。", "Configure HF mirror endpoint and access token for downloading models/datasets.")}
           icon={Cloud}
           iconColorClass="bg-amber-500/10 text-amber-600"
           defaultOpen={false}
         >
           <div className="space-y-6">
             <div className="space-y-2">
-              <Label>HF Mirror Endpoint</Label>
+              <Label>{tt("HF 镜像地址", "HF Mirror Endpoint")}</Label>
               <Input
                 value={hfEndpoint}
                 onChange={(e) => setHfEndpoint(e.target.value)}
                 placeholder="https://hf-mirror.com"
               />
-              <p className="text-xs text-slate-500">Default: https://hf-mirror.com</p>
+              <p className="text-xs text-slate-500">{tt("默认值：https://hf-mirror.com", "Default: https://hf-mirror.com")}</p>
             </div>
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label>HF Token</Label>
-                {hfTokenSet && <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">Token Saved</span>}
+                {hfTokenSet && <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{tt("令牌已保存", "Token Saved")}</span>}
               </div>
               <Input
                 type="password"
@@ -436,7 +460,7 @@ export const Settings = () => {
                 placeholder="hf_..."
               />
               <p className="text-xs text-slate-500">
-                Leave empty to keep the currently saved token.
+                {tt("留空则保留当前已保存令牌。", "Leave empty to keep the currently saved token.")}
               </p>
             </div>
 
@@ -446,7 +470,7 @@ export const Settings = () => {
                 onClick={handleSaveHfConfig}
                 disabled={savingHf}
               >
-                {savingHf ? "Saving..." : <><KeyRound className="w-4 h-4 mr-2" /> Save HF Config</>}
+                {savingHf ? tt("保存中...", "Saving...") : <><KeyRound className="w-4 h-4 mr-2" /> {tt("保存 HF 配置", "Save HF Config")}</>}
               </Button>
               <Button
                 variant="outline"
@@ -455,7 +479,7 @@ export const Settings = () => {
                 disabled={savingHf}
               >
                 <Trash2 className="w-4 h-4 mr-2" />
-                Clear Token
+                {tt("清除令牌", "Clear Token")}
               </Button>
             </div>
           </div>
@@ -463,8 +487,8 @@ export const Settings = () => {
 
         {/* 4. Model Registry */}
         <SettingsCard
-          title="Target Model Registry"
-          description="Register local or remote models that you want to evaluate."
+          title={tt("目标模型注册表", "Target Model Registry")}
+          description={tt("注册你希望参与评测的本地或远端模型。", "Register local or remote models that you want to evaluate.")}
           icon={Database}
           iconColorClass="bg-pink-500/10 text-pink-600"
           defaultOpen={true}
@@ -473,20 +497,20 @@ export const Settings = () => {
             {/* Add New */}
             <div className="p-5 border border-slate-200 rounded-xl bg-slate-50/50 space-y-4">
               <h4 className="text-sm font-semibold flex items-center gap-2 text-slate-800">
-                <Plus className="w-4 h-4" /> Add New Model
+                <Plus className="w-4 h-4" /> {tt("新增模型", "Add New Model")}
               </h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Model Name</Label>
+                  <Label>{tt("模型名称", "Model Name")}</Label>
                   <Input 
-                    placeholder="e.g. Qwen2.5-7B-Instruct" 
+                    placeholder={tt("例如：Qwen2.5-7B-Instruct", "e.g. Qwen2.5-7B-Instruct")} 
                     value={newModel.name}
                     onChange={e => setNewModel({...newModel, name: e.target.value})}
                     className="bg-white"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Model Path / HuggingFace ID</Label>
+                  <Label>{tt("模型路径 / HuggingFace ID", "Model Path / HuggingFace ID")}</Label>
                   <Input 
                     placeholder="/mnt/models/..." 
                     value={newModel.path}
@@ -495,27 +519,58 @@ export const Settings = () => {
                   />
                 </div>
               </div>
-              <Button onClick={handleSaveModel} disabled={loading} className="w-full text-white bg-slate-900 hover:bg-slate-800">
-                {loading ? "Saving..." : <><Save className="w-4 h-4 mr-2"/> Add to Registry</>}
-              </Button>
+              <div className="grid grid-cols-2 gap-3">
+                <Button
+                  variant="outline"
+                  onClick={() => handleTestModelLoad(newModel.path)}
+                  disabled={!newModel.path.trim() || !!testingModelPath}
+                  className="w-full"
+                >
+                  {testingModelPath === newModel.path.trim() ? tt("测试中...", "Testing...") : tt("测试加载模型", "Test Model Load")}
+                </Button>
+                <Button onClick={handleSaveModel} disabled={loading} className="w-full text-white bg-slate-900 hover:bg-slate-800">
+                  {loading ? tt("保存中...", "Saving...") : <><Save className="w-4 h-4 mr-2"/> {tt("加入注册表", "Add to Registry")}</>}
+                </Button>
+              </div>
+              {newModel.path.trim() && modelTestMsg[newModel.path.trim()] && (
+                <div className={`text-xs px-3 py-2 rounded border ${modelTestMsg[newModel.path.trim()].includes(tt("加载成功", "Load passed")) ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-700 border-red-200"}`}>
+                  {modelTestMsg[newModel.path.trim()]}
+                </div>
+              )}
             </div>
 
             {/* List */}
             <div className="space-y-3">
-              <h4 className="text-sm font-medium text-slate-500 uppercase tracking-wider text-xs">Registered Models</h4>
+              <h4 className="text-sm font-medium text-slate-500 uppercase tracking-wider text-xs">{tt("已注册模型", "Registered Models")}</h4>
               {models.length === 0 && (
                 <div className="text-center py-8 border-2 border-dashed border-slate-200 rounded-xl">
-                  <p className="text-sm text-slate-400">No models registered yet.</p>
+                  <p className="text-sm text-slate-400">{tt("暂未注册模型。", "No models registered yet.")}</p>
                 </div>
               )}
               <div className="grid grid-cols-1 gap-3">
                 {models.map((m, i) => (
-                  <div key={i} className="flex items-center justify-between p-4 rounded-xl border border-slate-100 bg-white hover:border-slate-200 hover:shadow-sm transition-all">
-                    <div className="flex-1 min-w-0 mr-4">
-                      <div className="font-semibold text-slate-900">{m.name}</div>
-                      <div className="text-xs text-slate-500 truncate font-mono mt-1" title={m.path}>{m.path}</div>
+                  <div key={i}>
+                    <div className="flex items-center justify-between p-4 rounded-xl border border-slate-100 bg-white hover:border-slate-200 hover:shadow-sm transition-all">
+                      <div className="flex-1 min-w-0 mr-4">
+                        <div className="font-semibold text-slate-900">{m.name}</div>
+                        <div className="text-xs text-slate-500 truncate font-mono mt-1" title={m.path}>{m.path}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleTestModelLoad(m.path)}
+                          disabled={testingModelPath === m.path}
+                        >
+                          {testingModelPath === m.path ? tt("测试中...", "Testing...") : tt("测试加载", "Test Load")}
+                        </Button>
+                      </div>
                     </div>
-                    {/* Actions if needed, maybe delete later */}
+                    {modelTestMsg[m.path] && (
+                      <div className={`-mt-2 mb-1 text-xs px-3 py-2 rounded border ${modelTestMsg[m.path].includes(tt("加载成功", "Load passed")) ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-700 border-red-200"}`}>
+                        {modelTestMsg[m.path]}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
