@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from one_eval.logger import get_logger
 from one_eval.toolkits.hf_download_tool import HFDownloadTool
+from one_eval.runtime.progress_store import get_progress, clear_progress
 
 log = get_logger("OneEval-Server")
 
@@ -590,6 +591,7 @@ async def run_graph_background(thread_id: str, input_state: Any, resume_command:
             log.error(f"Error executing graph for {thread_id}: {e}")
             _touch_thread_updated_at(thread_id)
         finally:
+            clear_progress(thread_id)
             task = RUNNING_WORKFLOW_TASKS.get(thread_id)
             if task is asyncio.current_task():
                 RUNNING_WORKFLOW_TASKS.pop(thread_id, None)
@@ -683,7 +685,8 @@ async def get_status(thread_id: str):
                 "status": status,
                 "next_node": next_nodes,
                 "state_values": current_values,
-                "interrupts": [{"value": i.value} for i in interrupts] if interrupts else []
+                "interrupts": [{"value": i.value} for i in interrupts] if interrupts else [],
+                "eval_progress": get_progress(thread_id),
             }
 
         return {"thread_id": thread_id, "status": "completed"}

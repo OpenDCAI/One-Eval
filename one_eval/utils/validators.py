@@ -11,7 +11,7 @@ def benches_manual_review(state: NodeState) -> Dict[str, Any]:
 
     return {
         "type": "manual_bench_review",
-        "reason": "自动推荐已经完成，请人工确认当前 benchmark 列表是否合理。",
+        "reason": "Benchmark 检索推荐已完成，请确认下方选定的评测基准（Benchmarks）列表。您可在此步骤进行增删改。",
         "payload": {
             "benches": benches,
             "bench_info": bench_info,

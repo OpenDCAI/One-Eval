@@ -22,6 +22,18 @@ class DatasetKeysNode(BaseNode):
         self.name = "DatasetKeysNode"
         self.logger = log
 
+    def _collect_paths(self, obj, prefix=""):
+        out = []
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                key = str(k)
+                p = f"{prefix}.{key}" if prefix else key
+                out.append(p)
+                out.extend(self._collect_paths(v, p))
+        elif isinstance(obj, list) and obj and isinstance(obj[0], dict):
+            out.extend(self._collect_paths(obj[0], prefix))
+        return out
+
     async def run(self, state: NodeState) -> NodeState:
         state.current_node = self.name
 
@@ -44,7 +56,7 @@ class DatasetKeysNode(BaseNode):
                 # 读取前 5 行，提取 keys + 预览数据
                 with cache_path.open("r", encoding="utf-8") as f:
                     preview_rows = []
-                    keys = None
+                    keys = []
                     for _ in range(5):
                         line = f.readline()
                         if not line:
@@ -54,8 +66,9 @@ class DatasetKeysNode(BaseNode):
                         except json.JSONDecodeError:
                             continue
                         if isinstance(row, dict):
-                            if keys is None:
-                                keys = list(row.keys())
+                            for p in self._collect_paths(row):
+                                if p not in keys:
+                                    keys.append(p)
                             preview_rows.append(row)
                     if not preview_rows:
                         self.logger.warning(f"[{bench.bench_name}] 文件为空")

@@ -550,8 +550,8 @@ class BenchNameSuggestNode(BaseNode):
         return url
 
     # 质量阈值：低于此分数的本地结果视为不够匹配
-    SCORE_THRESHOLD_TFIDF = 0.15
-    SCORE_THRESHOLD_RAG = 0.4
+    SCORE_THRESHOLD_TFIDF = 0.1
+    SCORE_THRESHOLD_RAG = 0.25
 
     async def run(self, state: NodeState) -> NodeState:
         """
@@ -656,15 +656,27 @@ class BenchNameSuggestNode(BaseNode):
         # 构建 BenchInfo 列表（只保留高质量本地结果）
         # 若用户明确指定了 specific_benches，则只保留 gallery_direct 命中的（避免无关检索结果混入）
         # 若是 domain 查询，则保留所有高分结果
+        # 兜底策略：如果没有任何高质量结果，且没有指定 specific_benches，则取 Top 3 检索结果
         only_gallery_direct = bool(info.get("specific_benches"))
+
+        force_include_ids = set()
+        if not only_gallery_direct and not quality_matches and local_matches:
+            log.warning("未找到满足阈值的 bench，触发兜底策略：保留 Top 3 检索结果")
+            # local_matches 是按分数排序的（因为 search_results 是有序的）
+            for m in local_matches[:3]:
+                force_include_ids.add(m['bench_name'])
 
         built_benches = []
         built_bench_info = {}
         for repo_id, data in bench_info.items():
             if only_gallery_direct and data.get('source') != 'gallery_direct':
                 continue
-            if not only_gallery_direct and data.get('score', 0.0) < score_threshold:
+
+            # 如果不是 gallery_direct，且分数不够，且不在兜底列表里，则跳过
+            is_force_included = repo_id in force_include_ids
+            if not only_gallery_direct and not is_force_included and data.get('score', 0.0) < score_threshold:
                 continue
+
             gallery_entry = data.get('_gallery_entry')
             if gallery_entry:
                 bench = BenchInfo(
