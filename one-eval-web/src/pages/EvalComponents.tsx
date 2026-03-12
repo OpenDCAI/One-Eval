@@ -275,7 +275,18 @@ export const BenchCard = ({ bench, activeNode, lang, onUpdate, onRetryDownload }
                 )}
             >
                 <div className="flex justify-between mb-2 shrink-0 gap-2">
-                    <span className="text-sm font-bold text-slate-700 truncate pr-2" title={bench.bench_name}>{bench.bench_name}</span>
+                    <div className="flex flex-col gap-1 min-w-0">
+                        <span className="text-sm font-bold text-slate-700 truncate pr-2" title={bench.bench_name}>{bench.bench_name}</span>
+                        {meta.from_gallery === true ? (
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 border border-emerald-100 w-fit">
+                                ✓ Gallery · Ready to run
+                            </span>
+                        ) : meta.from_gallery === false ? (
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 border border-amber-100 w-fit">
+                                ⚠ HF Search · May need config
+                            </span>
+                        ) : null}
+                    </div>
                     <div className="flex items-center gap-2 shrink-0">
                         {bench.download_status === "failed" && onRetryDownload && (
                             <Button

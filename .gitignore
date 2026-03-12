@@ -14,7 +14,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
 lib64/
 parts/
 sdist/
@@ -212,6 +211,6 @@ checkpoints/
 outputs/
 cache/
 cache_test/
-one_eval/server/_data/
+one_eval/server/_data/*
 .DS_Store
 .vscode/
