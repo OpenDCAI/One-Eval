@@ -475,6 +475,8 @@ class StartWorkflowRequest(BaseModel):
     tensor_parallel_size: int = 1
     max_tokens: int = 2048
     use_rag: bool = True
+    local_count: int = 3
+    hf_count: int = 2
     temperature: float = 0.0
     top_p: float = 1.0
     top_k: int = -1
@@ -541,6 +543,8 @@ async def start_workflow(req: StartWorkflowRequest):
         target_model_name=req.target_model_name,
         request=MainRequest(language=req.language),
         use_rag=req.use_rag,
+        local_count=req.local_count,
+        hf_count=req.hf_count,
         target_model=ModelConfig(
             model_name_or_path=req.target_model_path,
             tensor_parallel_size=req.tensor_parallel_size,

@@ -84,6 +84,8 @@ class NodeState(MainState):
     task_domain: Optional[str] = None              # "text", "vision", "math" 等
     target_model_name: Optional[str] = None        # 被测模型名
     use_rag: bool = True                           # 是否使用 RAG 进行 benchmark 推荐
+    local_count: int = 3                           # 本地检索配额（gallery / TF-IDF / RAG）
+    hf_count: int = 2                              # HF 在线搜索配额
     model_type: Optional[str] = None              # "Qwen", "Llama", "DeepSeek"
     target_model: Optional[ModelConfig] = None
     # temp: Dict[str, Any] = field(default_factory=dict)  # 临时存储，用于中间结果

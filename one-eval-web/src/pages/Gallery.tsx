@@ -80,6 +80,7 @@ type BenchGalleryMeta = {
   category: BenchCategory;
   tags: string[];
   description: string;
+  description_zh?: string;
   hf_meta: HfMeta;
   structure?: DatasetStructure;
   download_config?: DownloadConfig;

@@ -560,9 +560,35 @@ class BenchNameSuggestNode(BaseNode):
         流程：
         1. 从 state 中提取查询信息
         2. 使用 BenchmarkRetriever 检索（RAG 或 TF-IDF）
-        3. 按分数阈值过滤，高质量结果保留；不足时交由 BenchResolveAgent 上 HF 补充
+        3. 按 local_count 配额截取本地结果；将搜索查询传递给 BenchResolveAgent 供 HF 配额使用
         """
         info = self._extract_query_info(state)
+
+        # 从 state 读取配额设置
+        local_count = int(getattr(state, 'local_count', 3) or 3)
+        hf_count = int(getattr(state, 'hf_count', 2) or 2)
+
+        # local_count == 0 表示用户不需要本地结果，跳过本地检索
+        if local_count == 0:
+            log.info("local_count=0，跳过本地检索，全部交由 HF 搜索")
+            state.benches = []
+            state.bench_info = {}
+            search_query = self._build_search_query(info)
+            state.temp_data["skip_resolve"] = False
+            state.temp_data["hf_search_query"] = search_query
+            state.temp_data["bench_names_suggested"] = []
+            state.agent_results["BenchNameSuggestNode"] = {
+                "local_matches": [],
+                "quality_matches": [],
+                "gallery_hits": [],
+                "bench_names": [],
+                "skip_resolve": False,
+                "retrieval_mode": "skipped",
+                "search_query": search_query,
+                "local_count": local_count,
+                "hf_count": hf_count,
+            }
+            return state
 
         # 从 state 读取 use_rag 设置（优先使用 state 中的值）
         use_rag = getattr(state, 'use_rag', self.use_rag)
@@ -584,10 +610,12 @@ class BenchNameSuggestNode(BaseNode):
         search_query = self._build_search_query(info)
         log.info(f"检索查询: {search_query}")
 
-        search_results = retriever.search(search_query, top_k=self.top_k, return_scores=True)
+        # 多检索一些候选，以便按配额截取
+        fetch_k = max(self.top_k, local_count + 5)
+        search_results = retriever.search(search_query, top_k=fetch_k, return_scores=True)
 
         mode = "RAG" if use_rag else "TF-IDF"
-        log.info(f"[{mode}模式] 检索到 {len(search_results)} 个 benchmark")
+        log.info(f"[{mode}模式] 检索到 {len(search_results)} 个 benchmark，本地配额: {local_count}")
 
         # 按分数阈值区分高质量 / 低质量结果
         score_threshold = self.SCORE_THRESHOLD_RAG if use_rag else self.SCORE_THRESHOLD_TFIDF
@@ -653,30 +681,39 @@ class BenchNameSuggestNode(BaseNode):
             if score >= score_threshold:
                 quality_matches.append(bench_data)
 
-        # 构建 BenchInfo 列表（只保留高质量本地结果）
-        # 若用户明确指定了 specific_benches，则只保留 gallery_direct 命中的（避免无关检索结果混入）
-        # 若是 domain 查询，则保留所有高分结果
-        # 兜底策略：如果没有任何高质量结果，且没有指定 specific_benches，则取 Top 3 检索结果
+        # ========== 按 local_count 配额构建本地结果 ==========
+        # 优先保留 gallery_direct 命中的，然后按分数取高质量结果，最后兜底
         only_gallery_direct = bool(info.get("specific_benches"))
 
-        force_include_ids = set()
-        if not only_gallery_direct and not quality_matches and local_matches:
-            log.warning("未找到满足阈值的 bench，触发兜底策略：保留 Top 3 检索结果")
-            # local_matches 是按分数排序的（因为 search_results 是有序的）
-            for m in local_matches[:3]:
-                force_include_ids.add(m['bench_name'])
+        # 候选池：按优先级排序
+        candidates = []
+        # 1) gallery_direct（用户明确指定的）
+        for m in local_matches:
+            if m.get('source') == 'gallery_direct':
+                candidates.append(m)
+        # 2) 高分结果（gallery 优先）
+        for m in local_matches:
+            if m in candidates:
+                continue
+            if m.get('score', 0.0) >= score_threshold:
+                candidates.append(m)
+        # 3) 兜底：剩余的低分结果
+        for m in local_matches:
+            if m in candidates:
+                continue
+            candidates.append(m)
+
+        if only_gallery_direct:
+            # 用户指定了 specific_benches，只保留 gallery_direct
+            candidates = [m for m in candidates if m.get('source') == 'gallery_direct']
+
+        # 按 local_count 截取
+        selected_local = candidates[:local_count]
 
         built_benches = []
         built_bench_info = {}
-        for repo_id, data in bench_info.items():
-            if only_gallery_direct and data.get('source') != 'gallery_direct':
-                continue
-
-            # 如果不是 gallery_direct，且分数不够，且不在兜底列表里，则跳过
-            is_force_included = repo_id in force_include_ids
-            if not only_gallery_direct and not is_force_included and data.get('score', 0.0) < score_threshold:
-                continue
-
+        for data in selected_local:
+            repo_id = data['bench_name']
             gallery_entry = data.get('_gallery_entry')
             if gallery_entry:
                 bench = BenchInfo(
@@ -702,46 +739,40 @@ class BenchNameSuggestNode(BaseNode):
         state.benches = built_benches
         state.bench_info = built_bench_info
 
-        # 收集需要在 HF 上搜索的名称：
-        # - 用户明确指定的 specific_benches 里不在 gallery 的
-        # - 检索结果中分数不足且不在 gallery 的（补充候选）
+        # ========== 为 BenchResolveAgent 准备 HF 搜索信息 ==========
+        # 传递搜索查询，让 BenchResolveAgent 根据 hf_count 主动搜索 HF
         specific_benches: List[str] = info.get("specific_benches") or []
-        gallery_quality = [m for m in quality_matches if m.get('from_gallery')]
-        matched_names = {m['bench_name'] for m in quality_matches}
+        selected_names = {m['bench_name'] for m in selected_local}
 
         names_for_hf: List[str] = []
         # 1) 用户明确指定但不在 gallery 的
         for name in specific_benches:
             if name and not self._lookup_gallery(name):
                 names_for_hf.append(name)
-        # 2) 检索到但分数不足 gallery 也没有的，补充给 HF
-        for m in local_matches:
-            if (
-                m['bench_name'] not in matched_names
-                and m['bench_name'] not in names_for_hf
-                and not m.get('from_gallery')
-            ):
-                names_for_hf.append(m['bench_name'])
 
-        # 始终触发 BenchResolveAgent（HF search 与 gallery 结果并列呈现）
-        state.temp_data["skip_resolve"] = False
+        skip_resolve = (hf_count == 0)
+        state.temp_data["skip_resolve"] = skip_resolve
         state.temp_data["bench_names_suggested"] = names_for_hf
+        state.temp_data["hf_search_query"] = search_query
+        state.temp_data["local_bench_names"] = list(selected_names)
 
-        gallery_hits = [m['bench_name'] for m in quality_matches if m.get('from_gallery')]
+        gallery_hits = [m['bench_name'] for m in selected_local if m.get('from_gallery')]
         state.agent_results["BenchNameSuggestNode"] = {
             "local_matches": local_matches,
             "quality_matches": [m['bench_name'] for m in quality_matches],
             "gallery_hits": gallery_hits,
             "bench_names": names_for_hf,
-            "skip_resolve": False,
+            "skip_resolve": skip_resolve,
             "retrieval_mode": "rag" if use_rag else "tfidf",
             "search_query": search_query,
             "score_threshold": score_threshold,
+            "local_count": local_count,
+            "hf_count": hf_count,
         }
 
         log.info(
-            f"检索完成，{len(quality_matches)} 个高质量结果（gallery命中: {len(gallery_hits)}），"
-            f"HF 搜索候选: {names_for_hf}"
+            f"检索完成，本地配额 {local_count}，实际选中 {len(selected_local)} 个"
+            f"（gallery命中: {len(gallery_hits)}），HF 配额: {hf_count}"
         )
 
         return state

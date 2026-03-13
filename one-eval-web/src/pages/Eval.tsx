@@ -114,6 +114,8 @@ export const Eval = () => {
   const [editBenches, setEditBenches] = useState<Bench[]>([]);
   const [availableModels, setAvailableModels] = useState<any[]>([]);
   const [useRAG, setUseRAG] = useState(true);
+  const [localCount, setLocalCount] = useState(3);
+  const [hfCount, setHfCount] = useState(2);
 
   const apiBaseUrl = useMemo(() => localStorage.getItem("oneEval.apiBaseUrl") || "http://localhost:8000", []);
   const draftKey = useMemo(() => "oneEval.evalDraft", []);
@@ -137,6 +139,8 @@ export const Eval = () => {
           }
           if (draft?.workMode === "manual" || draft?.workMode === "agent") setWorkMode(draft.workMode);
           if (typeof draft?.useRAG === "boolean") setUseRAG(draft.useRAG);
+          if (typeof draft?.localCount === "number") setLocalCount(draft.localCount);
+          if (typeof draft?.hfCount === "number") setHfCount(draft.hfCount);
       } catch {}
   }, [draftKey, threadId]);
 
@@ -322,6 +326,8 @@ export const Eval = () => {
         target_model_name: targetModelName,
         target_model_path: targetModelPath,
         use_rag: useRAG,
+        local_count: localCount,
+        hf_count: hfCount,
         language: lang
       });
       setThreadId(res.data.thread_id);
@@ -462,6 +468,8 @@ export const Eval = () => {
           manualBenches,
           editBenches,
           useRAG,
+          localCount,
+          hfCount,
           savedAt: Date.now(),
       };
       localStorage.setItem(draftKey, JSON.stringify(payload));
@@ -1262,13 +1270,12 @@ export const Eval = () => {
                                </div>
                            </div>
 
-                           {/* RAG Toggle */}
-                           <div className="pl-6 border-l-2 border-violet-100 relative">
+                           {/* Search Config: RAG toggle + Quota sliders */}
+                           <div className="pl-6 border-l-2 border-violet-100 relative space-y-3">
                                <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-violet-50 border-2 border-violet-200" />
-                               <div className="flex items-center justify-between py-2">
-                                   <div className="flex items-center gap-2">
-                                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t({ zh: "使用 RAG 推荐基准", en: "Use RAG for Benchmark Recommendation" })}</label>
-                                   </div>
+                               {/* RAG Toggle */}
+                               <div className="flex items-center justify-between py-1">
+                                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{t({ zh: "使用 RAG 推荐基准", en: "Use RAG for Benchmark Recommendation" })}</label>
                                    <button
                                        onClick={() => setUseRAG(!useRAG)}
                                        className={cn(
@@ -1281,6 +1288,35 @@ export const Eval = () => {
                                            useRAG && "translate-x-5"
                                        )} />
                                    </button>
+                               </div>
+                               {/* Quota Controls */}
+                               <div className="flex flex-col gap-1 py-1">
+                                   <div className="flex items-center gap-4">
+                                       <div className="flex items-center gap-2">
+                                           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">{t({ zh: "本地", en: "Local" })}</label>
+                                           <div className="flex items-center gap-1">
+                                               <button onClick={() => setLocalCount(Math.max(0, localCount - 1))} className="w-5 h-5 rounded bg-slate-100 hover:bg-slate-200 text-slate-500 text-xs flex items-center justify-center">-</button>
+                                               <span className="w-5 text-center text-xs font-bold text-emerald-600">{localCount}</span>
+                                               <button onClick={() => setLocalCount(Math.min(10, localCount + 1))} className="w-5 h-5 rounded bg-slate-100 hover:bg-slate-200 text-slate-500 text-xs flex items-center justify-center">+</button>
+                                           </div>
+                                       </div>
+                                       <span className="text-slate-300 text-xs">+</span>
+                                       <div className="flex items-center gap-2">
+                                           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">{t({ zh: "HF 搜索", en: "HF Search" })}</label>
+                                           <div className="flex items-center gap-1">
+                                               <button onClick={() => setHfCount(Math.max(0, hfCount - 1))} className="w-5 h-5 rounded bg-slate-100 hover:bg-slate-200 text-slate-500 text-xs flex items-center justify-center">-</button>
+                                               <span className="w-5 text-center text-xs font-bold text-blue-600">{hfCount}</span>
+                                               <button onClick={() => setHfCount(Math.min(10, hfCount + 1))} className="w-5 h-5 rounded bg-slate-100 hover:bg-slate-200 text-slate-500 text-xs flex items-center justify-center">+</button>
+                                           </div>
+                                       </div>
+                                       <span className="text-[10px] text-slate-400">= {localCount + hfCount} {t({ zh: "个", en: "total" })}</span>
+                                   </div>
+                                   <p className="text-[10px] text-slate-400 leading-tight">
+                                       {t({
+                                           zh: "Local：从预置 Gallery 中检索，标记为 Gallery（已有完整评测配置）。HF Search：从 HuggingFace 在线搜索，需额外配置。由于本地Gallery检索结果与HF结果可能有重复，去重后实际数量可能略少于设定值。",
+                                           en: "Local: from built-in Gallery with full eval config (marked Gallery). HF Search: online search from HuggingFace, needs extra config. For possible duplicates between local and HF results, actual count may be slightly less after dedup."
+                                       })}
+                                   </p>
                                </div>
                            </div>
 
@@ -1314,8 +1350,17 @@ export const Eval = () => {
                                                        ? "bg-white border-amber-200 shadow-sm shadow-amber-100" 
                                                        : "bg-slate-50/50 border-slate-100"
                                                )}>
-                                                   <div className="w-8 h-8 rounded-lg bg-violet-100 text-violet-600 flex items-center justify-center text-xs font-bold shrink-0">
-                                                       {b.bench_name.substring(0, 2).toUpperCase()}
+                                                   <div className="flex flex-col items-center gap-1 shrink-0">
+                                                       <div className="w-8 h-8 rounded-lg bg-violet-100 text-violet-600 flex items-center justify-center text-xs font-bold">
+                                                           {b.bench_name.substring(0, 2).toUpperCase()}
+                                                       </div>
+                                                       {b.meta?.source === 'hf_gallery' ? (
+                                                           <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-teal-100 text-teal-700 whitespace-nowrap" title={t({ zh: "HF搜索命中，且本地有完整配置，可直接使用", en: "Found via HF, full config in Gallery" })}>HF+Gallery</span>
+                                                       ) : b.meta?.from_gallery ? (
+                                                           <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-emerald-100 text-emerald-700 whitespace-nowrap" title={t({ zh: "本地Gallery命中，有完整评测配置，可直接使用", en: "Local Gallery with full eval config" })}>Gallery</span>
+                                                       ) : (
+                                                           <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-blue-100 text-blue-700 whitespace-nowrap" title={t({ zh: "来自HuggingFace搜索，需要额外配置", en: "From HF search, needs config" })}>HF</span>
+                                                       )}
                                                    </div>
                                                    {status === "interrupted" ? (
                                                        <div className="flex flex-1 flex-col gap-1">
