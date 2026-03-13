@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from one_eval.logger import get_logger
 from one_eval.toolkits.hf_download_tool import HFDownloadTool
+from one_eval.runtime.progress_store import get_progress, clear_progress
 
 log = get_logger("OneEval-Server")
 
@@ -590,6 +591,7 @@ async def run_graph_background(thread_id: str, input_state: Any, resume_command:
             log.error(f"Error executing graph for {thread_id}: {e}")
             _touch_thread_updated_at(thread_id)
         finally:
+            clear_progress(thread_id)
             task = RUNNING_WORKFLOW_TASKS.get(thread_id)
             if task is asyncio.current_task():
                 RUNNING_WORKFLOW_TASKS.pop(thread_id, None)
@@ -683,13 +685,15 @@ async def get_status(thread_id: str):
                 "status": status,
                 "next_node": next_nodes,
                 "state_values": current_values,
-                "interrupts": [{"value": i.value} for i in interrupts] if interrupts else []
+                "interrupts": [{"value": i.value} for i in interrupts] if interrupts else [],
+                "eval_progress": get_progress(thread_id),
             }
 
         return {"thread_id": thread_id, "status": "completed"}
 
 @app.post("/api/workflow/resume/{thread_id}")
-async def resume_workflow(req: ResumeWorkflowRequest):
+async def resume_workflow(thread_id: str, req: ResumeWorkflowRequest):
+    req.thread_id = thread_id
     # Apply state updates if provided
     if req.state_updates:
         if "target_model" in req.state_updates and isinstance(req.state_updates["target_model"], dict):
@@ -727,10 +731,26 @@ async def resume_workflow(req: ResumeWorkflowRequest):
         if "benches" in req.state_updates and isinstance(req.state_updates["benches"], list):
             # Convert dicts back to BenchInfo objects
             benches_data = req.state_updates["benches"]
-            req.state_updates["benches"] = [
+            incoming_benches = [
                 _coerce_bench_info(b) if isinstance(b, dict) else b 
                 for b in benches_data
             ]
+            async with get_checkpointer(DB_PATH, mode="run") as checkpointer:
+                graph = build_complete_workflow(checkpointer=checkpointer)
+                config = {"configurable": {"thread_id": req.thread_id}}
+                try:
+                    snap = await graph.aget_state(config)
+                except Exception:
+                    snap = None
+                current_values = snap.values if snap and getattr(snap, "values", None) else {}
+                current_any = (current_values or {}).get("benches") or []
+                current_benches = []
+                for b in current_any:
+                    try:
+                        current_benches.append(_coerce_bench_info(b) if isinstance(b, dict) else b)
+                    except Exception:
+                        continue
+                req.state_updates["benches"] = _merge_benches_preserve_runtime(incoming_benches, current_benches)
 
         async with get_checkpointer(DB_PATH, mode="run") as checkpointer:
             graph = build_complete_workflow(checkpointer=checkpointer)
@@ -750,6 +770,7 @@ async def resume_workflow(req: ResumeWorkflowRequest):
         if req.action == "approved" and "PreEvalReviewNode" in next_nodes:
             benches_any = values.get("benches") or []
             missing = []
+            invalid = []
             for b in benches_any:
                 bench_name = None
                 eval_type = None
@@ -766,8 +787,12 @@ async def resume_workflow(req: ResumeWorkflowRequest):
                         eval_type = meta.get("bench_dataflow_eval_type")
                 if not eval_type:
                     missing.append(str(bench_name or "unknown"))
+                elif str(eval_type).strip() not in _VALID_EVAL_TYPES:
+                    invalid.append(f"{str(bench_name or 'unknown')}({str(eval_type).strip()})")
             if missing:
                 raise HTTPException(status_code=400, detail=f"missing eval_type for benches: {', '.join(missing)}")
+            if invalid:
+                raise HTTPException(status_code=400, detail=f"invalid eval_type for benches: {', '.join(invalid)}")
 
     command = Command(resume=req.action)
     
@@ -1083,6 +1108,25 @@ def _bench_to_dict(b: Any) -> Optional[Dict[str, Any]]:
     return None
 
 _BENCHINFO_FIELDS = {f.name for f in fields(BenchInfo)}
+_VALID_EVAL_TYPES = {
+    "key1_text_score",
+    "key2_qa",
+    "key2_q_ma",
+    "key3_q_choices_a",
+    "key3_q_choices_as",
+    "key3_q_a_rejected",
+}
+_RUNTIME_META_KEYS = {
+    "eval_result",
+    "eval_detail_path",
+    "eval_step3_path",
+    "eval_progress",
+    "eval_error",
+    "eval_abnormality",
+    "pred_key",
+    "ref_key",
+    "artifact_paths",
+}
 
 def _coerce_bench_info(value: Any) -> BenchInfo:
     if isinstance(value, BenchInfo):
@@ -1092,9 +1136,46 @@ def _coerce_bench_info(value: Any) -> BenchInfo:
     b = dict(value)
     if not b.get("bench_dataflow_eval_type") and isinstance(b.get("eval_type"), str):
         b["bench_dataflow_eval_type"] = b.get("eval_type")
+    if isinstance(b.get("bench_dataflow_eval_type"), str):
+        et = b.get("bench_dataflow_eval_type").strip()
+        if not et or et == "unknown":
+            b["bench_dataflow_eval_type"] = None
     b.pop("eval_type", None)
     filtered = {k: v for k, v in b.items() if k in _BENCHINFO_FIELDS}
     return BenchInfo(**filtered)
+
+def _is_empty_like(v: Any) -> bool:
+    return v is None or v == "" or v == {} or v == []
+
+def _merge_benches_preserve_runtime(incoming: List[BenchInfo], current: List[BenchInfo]) -> List[BenchInfo]:
+    current_map = {b.bench_name: b for b in (current or []) if isinstance(b, BenchInfo) and b.bench_name}
+    merged: List[BenchInfo] = []
+
+    for b in incoming or []:
+        if not isinstance(b, BenchInfo):
+            merged.append(b)
+            continue
+        cur = current_map.get(b.bench_name)
+        if not cur:
+            merged.append(b)
+            continue
+
+        if _is_empty_like(getattr(b, "eval_status", None)) and not _is_empty_like(getattr(cur, "eval_status", None)):
+            b.eval_status = cur.eval_status
+        if _is_empty_like(getattr(b, "dataset_cache", None)) and not _is_empty_like(getattr(cur, "dataset_cache", None)):
+            b.dataset_cache = cur.dataset_cache
+        if _is_empty_like(getattr(b, "download_status", None)) and not _is_empty_like(getattr(cur, "download_status", None)):
+            b.download_status = cur.download_status
+
+        meta_new = b.meta if isinstance(b.meta, dict) else {}
+        meta_cur = cur.meta if isinstance(cur.meta, dict) else {}
+        for k in _RUNTIME_META_KEYS:
+            if _is_empty_like(meta_new.get(k)) and not _is_empty_like(meta_cur.get(k)):
+                meta_new[k] = meta_cur.get(k)
+        b.meta = meta_new
+        merged.append(b)
+
+    return merged
 
 async def _redownload_bench_background(thread_id: str, bench_name: str, overrides: Dict[str, Any]):
     async with get_checkpointer(DB_PATH, mode="run") as checkpointer:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import copy
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -125,6 +126,14 @@ class ScoreCalcAgent(CustomAgent):
         self._write_records(step3_path, records)
         return step3_path
 
+    def _get_lang(self, state: NodeState) -> str:
+        req = getattr(state, "request", None)
+        if isinstance(req, dict):
+            return str(req.get("language") or "zh")
+        if req is not None:
+            return str(getattr(req, "language", "zh") or "zh")
+        return "zh"
+
     async def run(self, state: NodeState) -> NodeState:
         benches: List[BenchInfo] = getattr(state, "benches", []) or []
         metric_plan: Dict[str, Any] = getattr(state, "metric_plan", {}) or {}
@@ -141,6 +150,7 @@ class ScoreCalcAgent(CustomAgent):
             state.eval_results = {}
 
         runner = MetricRunner()
+        report_lang = self._get_lang(state)
 
         computed: List[str] = []
         failed: List[Dict[str, Any]] = []
@@ -162,7 +172,17 @@ class ScoreCalcAgent(CustomAgent):
             if not plan:
                 continue
 
-            bench_result = runner.run_bench(bench, plan)
+            runtime_plan = copy.deepcopy(plan)
+            for metric_cfg in runtime_plan:
+                if not isinstance(metric_cfg, dict):
+                    continue
+                args = metric_cfg.get("args")
+                if not isinstance(args, dict):
+                    args = {}
+                args["language"] = report_lang
+                metric_cfg["args"] = args
+
+            bench_result = runner.run_bench(bench, runtime_plan)
             state.eval_results[bench_name] = bench_result
 
             metrics = bench_result.get("metrics", {})
@@ -170,12 +190,16 @@ class ScoreCalcAgent(CustomAgent):
             
             # Extract simple metrics for meta display
             simple_metrics = {mname: mres.get("score") for mname, mres in metrics.items() if isinstance(mres, dict) and "score" in mres}
-            
-            # Update bench.meta["eval_result"] so frontend can display them
+
+            # Update bench.meta["eval_result"] while protecting DataFlow base score fields
             if "eval_result" not in bench.meta or not isinstance(bench.meta["eval_result"], dict):
                 bench.meta["eval_result"] = {}
-            
-            bench.meta["eval_result"].update(simple_metrics)
+            protected_keys = {"score", "accuracy", "exact_match", "valid_samples", "total_samples"}
+            for mname, mscore in simple_metrics.items():
+                if mname in protected_keys:
+                    bench.meta["eval_result"][f"metric_{mname}"] = mscore
+                else:
+                    bench.meta["eval_result"][mname] = mscore
 
             # Update bench.meta["metric_summary"] so frontend can display them
             metric_summary_text = metrics.get("metric_summary_analyst", {}).get("summary")

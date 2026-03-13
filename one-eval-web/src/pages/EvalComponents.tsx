@@ -171,7 +171,7 @@ export const BenchCard = ({ bench, activeNode, lang, onUpdate, onRetryDownload }
     const descriptionRaw = meta.card_text ?? meta.description ?? meta.desc ?? "No description available.";
     const description = typeof descriptionRaw === 'string' ? descriptionRaw : (descriptionRaw ? JSON.stringify(descriptionRaw) : "No description available.");
     const tags = Array.isArray(meta.tags) ? meta.tags : [];
-    const availableKeys = Array.isArray(meta.keys) ? meta.keys : []; // Extracted keys from dataset
+    const availableKeys = Array.from(new Set([...(Array.isArray(meta.keys) ? meta.keys : []), ...(Array.isArray((bench as any).bench_keys) ? (bench as any).bench_keys : [])].map((x: any) => String(x))));
     const previewData = Array.isArray(meta.preview_data) ? meta.preview_data : []; // Preview rows
     const downloadPath = meta.download_path || meta.local_path || bench.dataset_cache;
     const sampleCountRaw = downloadConfig?.count || structure?.count || meta.count;
@@ -197,15 +197,18 @@ export const BenchCard = ({ bench, activeNode, lang, onUpdate, onRetryDownload }
             return { subset, splits };
         })
         .filter((s: any) => s?.subset);
+    const keyMappingEntries = (() => {
+        const required = EVAL_TYPE_REQUIRED_KEYS[selectedEvalType || String(evalType || "")] || [];
+        const keys = Array.from(new Set([...required, ...Object.keys(editKeyMap || {})]));
+        return keys;
+    })();
+    const keyOptionsListId = `key-options-${String(bench.bench_name || "bench").replace(/[^a-zA-Z0-9_-]/g, "_")}`;
 
     // Init state from bench
     useEffect(() => {
+        if (!isDetailsOpen) return;
         if (keyMapping) {
-            const next = { ...keyMapping };
-            if ("input_context_key" in next) {
-                next["input_context_key"] = "";
-            }
-            setEditKeyMap(next);
+            setEditKeyMap({ ...keyMapping });
         }
         setSelectedEvalType(typeof evalType === "string" ? evalType : "");
         if (downloadConfig) {
@@ -220,7 +223,7 @@ export const BenchCard = ({ bench, activeNode, lang, onUpdate, onRetryDownload }
             }
         }
         setSelectedPreviewRow(0);
-    }, [bench, isDetailsOpen]);
+    }, [isDetailsOpen, bench.bench_name]);
 
     const handleSave = () => {
         if (!onUpdate) return;
@@ -522,9 +525,6 @@ export const BenchCard = ({ bench, activeNode, lang, onUpdate, onRetryDownload }
                                             required.forEach(k => {
                                                 if (!(k in out)) out[k] = "";
                                             });
-                                            if ("input_context_key" in out) {
-                                                out["input_context_key"] = "";
-                                            }
                                             return out;
                                         });
                                     }}
@@ -550,45 +550,37 @@ export const BenchCard = ({ bench, activeNode, lang, onUpdate, onRetryDownload }
                             </div>
                             
                             {/* 1. Key Mapping Section (Editable) */}
-                            {Object.keys(editKeyMap).length > 0 && (
                                 <div className="bg-amber-50/50 p-5 rounded-xl border border-amber-100">
                                     <div className="flex justify-between items-center mb-4">
                                         <h4 className="text-sm font-bold text-amber-800 flex items-center gap-2">
                                             <span className="w-2 h-2 rounded-full bg-amber-500"/> Key Mapping
                                         </h4>
-                                        {evalType && (
+                                        {(selectedEvalType || evalType) && (
                                             <div className="text-xs text-amber-700 bg-amber-100 px-2 py-1 rounded border border-amber-200">
                                                 {tt("类型", "Type")}: <b>{evalTypeLabel || tt("未选择", "Not selected")}</b>
                                             </div>
                                         )}
                                     </div>
+                                    <datalist id={keyOptionsListId}>
+                                        {availableKeys.map((ak: any) => (
+                                            <option key={String(ak)} value={String(ak)} />
+                                        ))}
+                                    </datalist>
                                     <div className="grid grid-cols-2 gap-x-8 gap-y-4 text-sm">
-                                        {Object.entries(editKeyMap).map(([k, v]) => (
+                                        {keyMappingEntries.map((k) => (
                                             <div key={k} className="flex items-center gap-3">
                                                 <span className="text-slate-500 font-mono w-1/3 text-right text-xs truncate" title={k}>{k}</span>
-                                                {availableKeys.length > 0 ? (
-                                                    <select 
-                                                        value={String(v)}
-                                                        onChange={(e) => setEditKeyMap({...editKeyMap, [k]: e.target.value})}
-                                                        className="h-8 bg-white border border-amber-200 rounded px-2 text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 w-full"
-                                                    >
-                                                        <option value="">{tt("选择字段...", "Select key...")}</option>
-                                                        {availableKeys.map((ak: any) => (
-                                                            <option key={String(ak)} value={String(ak)}>{String(ak)}</option>
-                                                        ))}
-                                                    </select>
-                                                ) : (
-                                                    <Input 
-                                                        value={String(v)}
-                                                        onChange={(e) => setEditKeyMap({...editKeyMap, [k]: e.target.value})}
-                                                        className="h-8 bg-white border-amber-200 focus-visible:ring-amber-500 font-mono text-xs font-bold text-slate-800"
-                                                    />
-                                                )}
+                                                <Input 
+                                                    list={keyOptionsListId}
+                                                    value={String((editKeyMap as any)[k] ?? "")}
+                                                    onChange={(e) => setEditKeyMap({ ...editKeyMap, [k]: e.target.value })}
+                                                    placeholder={tt("支持嵌套路径，如 mc1_targets.choices", "Nested path supported, e.g. mc1_targets.choices")}
+                                                    className="h-8 bg-white border-amber-200 focus-visible:ring-amber-500 font-mono text-xs font-bold text-slate-800"
+                                                />
                                             </div>
                                         ))}
                                     </div>
                                 </div>
-                            )}
 
                             {/* Local Cache Path */}
                             {downloadPath && (
@@ -718,6 +710,7 @@ interface ChatPanelProps {
     status: string;
     onSendMessage: (msg: string) => void;
     onConfirm: () => void;
+    onStop?: () => void;
     isWaitingForInput: boolean;
     activeNodeId?: string | null;
     isCollapsed: boolean;
@@ -728,7 +721,7 @@ interface ChatPanelProps {
 
 const EMOJIS = ["✨", "🤖", "🚀", "💡", "🔮", "✅", "🎯"];
 
-export const ChatPanel = ({ messages, status, onSendMessage, onConfirm, isWaitingForInput, activeNodeId, isCollapsed, onToggleCollapse, lang, interruptToken }: ChatPanelProps) => {
+export const ChatPanel = ({ messages, status, onSendMessage, onConfirm, onStop, isWaitingForInput, activeNodeId, isCollapsed, onToggleCollapse, lang, interruptToken }: ChatPanelProps) => {
     const [input, setInput] = React.useState("");
     const [dismissedInterrupts, setDismissedInterrupts] = React.useState<string[]>([]);
     const tt = (zh: string, en: string) => (lang === "zh" ? zh : en);
@@ -856,6 +849,9 @@ export const ChatPanel = ({ messages, status, onSendMessage, onConfirm, isWaitin
                                     <div className="flex gap-3">
                                         <Button size="sm" onClick={handleConfirm} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white shadow-lg shadow-amber-500/20 border-0 rounded-xl h-9">
                                             <Check className="w-4 h-4 mr-1.5" /> {tt("批准", "Approve")}
+                                        </Button>
+                                        <Button size="sm" variant="outline" onClick={onStop} className="h-9 rounded-xl">
+                                            {tt("停止", "Stop")}
                                         </Button>
                                     </div>
                                 </div>

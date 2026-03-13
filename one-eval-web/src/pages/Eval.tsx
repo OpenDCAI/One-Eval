@@ -19,6 +19,13 @@ interface StatusResponse {
   state_values: WorkflowState | null;
   current_node?: string; 
   interrupts?: Array<{ value?: unknown }>;
+  eval_progress?: {
+    bench_name?: string;
+    stage?: string;
+    generated?: number;
+    total?: number;
+    percent?: number;
+  } | null;
 }
 
 interface HistoryItem {
@@ -56,6 +63,7 @@ export const Eval = () => {
   const [state, setState] = useState<WorkflowState | null>(null);
   const [currentNode, setCurrentNode] = useState<string | null>(null);
   const [interruptToken, setInterruptToken] = useState<string | null>(null);
+  const [evalProgress, setEvalProgress] = useState<StatusResponse["eval_progress"]>(null);
   
   // History
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -199,6 +207,7 @@ export const Eval = () => {
                 }
 
         setStatus(data.status);
+        setEvalProgress(data.eval_progress ?? null);
         if (data.status === "interrupted") {
             const interruptValue = data.interrupts?.[0]?.value;
             const token = `${threadId || ""}|${data.next_node?.[0] || ""}|${JSON.stringify(interruptValue ?? "")}`;
@@ -332,7 +341,10 @@ export const Eval = () => {
     if (status === "interrupted" && currentNode?.includes("PreEvalReviewNode")) {
         const benchesToCheck = (editBenches.length ? editBenches : (state?.benches || [])) as any[];
         const missingEvalType = benchesToCheck
-            .filter((b: any) => !(b?.bench_dataflow_eval_type || b?.eval_type || b?.meta?.bench_dataflow_eval_type))
+            .filter((b: any) => {
+                const v = String(b?.bench_dataflow_eval_type || b?.eval_type || b?.meta?.bench_dataflow_eval_type || "").trim();
+                return !v || v === "unknown";
+            })
             .map((b: any) => b?.bench_name || "unknown");
         if (missingEvalType.length > 0) {
             setMessages(prev => [...prev, {
@@ -384,11 +396,19 @@ export const Eval = () => {
                     seed: evalParams.seed
                 }
               : null;
+          const shouldSendBenches = Boolean(
+              status === "interrupted"
+              && !currentNode?.includes("MetricReviewNode")
+              && Array.isArray(editBenches)
+              && editBenches.length > 0
+          );
           payload.state_updates = {
-              benches: editBenches,
               target_model_name: selectedModel?.name ?? state?.target_model_name,
               request: { language: lang }
           };
+          if (shouldSendBenches) {
+              payload.state_updates.benches = editBenches.length ? editBenches : (state?.benches || []);
+          }
           if (modelForUpdate) {
               payload.state_updates.target_model = modelForUpdate;
           }
@@ -500,14 +520,20 @@ export const Eval = () => {
           ? bench.task_type.map((t: any) => typeof t === 'object' ? JSON.stringify(t) : String(t))
           : [];
 
+      const inferredEvalTypeRaw =
+          bench?.bench_dataflow_eval_type || bench?.eval_type || bench?.meta?.bench_dataflow_eval_type || "";
+      const inferredEvalType = inferredEvalTypeRaw === "unknown" ? "" : String(inferredEvalTypeRaw || "");
+
       const newBench: Bench = {
           bench_name: bench.bench_name,
-          eval_type: safeTaskTypes.length > 0 ? safeTaskTypes[0] : "unknown",
+          eval_type: inferredEvalType,
+          bench_dataflow_eval_type: inferredEvalType,
           meta: {
               ...bench.meta,
               tags: safeTaskTypes, // Store all task types as tags
               source: "gallery", // Flag to skip probing
               skip_probing: true,
+              bench_dataflow_eval_type: inferredEvalType,
               keys: [], // Default empty keys to prevent white screen
               preview_data: [] // Default empty preview to prevent white screen
           }
@@ -635,32 +661,36 @@ export const Eval = () => {
       setMessages(prev => [...prev, { id: Date.now().toString(), role: "ai", content: t({ zh: "已启动手动评测，正在运行 DataFlowEval...", en: "Manual evaluation started. Running DataFlowEval..." }), timestamp: Date.now() }]);
   };
 
+  const handleStopWorkflow = async () => {
+      if (!threadId) return;
+      try {
+          await axios.post(`${apiBaseUrl}/api/workflow/stop/${threadId}`);
+          setStatus("stopped");
+          setMessages(prev => [
+              ...prev,
+              {
+                  id: Date.now().toString(),
+                  role: "system",
+                  content: t({ zh: "已发送停止请求。", en: "Stop request has been sent." }),
+                  timestamp: Date.now(),
+              },
+          ]);
+      } catch (e) {
+          setMessages(prev => [
+              ...prev,
+              {
+                  id: Date.now().toString(),
+                  role: "system",
+                  content: t({ zh: "停止失败，请重试。", en: "Failed to stop. Please retry." }),
+                  timestamp: Date.now(),
+              },
+          ]);
+      }
+  };
+
   const handleRunClick = async () => {
       if (status === "running") {
-          if (!threadId) return;
-          try {
-              await axios.post(`${apiBaseUrl}/api/workflow/stop/${threadId}`);
-              setStatus("stopped");
-              setMessages(prev => [
-                  ...prev,
-                  {
-                      id: Date.now().toString(),
-                      role: "system",
-                      content: t({ zh: "已发送停止请求。", en: "Stop request has been sent." }),
-                      timestamp: Date.now(),
-                  },
-              ]);
-          } catch (e) {
-              setMessages(prev => [
-                  ...prev,
-                  {
-                      id: Date.now().toString(),
-                      role: "system",
-                      content: t({ zh: "停止失败，请重试。", en: "Failed to stop. Please retry." }),
-                      timestamp: Date.now(),
-                  },
-              ]);
-          }
+          await handleStopWorkflow();
           return;
       }
       if (workMode === "manual") {
@@ -1761,17 +1791,19 @@ export const Eval = () => {
                                    const res = b.meta?.eval_result;
                                        const pickScore = (r: any) => {
                                            if (!r || typeof r !== 'object') return null;
-                                           for (const k of ['score','accuracy','exact_match']) {
+                                           for (const k of ['score','exact_match','accuracy']) {
                                                const v = (r as any)[k];
                                                if (typeof v === 'number') return v;
-                                               if (typeof v === 'string') return v;
-                                           }
-                                           for (const v of Object.values(r)) {
-                                               if (typeof v === 'number' || typeof v === 'string') return v;
                                            }
                                            return null;
                                        };
                                        const score = pickScore(res);
+                                       const isRunningBench = b.eval_status === "running";
+                                       const runningThisBench = isRunningBench && evalProgress?.bench_name === b.bench_name;
+                                       const runningPercent = Math.max(0, Math.min(100, Number(evalProgress?.percent ?? 0)));
+                                       const generated = Number(evalProgress?.generated ?? 0);
+                                       const total = Number(evalProgress?.total ?? 0);
+                                       const stage = String(evalProgress?.stage || "generator");
                                    
                                    return (
                                        <div key={i} className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden transition-all hover:border-emerald-200">
@@ -1808,8 +1840,15 @@ export const Eval = () => {
                                                            {b.eval_status === "success" && <span className="flex items-center gap-1 text-emerald-600"><Check className="w-3 h-3" /> {t({ zh: "已评测", en: "Evaluated" })}</span>}
                                                        </div>
                                                        {b.eval_status === "running" && (
-                                                           <div className="mt-2 h-1.5 w-56 bg-slate-100 rounded-full overflow-hidden">
-                                                               <div className="h-full w-1/2 bg-blue-500/70 rounded-full animate-pulse" />
+                                                           <div className="mt-2 w-72">
+                                                               <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                                                                   <div className={cn("h-full bg-blue-500/80 rounded-full transition-all", !runningThisBench ? "animate-pulse w-1/2" : "")} style={runningThisBench ? { width: `${runningPercent}%` } : undefined} />
+                                                               </div>
+                                                               <div className="mt-1 text-[10px] text-slate-500 font-mono">
+                                                                   {runningThisBench
+                                                                       ? t({ zh: `${stage === "evaluator" ? "评估中" : "生成中"} ${generated}/${total || "?"} (${runningPercent.toFixed(0)}%)`, en: `${stage === "evaluator" ? "Evaluating" : "Generating"} ${generated}/${total || "?"} (${runningPercent.toFixed(0)}%)` })
+                                                                       : t({ zh: "准备评测中...", en: "Preparing evaluation..." })}
+                                                               </div>
                                                            </div>
                                                        )}
                                                    </div>
@@ -2033,6 +2072,7 @@ export const Eval = () => {
                 status={status}
                 onSendMessage={handleStart}
                 onConfirm={handleResume}
+                onStop={handleStopWorkflow}
                 isWaitingForInput={status !== "idle"}
                 activeNodeId={activeNode} 
                 isCollapsed={isChatCollapsed}

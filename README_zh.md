@@ -3,7 +3,7 @@
   <img src="./static/logo/logo.png" width="360" alt="One-Eval Logo" />
 
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![License](https://img.shields.io/github/license/OpenDCAI/One-Eval)](./LICENSE)
+[![License](https://img.shields.io/badge/License-Apache_2.0-2F80ED?style=flat-square&logo=apache&logoColor=white)](./LICENSE)
 [![Repo Size](https://img.shields.io/github/repo-size/OpenDCAI/One-Eval?color=green)](https://github.com/OpenDCAI/One-Eval)
 [![ArXiv](https://img.shields.io/badge/ArXiv-Paper-b31b1b.svg?logo=arxiv)](https://arxiv.org/abs/2603.09821)
 
@@ -47,7 +47,7 @@ One-Eval 是一个面向大模型的自动化评测框架，核心目标是实�
 
 #### 方式 A: Conda
 ```bash
-conda create -n one-eval python=3.10 -y
+conda create -n one-eval python=3.11 -y
 conda activate one-eval
 pip install -e .
 ```

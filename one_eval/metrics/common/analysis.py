@@ -43,6 +43,8 @@ def compute_case_study_analyst(preds: List[Any], refs: List[Any], **kwargs) -> D
     target_group = kwargs.get("target_group", "negative")
     instruction = kwargs.get("instruction", "")
     auto_prompt = kwargs.get("auto_prompt", False)
+    lang = str(kwargs.get("language", "zh") or "zh").lower()
+    is_en = lang.startswith("en")
     
     # LLM Config
     model_name = kwargs.get("model_name", "gpt-4o")
@@ -53,7 +55,7 @@ def compute_case_study_analyst(preds: List[Any], refs: List[Any], **kwargs) -> D
     real_state = kwargs.get("state", None)
     
     if not api_key:
-        return {"score": 0.0, "error": "Missing API Key for CaseStudyAnalyst."}
+        return {"score": 0.0, "error": ("Missing API Key for CaseStudyAnalyst." if is_en else "CaseStudyAnalyst 缺少 API Key。")}
 
     # 2. 区分正负例
     pos_indices = []
@@ -90,7 +92,11 @@ def compute_case_study_analyst(preds: List[Any], refs: List[Any], **kwargs) -> D
     if not candidates:
         return {
             "score": 0.0, 
-            "analysis": f"No samples found for group '{target_group}'. (Pos: {len(pos_indices)}, Neg: {len(neg_indices)})"
+            "analysis": (
+                f"No samples found for group '{target_group}'. (Pos: {len(pos_indices)}, Neg: {len(neg_indices)})"
+                if is_en else
+                f"分组 '{target_group}' 未找到可分析样本。（正例: {len(pos_indices)}，负例: {len(neg_indices)}）"
+            )
         }
 
     if len(candidates) > sample_size:
@@ -101,25 +107,54 @@ def compute_case_study_analyst(preds: List[Any], refs: List[Any], **kwargs) -> D
     # 4. 构建 Analysis Prompt
     cases_text = ""
     for i, idx in enumerate(selected_indices):
-        cases_text += f"\n[Case {i+1}]\n"
-        cases_text += f"Prediction: {preds[idx]}\n"
-        cases_text += f"Reference: {refs[idx]}\n"
-        
-    system_prompt = "You are an expert AI model evaluator. Your goal is to analyze model predictions against reference answers."
-    
-    user_content = f"Here are {len(selected_indices)} sampled cases ({target_group} examples).\n"
+        if is_en:
+            cases_text += f"\n[Case {i+1}]\n"
+            cases_text += f"Prediction: {preds[idx]}\n"
+            cases_text += f"Reference: {refs[idx]}\n"
+        else:
+            cases_text += f"\n[样本 {i+1}]\n"
+            cases_text += f"模型输出: {preds[idx]}\n"
+            cases_text += f"参考答案: {refs[idx]}\n"
+
+    system_prompt = (
+        "You are an expert AI model evaluator. Your goal is to analyze model predictions against reference answers."
+        if is_en else
+        "你是资深模型评测分析师。你的目标是对照参考答案分析模型输出表现。"
+    )
+
+    user_content = (
+        f"Here are {len(selected_indices)} sampled cases ({target_group} examples).\n"
+        if is_en else
+        f"以下是抽样得到的 {len(selected_indices)} 条样本（分组：{target_group}）。\n"
+    )
     user_content += cases_text
     user_content += "\n\n"
     
     if auto_prompt:
         if not instruction:
-            user_content += "Please automatically identify the common patterns, error types (if any), and provide a concise summary of the model's performance on these cases."
+            user_content += (
+                "Please automatically identify common patterns, potential error types, and provide a concise summary of model performance on these cases."
+                if is_en else
+                "请自动识别共性模式、潜在错误类型，并给出简洁的整体表现总结。"
+            )
         else:
-            user_content += f"User Instruction: {instruction}\n\nBased on the user instruction, please analyze these cases. Also, feel free to add any other relevant insights you discover."
+            user_content += (
+                f"User Instruction: {instruction}\n\nBased on the user instruction, please analyze these cases and add any relevant insights."
+                if is_en else
+                f"用户指令：{instruction}\n\n请基于以上指令分析这些样本，并补充你发现的关键洞察。"
+            )
     elif instruction:
-        user_content += f"Instruction: {instruction}\n\nPlease analyze the cases strictly following the instruction above."
+        user_content += (
+            f"Instruction: {instruction}\n\nPlease analyze the cases strictly following the instruction above."
+            if is_en else
+            f"指令：{instruction}\n\n请严格依据以上指令分析这些样本。"
+        )
     else:
-        user_content += "Please analyze these cases and provide a summary."
+        user_content += (
+            "Please analyze these cases and provide a summary."
+            if is_en else
+            "请分析这些样本并给出总结。"
+        )
 
     # 5. 调用 CustomLLMCaller (Async Wrapper)
     async def _call_llm():
@@ -205,12 +240,19 @@ def compute_metric_summary_analyst(preds: List[Any], refs: List[Any], **kwargs) 
             api_key (str): OpenAI API Key
             base_url (str): OpenAI Base URL
     """
+    lang = str(kwargs.get("language", "zh") or "zh").lower()
+    is_en = lang.startswith("en")
+
     # 1. 获取上下文中的 Metric 结果
     all_results = kwargs.get("all_metric_results", {})
     if not all_results:
         return {
             "score": 0.0,
-            "summary": "No metric results found to summarize. Please ensure this metric is run after other metrics."
+            "summary": (
+                "No metric results found to summarize. Please ensure this metric is run after other metrics."
+                if is_en else
+                "未找到可汇总的指标结果，请确保该指标在其他指标之后执行。"
+            )
         }
         
     # 2. 准备 LLM 调用
@@ -239,21 +281,37 @@ def compute_metric_summary_analyst(preds: List[Any], refs: List[Any], **kwargs) 
             }
 
     # 4. 构建 Prompt
-    system_prompt = """You are an Expert AI Evaluation Analyst. 
-Your goal is to analyze the performance metrics of an AI model on a specific benchmark and provide a comprehensive summary report."""
-    
-    user_prompt = f"""Please analyze the following metric results and provide a summary report:
+    if is_en:
+        system_prompt = """You are an Expert AI Evaluation Analyst.
+Your goal is to analyze benchmark metrics and provide a concise, actionable summary report."""
+        user_prompt = f"""Please analyze the following metric results and provide a summary report in English:
 
 Metric Results:
-{json.dumps(summary_data, indent=2)}
+{json.dumps(summary_data, indent=2, ensure_ascii=False)}
 
 Your report should include:
-1. **Overall Performance**: A high-level verdict based on primary metrics.
-2. **Detailed Analysis**: Breakdown of specific strengths and weaknesses.
-3. **Anomalies**: Any conflicting or unexpected metric values (e.g., high Exact Match but low F1, or errors).
-4. **Conclusion**: Final thoughts on the model's capability on this task.
+1. Overall Performance: verdict based on primary metrics.
+2. Detailed Analysis: strengths and weaknesses.
+3. Anomalies: conflicting or unexpected values.
+4. Conclusion: final assessment for this task.
 
-Output the report in Markdown format.
+Do not output markdown horizontal rules like ---.
+"""
+    else:
+        system_prompt = """你是资深 AI 评测分析师。
+你的目标是分析基准测试指标，并输出简洁、可执行的中文汇总报告。"""
+        user_prompt = f"""请分析以下指标结果，并输出中文总结报告：
+
+指标结果：
+{json.dumps(summary_data, indent=2, ensure_ascii=False)}
+
+报告需包含：
+1. 整体表现：基于主指标给出结论。
+2. 细项分析：主要优势与短板。
+3. 异常点：冲突或异常指标表现。
+4. 结论建议：针对该任务的最终判断。
+
+不要输出 markdown 分割线（例如 ---）。
 """
 
     # 5. 调用 CustomLLMCaller (Async Wrapper)

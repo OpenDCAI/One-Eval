@@ -3,8 +3,10 @@ from __future__ import annotations
 import os
 import time
 import traceback
+import json
+import threading
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Callable, List
 import re
 
 import pandas as pd
@@ -172,7 +174,53 @@ class DataFlowEvalTool:
         
         return df, key_mapping
 
-    def run_eval(self, bench: BenchInfo, model_config: ModelConfig) -> Dict[str, Any]:
+    def _extract_path_value(self, obj: Any, path: str) -> Any:
+        if not path or not isinstance(path, str):
+            return None
+        cur = obj
+        for p in path.split("."):
+            if isinstance(cur, dict):
+                if p not in cur:
+                    return None
+                cur = cur[p]
+                continue
+            if isinstance(cur, list):
+                if not p.isdigit():
+                    return None
+                idx = int(p)
+                if idx < 0 or idx >= len(cur):
+                    return None
+                cur = cur[idx]
+                continue
+            return None
+        return cur
+
+    def _materialize_nested_keys(self, source_path: str, key_paths: List[str], target_path: str) -> str:
+        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+        with open(source_path, "r", encoding="utf-8") as rf, open(target_path, "w", encoding="utf-8") as wf:
+            for line in rf:
+                s = line.strip()
+                if not s:
+                    continue
+                row = json.loads(s)
+                if isinstance(row, dict):
+                    for kp in key_paths:
+                        if kp and "." in kp and kp not in row:
+                            row[kp] = self._extract_path_value(row, kp)
+                wf.write(json.dumps(row, ensure_ascii=False) + "\n")
+        return target_path
+
+    def _count_jsonl_rows(self, path: str) -> int:
+        if not path or not os.path.exists(path):
+            return 0
+        cnt = 0
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                if line.strip():
+                    cnt += 1
+        return cnt
+
+    def run_eval(self, bench: BenchInfo, model_config: ModelConfig, progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None) -> Dict[str, Any]:
         """
         执行单个 Bench 的评测
         Returns:
@@ -200,31 +248,53 @@ class DataFlowEvalTool:
         
         # 最终结果文件
         eval_result_path = os.path.join(self.output_root, f"{safe_name}_{timestamp}_result.jsonl")
+        nested_stage_path = os.path.join(step_cache_dir, "step_input_nested.jsonl")
 
-        # 3. 初始化 Storage
+        def _emit(stage: str, generated: int = 0, total: int = 0, percent: float = 0.0):
+            if progress_callback:
+                progress_callback({
+                    "bench_name": bench.bench_name,
+                    "stage": stage,
+                    "generated": int(generated),
+                    "total": int(total),
+                    "percent": float(percent),
+                })
+
+        # 3. 准备参数映射
+        key_mapping = bench.meta.get("key_mapping", {})
+        log.info(f"[{bench.bench_name}] Initial Key Mapping: {key_mapping}")
+
+        all_key_paths = [v for v in key_mapping.values() if isinstance(v, str) and v.strip()]
+        nested_paths = [p for p in all_key_paths if "." in p]
+        input_dataset_path = bench.dataset_cache
+        if nested_paths:
+            try:
+                input_dataset_path = self._materialize_nested_keys(bench.dataset_cache, nested_paths, nested_stage_path)
+                log.info(f"[{bench.bench_name}] Materialized nested keys: {nested_paths}")
+            except Exception as e:
+                log.warning(f"[{bench.bench_name}] Materialize nested keys failed, fallback to raw dataset: {e}")
+                input_dataset_path = bench.dataset_cache
+
+        # 4. 初始化 Storage
         # cache_type="jsonl" 对应 .jsonl 文件
         storage = FileStorage(
-            first_entry_file_name=bench.dataset_cache,
+            first_entry_file_name=input_dataset_path,
             cache_path=step_cache_dir,
             file_name_prefix="step",
             cache_type="jsonl",
         )
-
-        # 4. 准备参数映射
-        key_mapping = bench.meta.get("key_mapping", {})
-        log.info(f"[{bench.bench_name}] Initial Key Mapping: {key_mapping}")
         
         # === Ad-hoc 预处理 ===
         # 读取初始数据，进行必要的列注入，然后写回
         try:
             # 直接读取原始文件，而不是通过 storage.read (因为它要求先 step)
             # 假设 dataset_cache 是 jsonl
-            df = pd.read_json(bench.dataset_cache, lines=True)
+            df = pd.read_json(input_dataset_path, lines=True)
             df, key_mapping = self._preprocess_dataframe(
                 df, 
                 bench.bench_name, 
                 key_mapping, 
-                cache_path=bench.dataset_cache,
+                cache_path=input_dataset_path,
                 eval_type=bench.bench_dataflow_eval_type
             )
             # 写回作为 step_0 (这将推进 storage 的 step 计数)
@@ -274,15 +344,41 @@ class DataFlowEvalTool:
         )
 
         log.info(f"[{bench.bench_name}] Running Step 1: Generator ({bench.bench_dataflow_eval_type})")
+        total_rows = self._count_jsonl_rows(input_dataset_path)
+        _emit("generator", generated=0, total=total_rows, percent=0.0)
+        step1_output_path = os.path.join(step_cache_dir, "step_step1.jsonl")
         try:
-            generator.run(
-                storage=storage.step(),
-                input_question_key=q_key,
-                input_context_key=ctx_key,
-                input_text_key=text_key, # text_score 用
-                input_choices_key=choices_key, # 有些生成任务可能需要选项进 prompt
-                output_key="generated_ans",
-            )
+            step1_result: Dict[str, Any] = {"err": None}
+            def _run_step1():
+                try:
+                    generator.run(
+                        storage=storage.step(),
+                        input_question_key=q_key,
+                        input_context_key=ctx_key,
+                        input_text_key=text_key,
+                        input_choices_key=choices_key,
+                        output_key="generated_ans",
+                    )
+                except Exception as ex:
+                    step1_result["err"] = ex
+            th = threading.Thread(target=_run_step1, daemon=True)
+            th.start()
+            last_generated = -1
+            while th.is_alive():
+                generated = self._count_jsonl_rows(step1_output_path)
+                if generated != last_generated:
+                    pct = (float(generated) / float(total_rows) * 100.0) if total_rows > 0 else 0.0
+                    if pct > 99.0:
+                        pct = 99.0
+                    _emit("generator", generated=generated, total=total_rows, percent=pct)
+                    last_generated = generated
+                time.sleep(0.5)
+            th.join()
+            if step1_result["err"] is not None:
+                raise step1_result["err"]
+            generated_done = self._count_jsonl_rows(step1_output_path)
+            final_pct = 100.0 if total_rows > 0 else 0.0
+            _emit("generator", generated=generated_done, total=total_rows, percent=final_pct)
         except Exception as e:
             log.error(f"[{bench.bench_name}] Generator failed: {e}")
             log.error(traceback.format_exc())
@@ -303,6 +399,7 @@ class DataFlowEvalTool:
         )
 
         log.info(f"[{bench.bench_name}] Running Step 2: Evaluator")
+        _emit("evaluator", generated=total_rows, total=total_rows, percent=100.0)
         
         # 收集所有可能的 input keys
         eval_kwargs = {
