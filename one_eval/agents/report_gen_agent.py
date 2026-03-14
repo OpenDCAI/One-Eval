@@ -15,22 +15,70 @@ from one_eval.logger import get_logger
 log = get_logger("ReportGenAgent")
 
 EVAL_TYPE_LABELS_ZH = [
-    ("key1_text_score", "文本评分"),
-    ("key2_qa", "单参考问答"),
-    ("key2_q_ma", "多参考问答"),
-    ("key3_q_choices_a", "单选题"),
-    ("key3_q_choices_as", "多选题"),
-    ("key3_q_a_rejected", "偏好对比"),
+    ("knowledge", "知识与百科"),
+    ("reasoning", "逻辑推理"),
+    ("mathematics", "数学能力"),
+    ("coding", "代码能力"),
+    ("language", "理解与生成"),
+    ("instruction", "指令遵循"),
+    ("safety", "安全与对齐"),
 ]
 
 EVAL_TYPE_LABELS_EN = [
-    ("key1_text_score", "Text Scoring"),
-    ("key2_qa", "QA (Single Reference)"),
-    ("key2_q_ma", "QA (Multi Reference)"),
-    ("key3_q_choices_a", "Single Choice"),
-    ("key3_q_choices_as", "Multi Select"),
-    ("key3_q_a_rejected", "Preference Pair"),
+    ("knowledge", "Knowledge"),
+    ("reasoning", "Reasoning"),
+    ("mathematics", "Mathematics"),
+    ("coding", "Coding"),
+    ("language", "Language"),
+    ("instruction", "Instruction"),
+    ("safety", "Safety"),
 ]
+
+
+# 关键词匹配规则（作为 metadata 缺失时的兜底）
+# 格式: {关键词: [维度列表]}
+# 注意：匹配时会检查 bench_name 是否包含该关键词（不区分大小写）
+BENCH_KEYWORD_RULES = {
+    # 特殊数据集 (Known Special Cases)
+    "gsm8k": ["mathematics", "reasoning"],
+    "math": ["mathematics"],
+    "humaneval": ["coding"],
+    "mbpp": ["coding"],
+    "mmlu": ["knowledge"],
+    "ceval": ["knowledge"],
+    "cmmlu": ["knowledge"],
+    "bbh": ["reasoning"],
+    "arc": ["reasoning"],
+    "ifeval": ["instruction"],
+    "alpaca": ["instruction"],
+
+    # 通用关键词 (General Keywords)
+    "code": ["coding"],
+    "program": ["coding"],
+    "sql": ["coding"],
+    "python": ["coding"],
+    "reason": ["reasoning"],
+    "logic": ["reasoning"],
+    "arithmetic": ["mathematics"],
+    "algebra": ["mathematics"],
+    "geometry": ["mathematics"],
+    "calculus": ["mathematics"],
+    "qa": ["knowledge"],
+    "exam": ["knowledge"],
+    "knowledge": ["knowledge"],
+    "safe": ["safety"],
+    "align": ["safety"],
+    "harm": ["safety"],
+    "bias": ["safety"],
+    "instruct": ["instruction"],
+    "chat": ["language"],
+    "dialog": ["language"],
+    "summary": ["language"],
+    "translat": ["language"],
+    "nli": ["language"],
+    "reading": ["language"],
+    "comprehension": ["language"],
+}
 
 
 class ReportGenAgent(CustomAgent):
@@ -126,25 +174,63 @@ class ReportGenAgent(CustomAgent):
             bench_name = bench.bench_name
             bench_result = eval_results.get(bench_name) or {}
             metrics = bench_result.get("metrics", {}) or {}
-            plan = metric_plan.get(bench_name, []) or []
-            primary_name = self._get_primary_metric_name(plan, metrics)
-            primary = metrics.get(primary_name, {}) if primary_name else {}
-            raw_bench_score = ((bench.meta or {}).get("eval_result") or {}).get("score")
+            
+            # --- MODIFIED: Use 'accuracy' from meta.eval_result as primary score ---
+            raw_bench_score = ((bench.meta or {}).get("eval_result") or {}).get("accuracy")
+            if raw_bench_score is None:
+                # Fallback to 'score' if accuracy is missing
+                 raw_bench_score = ((bench.meta or {}).get("eval_result") or {}).get("score")
+
             has_bench_score = raw_bench_score is not None
             bench_score = self._safe_float(raw_bench_score)
-            metric_score = self._safe_float(primary.get("score"))
-            score = bench_score if has_bench_score else metric_score
+            
+            # Keep original primary name logic just for display name, but score comes from meta
+            plan = metric_plan.get(bench_name, []) or []
+            primary_name = self._get_primary_metric_name(plan, metrics)
+            if not primary_name:
+                 primary_name = "accuracy" # Default name if nothing found
+
             num_samples = int(bench_result.get("num_samples", 0) or 0)
-            summaries.append({
-                "bench": bench_name,
-                "eval_type": bench.bench_dataflow_eval_type or bench.meta.get("eval_type"),
-                "domain": bench.meta.get("domain"),
-                "task_type": bench.meta.get("task_type"),
-                "num_samples": num_samples,
-                "primary_metric": primary_name,
-                "primary_score": score,
-            })
+
+            # 优先从 meta 读取维度
+            meta_dims = (bench.meta or {}).get("radar_dimensions")
+            if not isinstance(meta_dims, list):
+                # 回退到名称映射或 metric 推断
+                meta_dims = self._map_bench_to_dimensions(bench_name, list(metrics.keys()))
+
+            for dim in meta_dims:
+                summaries.append({
+                    "bench": bench_name,
+                    "eval_type": dim,
+                    "domain": bench.meta.get("domain"),
+                    "task_type": bench.meta.get("task_type"),
+                    "num_samples": num_samples,
+                    "primary_metric": primary_name,
+                    "primary_score": bench_score, # Force use meta score
+                })
         return summaries
+
+    def _map_bench_to_dimensions(self, bench_name: str, metric_names: List[str]) -> List[str]:
+        # 1. 关键词规则匹配（名称中包含关键词即可）
+        name_lower = bench_name.lower()
+        
+        # 优先匹配长关键词（例如优先匹配 "gsm8k" 而不是 "math"）
+        sorted_keys = sorted(BENCH_KEYWORD_RULES.keys(), key=len, reverse=True)
+        
+        for key in sorted_keys:
+            if key in name_lower:
+                return BENCH_KEYWORD_RULES[key]
+        
+        # 2. 如果没有匹配，尝试根据 Metric 名称推断
+        for m in metric_names:
+            m_lower = m.lower()
+            if "rouge" in m_lower or "bleu" in m_lower:
+                return ["language"]
+            if "pass@k" in m_lower:
+                return ["coding"]
+        
+        # 3. 默认归类
+        return ["knowledge"]
 
     def _compute_overall_score(self, summaries: List[Dict[str, Any]]) -> float:
         total = 0.0

@@ -74,7 +74,11 @@
           "input_context_key": "metadata"
         },
         "key_mapping_reason": "该数据集包含问题 ('query') 和答案 ('answer')，且答案不是列表形式，符合生成式任务（单参考答案）的特征。metadata 字段可能包含上下文信息，因此映射为可选键 input_context_key。",
-        "description_zh": "一个用于评估 AI 智能体在专业客户关系管理（CRM）工作流程中真实任务上表现的基准。"
+        "description_zh": "一个用于评估 AI 智能体在专业客户关系管理（CRM）工作流程中真实任务上表现的基准。",
+        "radar_dimensions": [
+          "instruction",
+          "reasoning"
+        ]
       }
     },
     {
@@ -174,7 +178,11 @@
           "input_context_key": "persona"
         },
         "key_mapping_reason": "这个数据集中有 query 和一个 answer 字段，这符合生成式：单参考答案类型。persona 字段可被映射为 context，因为它可能提供对 question 的额外信息支持。",
-        "description_zh": "由 Salesforce AI Research 开发，用于在真实企业 CRM 场景中评估大语言模型智能体的基准。"
+        "description_zh": "由 Salesforce AI Research 开发，用于在真实企业 CRM 场景中评估大语言模型智能体的基准。",
+        "radar_dimensions": [
+          "instruction",
+          "reasoning"
+        ]
       }
     },
     {
@@ -288,7 +296,11 @@
           "input_context_key": null
         },
         "key_mapping_reason": "提供的字段 'Question' 和 'Final answer' 显示该数据集是一个生成式任务，有单个参考答案，因此匹配 key2_qa 类型。没有明显的 context 字段。",
-        "description_zh": "包含需要推理、多模态处理和工具调用能力的现实世界问题。"
+        "description_zh": "包含需要推理、多模态处理和工具调用能力的现实世界问题。",
+        "radar_dimensions": [
+          "instruction",
+          "reasoning"
+        ]
       }
     },
     {
@@ -358,7 +370,12 @@
           "input_target_key": "truth_xml"
         },
         "key_mapping_reason": "字段包含'partial'和'truth_xml'，通常'partial'可以理解为问题或问题的部分，而'truth_xml'则是目标答案。虽然没有明确标识答案字段，但根据可用字段，key2_qa是最接近的类型。",
-        "description_zh": "评估大语言模型在生物学和材料科学领域进行迭代实验设计与分析能力的基准。"
+        "description_zh": "评估大语言模型在生物学和材料科学领域进行迭代实验设计与分析能力的基准。",
+        "radar_dimensions": [
+          "instruction",
+          "knowledge",
+          "reasoning"
+        ]
       }
     },
     {
@@ -722,7 +739,11 @@
           "input_context_key": "context"
         },
         "key_mapping_reason": "数据集包含 question 和 answer 字段，其中 answer 是单一参考答案，并且有 context 字段，可以作为可选的上下文映射。因此，最符合生成式单参考答案类型。",
-        "description_zh": "用于评估规划领域推理任务的基准，包含 6,894 个问答对。"
+        "description_zh": "用于评估规划领域推理任务的基准，包含 6,894 个问答对。",
+        "radar_dimensions": [
+          "instruction",
+          "reasoning"
+        ]
       }
     },
     {
@@ -1384,7 +1405,11 @@
           "input_context_key": "required_knowledge"
         },
         "key_mapping_reason": "global-mmlu 数据集中的 question 和多个选项 (option_a, option_b, option_c, option_d) 以及唯一正确答案 (answer)，符合选择题单正确答案的格式。required_knowledge 可以作为上下文信息。这与 MMLU 任务的特征一致，因此判定为 key3_q_choices_a 类型。",
-        "description_zh": "MMLU 的翻译版本，还包含部分问题的文化敏感性注释。"
+        "description_zh": "MMLU 的翻译版本，还包含部分问题的文化敏感性注释。",
+        "radar_dimensions": [
+          "knowledge",
+          "safety"
+        ]
       }
     },
     {
@@ -1459,7 +1484,10 @@
           "input_text_key": "text"
         },
         "key_mapping_reason": "数据集中只有一个主要的文本字段 'text'，其余字段表示不同类型的打分，因此该数据集属于文本打分任务类型。",
-        "description_zh": "一套不依赖阈值的无意偏见评估指标，以及用于衡量无意偏见的在线评论测试集。"
+        "description_zh": "一套不依赖阈值的无意偏见评估指标，以及用于衡量无意偏见的在线评论测试集。",
+        "radar_dimensions": [
+          "safety"
+        ]
       }
     },
     {
@@ -1533,7 +1561,11 @@
           "input_context_key": "problem_io"
         },
         "key_mapping_reason": "The dataset presents problems with descriptions and solutions, resembling a QA task. The 'problem_description_main' is mapped to the question, 'general_solution' to the target answer, and 'problem_io' provides context relevant to the problem-solving task.",
-        "description_zh": "挑战语言模型为科学问题编写代码解决方案的基准，涵盖数学、物理、化学、生物和材料科学。"
+        "description_zh": "挑战语言模型为科学问题编写代码解决方案的基准，涵盖数学、物理、化学、生物和材料科学。",
+        "radar_dimensions": [
+          "coding",
+          "knowledge"
+        ]
       }
     },
     {
@@ -1605,7 +1637,10 @@
           "input_context_key": "methods_info"
         },
         "key_mapping_reason": "该数据集字段包括 class_description, solution_code，符合生成式评测任务的特征。其中 class_description 可以视为问题描述，solution_code 是目标代码，methods_info 可以作为附加信息或上下文。",
-        "description_zh": "类级别的 Python 代码生成任务。"
+        "description_zh": "类级别的 Python 代码生成任务。",
+        "radar_dimensions": [
+          "coding"
+        ]
       }
     },
     {
@@ -1680,7 +1715,10 @@
           "input_context_key": "hints_text"
         },
         "key_mapping_reason": "该数据集包含一个问题陈述 ('problem_statement')，以及两个互为对比的解决方案（'PASS_TO_PASS' 和 'FAIL_TO_PASS'），符合成对比较的任务类型。",
-        "description_zh": "SWE-bench 的子集，由人工标注者验证，筛选出 500 个无问题样本。"
+        "description_zh": "SWE-bench 的子集，由人工标注者验证，筛选出 500 个无问题样本。",
+        "radar_dimensions": [
+          "coding"
+        ]
       }
     },
     {
@@ -1761,7 +1799,10 @@
           "input_context_key": "hints_text"
         },
         "key_mapping_reason": "Based on the available keys, 'problem_statement' can be mapped to the question, and 'FAIL_TO_PASS' represents the transformation needed to address the given problem. 'hints_text' can be additional context, making it resemble a QA task with single reference answers.",
-        "description_zh": "从 GitHub 收集的真实软件问题。"
+        "description_zh": "从 GitHub 收集的真实软件问题。",
+        "radar_dimensions": [
+          "coding"
+        ]
       }
     },
     {
@@ -1825,7 +1866,11 @@
           "input_target_key": "output"
         },
         "key_mapping_reason": "数据集包含 'input' 和 'output' 字段，并没有提供答题的选项和正确答案索引，符合生成式单参考答案的模型。可能涉及根据输入代码或问题生成输出。",
-        "description_zh": "包含 Python 函数和输入输出对的数据集，包含两个任务：输入预测和输出预测。"
+        "description_zh": "包含 Python 函数和输入输出对的数据集，包含两个任务：输入预测和输出预测。",
+        "radar_dimensions": [
+          "coding",
+          "reasoning"
+        ]
       }
     },
     {
@@ -1890,7 +1935,10 @@
           "input_context_key": "code_context"
         },
         "key_mapping_reason": "字段包含一个问题 ('prompt') 和一个参考答案 ('reference_code')，符合生成式单参考答案任务的特征。此外，存在 'code_context'，可以作为上下文信息映射到可选字段 'input_context_key'。",
-        "description_zh": "涵盖七个 Python 库的数据科学代码生成基准。"
+        "description_zh": "涵盖七个 Python 库的数据科学代码生成基准。",
+        "radar_dimensions": [
+          "coding"
+        ]
       }
     },
     {
@@ -1907,6 +1955,9 @@
         "entry_point"
       ],
       "meta": {
+        "radar_dimensions": [
+          "coding"
+        ],
         "bench_name": "humaneval",
         "source": "bench_table",
         "aliases": [
@@ -2030,7 +2081,10 @@
           "input_context_key": "input"
         },
         "key_mapping_reason": "数据集具有编程题目的特征，其中 description 对应题目说明，output 对应题目的期望输出，而 input 可以作为题目输入的上下文，符合生成式单参考答案类型。",
-        "description_zh": "标准化的竞赛级别代码生成基准。"
+        "description_zh": "标准化的竞赛级别代码生成基准。",
+        "radar_dimensions": [
+          "coding"
+        ]
       }
     },
     {
@@ -2103,7 +2157,11 @@
           "input_text_key": "conversation"
         },
         "key_mapping_reason": "该数据集包含 'conversation' 字段，可能涉及对该文本进行评估或打分。没有明确的问题和答案对，也没有选择题成分，因此推断为文本打分任务。",
-        "description_zh": "100 万条人类用户与 ChatGPT 对话的集合，附有安全性标签。"
+        "description_zh": "100 万条人类用户与 ChatGPT 对话的集合，附有安全性标签。",
+        "radar_dimensions": [
+          "instruction",
+          "language"
+        ]
       }
     },
     {
@@ -2190,7 +2248,11 @@
           "input_context_key": "context"
         },
         "key_mapping_reason": "字段列表中存在 'prompt', 'options', 和 'target'，这表明数据集可能涉及选择题类型，其中有单个正确答案。此外存在 'context' 字段，为了丰富问题背景，映射为 'input_context_key'。",
-        "description_zh": "基于现成基准混合物的、以真实答案为基础的动态基准。"
+        "description_zh": "基于现成基准混合物的、以真实答案为基础的动态基准。",
+        "radar_dimensions": [
+          "instruction",
+          "language"
+        ]
       }
     },
     {
@@ -2263,7 +2325,12 @@
           "input_rejected_key": "conversation_b"
         },
         "key_mapping_reason": "数据集包含多个模型生成的对话（conversation_a 和 conversation_b），并指示哪一个更好（winner 字段），这符合成对比较的任务类型。",
-        "description_zh": "多轮问答：一个开放性问题及一个后续追问。"
+        "description_zh": "多轮问答：一个开放性问题及一个后续追问。",
+        "radar_dimensions": [
+          "instruction",
+          "language",
+          "reasoning"
+        ]
       }
     },
     {
@@ -2353,7 +2420,11 @@
           "input_context_key": "intent"
         },
         "key_mapping_reason": "The dataset includes a key 'conversation_input' which likely represents questions or inputs in a conversational setting and 'references' suggesting multiple reference answers. There are multiple tags and an intent key that could provide context or additional information about the conversation, which aligns with the characteristics of a task with multiple reference answers.",
-        "description_zh": "用于在真实用户查询上对大语言模型进行基准测试的自动化评估框架。"
+        "description_zh": "用于在真实用户查询上对大语言模型进行基准测试的自动化评估框架。",
+        "radar_dimensions": [
+          "instruction",
+          "language"
+        ]
       }
     },
     {
@@ -2492,7 +2563,12 @@
           "input_context_key": "source"
         },
         "key_mapping_reason": "该数据集包含一个问题字段(question)和干扰选项字段(distractors)，以及一个理想答案字段(ideal)，表明这是一个选择题类型数据集，具有单一正确答案。此外，字段(source)可以作为上下文信息，这与key3_q_choices_a类型的格式相匹配。",
-        "description_zh": "面向 AI 系统的评估数据集，旨在测试自动化科学研究所需的基础能力。"
+        "description_zh": "面向 AI 系统的评估数据集，旨在测试自动化科学研究所需的基础能力。",
+        "radar_dimensions": [
+          "instruction",
+          "knowledge",
+          "reasoning"
+        ]
       }
     },
     {
@@ -2563,7 +2639,10 @@
           "input_label_key": "correct_diagnosis"
         },
         "key_mapping_reason": "数据集中有一个问题描述 ('clean_case_presentation') 和多个选项 ('correct_diagnosis', 'distractor1', 'distractor2', 'distractor3')，其中 'correct_diagnosis' 是正确答案。这符合选择题单正确类型的特征。",
-        "description_zh": "CUPCase 基于 3,563 份真实临床病例报告，将其整理为诊断问答题。"
+        "description_zh": "CUPCase 基于 3,563 份真实临床病例报告，将其整理为诊断问答题。",
+        "radar_dimensions": [
+          "knowledge"
+        ]
       }
     },
     {
@@ -2853,7 +2932,10 @@
           "input_label_key": "answer_id"
         },
         "key_mapping_reason": "数据集中包含一个 question 和多个 option 字段，指示可能是选择题。answer_id 字段表明正确答案是一个单一的选项。因此，这与选择题有一个正确答案的模式相匹配。",
-        "description_zh": "MedConceptsQA 评估模型解释和区分不同医学概念的能力。"
+        "description_zh": "MedConceptsQA 评估模型解释和区分不同医学概念的能力。",
+        "radar_dimensions": [
+          "knowledge"
+        ]
       }
     },
     {
@@ -2918,7 +3000,11 @@
           "input_target_key": "reference_answer"
         },
         "key_mapping_reason": "数据包含一个 prompt 和一个 reference_answer 字段，这符合生成式单参考答案任务的特征。另外，字段 reference_answer_fullscale 没有影响选择，因为仅需要一个单参考答案。",
-        "description_zh": "评估大语言模型理解复杂情感和社会互动能力的基准。"
+        "description_zh": "评估大语言模型理解复杂情感和社会互动能力的基准。",
+        "radar_dimensions": [
+          "instruction",
+          "language"
+        ]
       }
     },
     {
@@ -2993,7 +3079,10 @@
           "input_context_key": "evidence"
         },
         "key_mapping_reason": "该数据集包含声明 (claim) 和支持句子 (supporting_sentences)，以及一个标签 (label) 来指示正确的句子。根据字段特征，符合选择题类型的定义。evidence 可作为上下文输入。",
-        "description_zh": "基于从维基百科提取的自然主张和证据对构建的文本蕴含数据集。"
+        "description_zh": "基于从维基百科提取的自然主张和证据对构建的文本蕴含数据集。",
+        "radar_dimensions": [
+          "knowledge"
+        ]
       }
     },
     {
@@ -3129,7 +3218,10 @@
           "input_context_key": "context"
         },
         "key_mapping_reason": "该数据集包含字段 question 和 answer，适合生成式单参考答案任务。此外，context 提供了可能的上下文信息，可以映射为可选的 input_context_key。",
-        "description_zh": "汇集了 7 个流行的上下文问答基准，用于评估检索增强生成（RAG）能力。"
+        "description_zh": "汇集了 7 个流行的上下文问答基准，用于评估检索增强生成（RAG）能力。",
+        "radar_dimensions": [
+          "knowledge"
+        ]
       }
     },
     {
@@ -3189,7 +3281,10 @@
           "input_text_key": "text"
         },
         "key_mapping_reason": "数据集中只有一个字段 'text'，这符合文本打分任务的特点，其中只有一段文本需要评估，因此推断为 key1_text_score 类型",
-        "description_zh": "扩展版 NIAH，问题与\"针\"之间的词汇重叠极少，需要真正的推理而非简单的关键词匹配。"
+        "description_zh": "扩展版 NIAH，问题与\"针\"之间的词汇重叠极少，需要真正的推理而非简单的关键词匹配。",
+        "radar_dimensions": [
+          "knowledge"
+        ]
       }
     },
     {
@@ -3282,7 +3377,10 @@
           "input_target_key": "answer"
         },
         "key_mapping_reason": "数据集中存在 question 和 answer 字段，没有明确的多参考答案列表，因此推断为生成式：单参考答案类型。没有提供上下文字段。",
-        "description_zh": "以 Wix.com 开放知识库为基础的问答基准套件。"
+        "description_zh": "以 Wix.com 开放知识库为基础的问答基准套件。",
+        "radar_dimensions": [
+          "knowledge"
+        ]
       }
     },
     {
@@ -3360,7 +3458,10 @@
           "input_target_key": "Answer"
         },
         "key_mapping_reason": "数据集包含一个问题（'Prompt'）和其对应的答案（'Answer'），所以符合生成式：单参考答案（key2_qa）的特征。没有多个答案选项，因此不属于选择题类型。",
-        "description_zh": "测试 RAG 系统在事实性、检索和推理方面综合能力的基准。"
+        "description_zh": "测试 RAG 系统在事实性、检索和推理方面综合能力的基准。",
+        "radar_dimensions": [
+          "reasoning"
+        ]
       }
     },
     {
@@ -3436,7 +3537,10 @@
           "input_context_key": "context"
         },
         "key_mapping_reason": "字段中包含 query, output, 和 context，适合映射到生成式单参考答案任务类型 (key2_qa)。query 对应问题，output 对应目标答案，context 可映射为输入上下文。",
-        "description_zh": "专为分析标准 RAG 流程中词级幻觉现象而设计的语料库。"
+        "description_zh": "专为分析标准 RAG 流程中词级幻觉现象而设计的语料库。",
+        "radar_dimensions": [
+          "knowledge"
+        ]
       }
     },
     {
@@ -3505,7 +3609,11 @@
           "input_context_key": "input"
         },
         "key_mapping_reason": "从字段特征推断，该数据集包含指令 (instruction)、多选题选项 (decomposed_questions，可能组成选择题的选项)、以及标签 (question_label，指示正确选项)，符合选择题：单正确任务类型。input 被映射为 context。如果无法确认，请根据最可能的类型选择。",
-        "description_zh": "通过将指令分解为原子性需求来评估大语言模型遵循指令能力的基准。"
+        "description_zh": "通过将指令分解为原子性需求来评估大语言模型遵循指令能力的基准。",
+        "radar_dimensions": [
+          "instruction",
+          "language"
+        ]
       }
     },
     {
@@ -3573,7 +3681,10 @@
           "input_context_key": "subject"
         },
         "key_mapping_reason": "数据集中有 question 和多个参考答案 reference_answer，匹配多参考答案的结构。subject 字段可作为上下文信息进行映射。",
-        "description_zh": "包含 125 万个科学问答对的大规模高质量开源数据集混合体。"
+        "description_zh": "包含 125 万个科学问答对的大规模高质量开源数据集混合体。",
+        "radar_dimensions": [
+          "knowledge"
+        ]
       }
     },
     {
@@ -3589,6 +3700,9 @@
         "answer"
       ],
       "meta": {
+        "radar_dimensions": [
+          "knowledge"
+        ],
         "bench_name": "mmlu",
         "source": "bench_table",
         "aliases": [
@@ -4777,7 +4891,11 @@
           "input_label_key": "answerKey"
         },
         "key_mapping_reason": "该数据集包含 question, choices 和 answerKey 字段，符合选择题：单正确的模式，其中 answerKey 提供了正确选项。",
-        "description_zh": "小学级别的多项选择科学题。"
+        "description_zh": "小学级别的多项选择科学题。",
+        "radar_dimensions": [
+          "knowledge",
+          "reasoning"
+        ]
       }
     },
     {
@@ -4845,7 +4963,10 @@
           "input_label_key": "answer_index"
         },
         "key_mapping_reason": "这个数据集包含的问题、选项和单个正确答案（以索引表示）。这符合选择题：单正确的特征。question 对应于 'question' 字段，choices 对应于 'options' 字段，而 label 是 'answer_index'。",
-        "description_zh": "MMLU 基准的增强版，包含更具挑战性的问题，每题提供 10 个选项。"
+        "description_zh": "MMLU 基准的增强版，包含更具挑战性的问题，每题提供 10 个选项。",
+        "radar_dimensions": [
+          "knowledge"
+        ]
       }
     },
     {
@@ -4924,7 +5045,11 @@
           "input_targets_key": "correct_answers"
         },
         "key_mapping_reason": "TruthfulQA 数据集包含一个问题字段和多个正确答案字段（correct_answers），符合生成式：多参考答案的特征。",
-        "description_zh": "评估模型生成真实性回答能力的基准。"
+        "description_zh": "评估模型生成真实性回答能力的基准。",
+        "radar_dimensions": [
+          "knowledge",
+          "safety"
+        ]
       }
     },
     {
@@ -5161,7 +5286,11 @@
           "input_label_key": "label"
         },
         "key_mapping_reason": "该数据集包含 'question', 'passage', 和 'label' 字段，符合选择题的特征。虽然没有明确的 choices 字段，但考虑到 superglue 常用于选择题测试，最可能的类型是选择题：单正确。 [WARNING: Missing keys: ['input_choices_key']]",
-        "description_zh": "GLUE 基准的改进版，难度更高。"
+        "description_zh": "GLUE 基准的改进版，难度更高。",
+        "radar_dimensions": [
+          "language",
+          "reasoning"
+        ]
       }
     },
     {
@@ -5231,7 +5360,11 @@
           "input_context_key": "passage"
         },
         "key_mapping_reason": "该数据集属于生成式：多参考答案类型，因为它包含问题（question）和多个参考答案（answers_spans），并且提供了上下文（passage）。",
-        "description_zh": "需要解析问题中的指代关系，并对文本执行加法、计数和排序等离散运算的任务。"
+        "description_zh": "需要解析问题中的指代关系，并对文本执行加法、计数和排序等离散运算的任务。",
+        "radar_dimensions": [
+          "language",
+          "reasoning"
+        ]
       }
     },
     {
@@ -5397,7 +5530,10 @@
           "input_label_key": "answer"
         },
         "key_mapping_reason": "数据集中有一个句子和两个选项，其中一个是正确答案，适合选择题：单正确类型。",
-        "description_zh": "填空任务，要求在二元选项中消解代词指代的歧义。"
+        "description_zh": "填空任务，要求在二元选项中消解代词指代的歧义。",
+        "radar_dimensions": [
+          "reasoning"
+        ]
       }
     },
     {
@@ -5496,7 +5632,11 @@
           "input_context_key": "reason"
         },
         "key_mapping_reason": "ANLI dataset involves evaluating pairs of text (premise and hypothesis) with labels indicating entailment, neutral or contradiction. This setup aligns with the choice-based evaluation where the hypothesis acts as the question and the premise acts as the choices. 'label' provides the single correct answer.",
-        "description_zh": "通过迭代对抗性人机协作标注流程收集的大规模自然语言推理基准数据集。"
+        "description_zh": "通过迭代对抗性人机协作标注流程收集的大规模自然语言推理基准数据集。",
+        "radar_dimensions": [
+          "language",
+          "reasoning"
+        ]
       }
     },
     {
@@ -5576,7 +5716,11 @@
           "input_context_key": "genre"
         },
         "key_mapping_reason": "The dataset is used for natural language inference, where the task is to determine the relationship between a premise and a hypothesis. The label typically indicates whether the hypothesis entails, contradicts, or is neutral with respect to the premise, fitting the pattern of a single correct choice.",
-        "description_zh": "一批来自众包的句子对集合，标注了文本蕴含关系信息。"
+        "description_zh": "一批来自众包的句子对集合，标注了文本蕴含关系信息。",
+        "radar_dimensions": [
+          "language",
+          "reasoning"
+        ]
       }
     },
     {
@@ -5646,7 +5790,11 @@
           "input_targets_key": "answers"
         },
         "key_mapping_reason": "The dataset contains a list of answers for each question, which indicates multiple possible correct answers. This aligns with the eval_type key2_q_ma, where 'targets' is expected to be a list. The presence of 'context' suggests it can be mapped to 'input_context_key'.",
-        "description_zh": "一个阅读理解数据集，包含众包工作者就维基百科文章提出的 10 万个问题。"
+        "description_zh": "一个阅读理解数据集，包含众包工作者就维基百科文章提出的 10 万个问题。",
+        "radar_dimensions": [
+          "knowledge",
+          "language"
+        ]
       }
     },
     {
@@ -5737,7 +5885,10 @@
           "input_label_key": "answerKey"
         },
         "key_mapping_reason": "字段特征匹配选择题：单正确类型。有一个问题 (question_stem)，多个选项 (choices)，以及单个正确答案 (answerKey)。",
-        "description_zh": "模仿开卷考试形式的问答数据集。"
+        "description_zh": "模仿开卷考试形式的问答数据集。",
+        "radar_dimensions": [
+          "knowledge"
+        ]
       }
     },
     {
@@ -5807,7 +5958,11 @@
           "input_targets_key": "target"
         },
         "key_mapping_reason": "SQuAD2.0 是一个问答任务，通常会有多个正确答案 (targets 是列表)。字段 'source' 可以对应问题，'target' 可以对应多个答案。",
-        "description_zh": "将 SQuAD1.1 的 10 万个问题与 5 万余个对抗性编写的不可回答问题相结合。"
+        "description_zh": "将 SQuAD1.1 的 10 万个问题与 5 万余个对抗性编写的不可回答问题相结合。",
+        "radar_dimensions": [
+          "knowledge",
+          "language"
+        ]
       }
     },
     {
@@ -5895,7 +6050,10 @@
           "input_context_key": "passages"
         },
         "key_mapping_reason": "The dataset 'ms-marco' includes fields like 'query', 'answers', and 'passages'. The presence of 'answers', which could be a list, suggests a multiple reference answer scenario suitable for 'key2_q_ma'. 'passages' can be mapped as context, making use of optional context mapping.",
-        "description_zh": "来自必应搜索查询日志的问题及网页文档段落。"
+        "description_zh": "来自必应搜索查询日志的问题及网页文档段落。",
+        "radar_dimensions": [
+          "reasoning"
+        ]
       }
     },
     {
@@ -5976,7 +6134,11 @@
           "input_context_key": "support"
         },
         "key_mapping_reason": "数据集包含问题（question）和多个选择项，其中一个是正确答案（correct_answer），这符合选择题：单正确的结构。此外，还有一个可能提供额外信息的字段（support），作为上下文进行映射。",
-        "description_zh": "多项选择科学考试题。"
+        "description_zh": "多项选择科学考试题。",
+        "radar_dimensions": [
+          "knowledge",
+          "reasoning"
+        ]
       }
     },
     {
@@ -6177,7 +6339,10 @@
           "input_context_key": "entity_pages"
         },
         "key_mapping_reason": "该数据集包含 question 和 answer 字段，符合生成式：单参考答案的特征。此外，字段 entity_pages 可以作为 context 提供额外的信息。",
-        "description_zh": "一个大规模问答数据集。"
+        "description_zh": "一个大规模问答数据集。",
+        "radar_dimensions": [
+          "knowledge"
+        ]
       }
     },
     {
@@ -6241,7 +6406,11 @@
           "input_text_key": "text"
         },
         "key_mapping_reason": "该数据集只有一个文本字段 'text'，这是对给定文本进行语言模型打分任务的典型特征。虽然有一个额外的字段 'domain'，它不影响基本任务类型，因此推断为 'key1_text_score'。",
-        "description_zh": "由上下文和目标句子组成的段落集合，任务是猜测目标句子的最后一个单词。"
+        "description_zh": "由上下文和目标句子组成的段落集合，任务是猜测目标句子的最后一个单词。",
+        "radar_dimensions": [
+          "language",
+          "reasoning"
+        ]
       }
     },
     {
@@ -6505,7 +6674,11 @@
           "input_context_key": "idx"
         },
         "key_mapping_reason": "GLUE 是一个语言理解评估数据集，通常涉及到识别文本间的关系。在提供的字段中，'premise' 和 'hypothesis' 组合可以看作是一个选择题的情境，其中 'label' 表示正确选择的索引或标签。这符合 key3_q_choices_a（选择题：单正确）的任务类型。",
-        "description_zh": "用于评估和分析模型在自然语言理解任务上性能的工具。"
+        "description_zh": "用于评估和分析模型在自然语言理解任务上性能的工具。",
+        "radar_dimensions": [
+          "language",
+          "reasoning"
+        ]
       }
     },
     {
@@ -6569,7 +6742,10 @@
           "input_targets_key": "answer_nodes"
         },
         "key_mapping_reason": "数据集提供了一个问题（'prompt'）以及多个参考答案（'answer_nodes' 是一个列表），对应于生成式：多参考答案任务。没有可用的上下文字段。",
-        "description_zh": "用于评估多跳长上下文推理能力的数据集。"
+        "description_zh": "用于评估多跳长上下文推理能力的数据集。",
+        "radar_dimensions": [
+          "reasoning"
+        ]
       }
     },
     {
@@ -6697,7 +6873,10 @@
           "input_context_key": "task"
         },
         "key_mapping_reason": "该数据集包含一个 query 字段和一个 ground_truth_plan 字段，且 query 类似于问题，ground_truth_plan 为问题的答案，因此可以判定为生成式任务：单参考答案 (key2_qa)。task 字段可以作为上下文。",
-        "description_zh": "用于评估大语言模型利用常识生成行动计划能力的基准。"
+        "description_zh": "用于评估大语言模型利用常识生成行动计划能力的基准。",
+        "radar_dimensions": [
+          "reasoning"
+        ]
       }
     },
     {
@@ -6778,7 +6957,11 @@
           "input_context_key": "context"
         },
         "key_mapping_reason": "题目包含 question 和多个 choice 字段，并且有单个 answer 字段，符合选择题：单正确模式。同时有一个 context 字段可作为上下文。",
-        "description_zh": "评估大语言模型处理需要深度理解的长上下文问题能力的基准。"
+        "description_zh": "评估大语言模型处理需要深度理解的长上下文问题能力的基准。",
+        "radar_dimensions": [
+          "language",
+          "reasoning"
+        ]
       }
     },
     {
@@ -6853,7 +7036,10 @@
           "input_target_key": "solution"
         },
         "key_mapping_reason": "字段列表中包括 'puzzle' 和 'solution'，它们分别对应问题和答案，适合用于生成式单参考答案任务。没有多参考答案或选择题的信息。",
-        "description_zh": "用于评估大语言模型在逻辑网格谜题上推理性能的评估框架。"
+        "description_zh": "用于评估大语言模型在逻辑网格谜题上推理性能的评估框架。",
+        "radar_dimensions": [
+          "reasoning"
+        ]
       }
     },
     {
@@ -7029,7 +7215,11 @@
           "input_label_key": "Correct Answer"
         },
         "key_mapping_reason": "数据集提供了一个问题备选项的一组选择，其中有一个正确答案和三个错误答案，这符合选择题（单正确）的模式。在这种模式中，需要设定问题、选择和正确答案。",
-        "description_zh": "由生物、物理和化学领域专家编写的多项选择题集合。"
+        "description_zh": "由生物、物理和化学领域专家编写的多项选择题集合。",
+        "radar_dimensions": [
+          "knowledge",
+          "reasoning"
+        ]
       }
     },
     {
@@ -7095,7 +7285,12 @@
           "input_context_key": "system_prompt"
         },
         "key_mapping_reason": "此数据集中包含一个输入字段（input）和一个参考答案字段（reference_answer），典型的生成式单参考答案任务布局。另外，'system_prompt' 可以作为上下文使用。",
-        "description_zh": "评估语言模型九种不同能力的基准，包括指令遵循、推理和知识落地。"
+        "description_zh": "评估语言模型九种不同能力的基准，包括指令遵循、推理和知识落地。",
+        "radar_dimensions": [
+          "instruction",
+          "language",
+          "reasoning"
+        ]
       }
     },
     {
@@ -7803,7 +7998,11 @@
           "input_label_key": "answer"
         },
         "key_mapping_reason": "数据集包含一个问题字段 'question' 和多个选项字段 'option_a', 'option_b', 'option_c', 'option_d'，以及一个答案字段 'answer'，适合选择题：单正确任务类型。",
-        "description_zh": "用于评估多语言大语言模型在多种语言上能力的评估套件。"
+        "description_zh": "用于评估多语言大语言模型在多种语言上能力的评估套件。",
+        "radar_dimensions": [
+          "instruction",
+          "language"
+        ]
       }
     },
     {
@@ -7871,7 +8070,11 @@
           "input_context_key": "i18n_prompt"
         },
         "key_mapping_reason": "这个数据集中存在 'english_prompt' 和 'english_gtfa' 字段，其中 'english_prompt' 可以作为问题或输入，而 'english_gtfa' 作为目标答案。此外，还有 'i18n_prompt' 提供上下文或背景信息，因此可以映射为 'input_context_key'。这些字段符合生成式单参考答案的特征。",
-        "description_zh": "以法语、西班牙语、中文等语言母语者编写的推理问题来评估大语言模型的基准。"
+        "description_zh": "以法语、西班牙语、中文等语言母语者编写的推理问题来评估大语言模型的基准。",
+        "radar_dimensions": [
+          "instruction",
+          "language"
+        ]
       }
     },
     {
@@ -7945,7 +8148,11 @@
           "input_label_key": "label"
         },
         "key_mapping_reason": "该数据集包含 pair 对 response，其中有两个可能的响应 response_A 和 response_B，以及一个标签 label，用于指示哪个响应更好，符合 '偏好/排序：成对比较' 的特征。",
-        "description_zh": "用于评估基于大语言模型的裁判在不同类别高挑战性回答对上表现的基准。"
+        "description_zh": "用于评估基于大语言模型的裁判在不同类别高挑战性回答对上表现的基准。",
+        "radar_dimensions": [
+          "instruction",
+          "language"
+        ]
       }
     },
     {
@@ -8011,7 +8218,10 @@
           "input_target_key": "Answer"
         },
         "key_mapping_reason": "数据集中包含 Problem 和 Answer 字段，问题和一个参考答案，这与生成式：单参考答案（key2_qa）任务类型相符。Solution 虽然存在，但不能确定它是主要的参考答案，因此将 Answer 作为主要答案映射。",
-        "description_zh": "AIME 2024：2024 年美国数学邀请赛试题，共 30 道题。"
+        "description_zh": "AIME 2024：2024 年美国数学邀请赛试题，共 30 道题。",
+        "radar_dimensions": [
+          "mathematics"
+        ]
       }
     },
     {
@@ -8108,7 +8318,10 @@
           "input_target_key": "solution_wocode"
         },
         "key_mapping_reason": "该数据集包含一个问题字段 'problem' 和一个解决方案字段 'solution_wocode'，符合生成式任务（单参考答案）的特征。其他字段如 'solution_code'，可能用于其他任务或分析，但 'solution_wocode' 作为文本形式的答案被选用。",
-        "description_zh": "包含超过 700 万道合成生成的小学数学题的数据集。"
+        "description_zh": "包含超过 700 万道合成生成的小学数学题的数据集。",
+        "radar_dimensions": [
+          "mathematics"
+        ]
       }
     },
     {
@@ -8180,7 +8393,10 @@
           "input_context_key": "knowledge concept description"
         },
         "key_mapping_reason": "题目标识中包含'question', 'option'(选项)和'answer'(答案)，适合选择题类型; 'knowledge concept description'可用作上下文。",
-        "description_zh": "评估数学任务中知识获取与泛化问题解决原则的基准。"
+        "description_zh": "评估数学任务中知识获取与泛化问题解决原则的基准。",
+        "radar_dimensions": [
+          "mathematics"
+        ]
       }
     },
     {
@@ -8243,7 +8459,10 @@
           "input_target_key": "target"
         },
         "key_mapping_reason": "这个数据集包含问题（input）和单个参考答案（target），符合生成式：单参考答案的特点。没有提供上下文字段，因此不需要映射 context。",
-        "description_zh": "GSM8K 数学推理数据集的更难版本，问题中的数字被替换为较大数值。"
+        "description_zh": "GSM8K 数学推理数据集的更难版本，问题中的数字被替换为较大数值。",
+        "radar_dimensions": [
+          "mathematics"
+        ]
       }
     },
     {
@@ -8334,7 +8553,10 @@
           "input_label_key": "correct"
         },
         "key_mapping_reason": "数据集包含题目字段 'question'、选项字段 'options'、以及单个正确答案字段 'correct'，符合选择题：单正确类型的特征。虽然有 'rationale' 字段，但这个字段不影响任务类型的判定。",
-        "description_zh": "带有解题理由注释的代数应用题数据集，采用多项选择形式。"
+        "description_zh": "带有解题理由注释的代数应用题数据集，采用多项选择形式。",
+        "radar_dimensions": [
+          "mathematics"
+        ]
       }
     },
     {
@@ -8398,7 +8620,11 @@
           "input_target_key": "Answer"
         },
         "key_mapping_reason": "数据集中包含一个问题和一个答案字段，符合生成式：单参考答案任务的要求。虽然有一个 'Answer_type' 字段，但不影响主要任务类型的确定，因为主要任务是问答任务，没有多参考答案或选择题的特征。",
-        "description_zh": "以定理为驱动的问答数据集，评估大语言模型运用定理解决科学问题的能力。"
+        "description_zh": "以定理为驱动的问答数据集，评估大语言模型运用定理解决科学问题的能力。",
+        "radar_dimensions": [
+          "mathematics",
+          "knowledge"
+        ]
       }
     },
     {
@@ -8456,7 +8682,10 @@
           "input_target_key": "answer"
         },
         "key_mapping_reason": "该数据集提供了一个问题 ('problem') 和一个单参考答案 ('answer')，典型的生成式单参考答案任务。没有提供多参考答案，因此认为是 key2_qa 类型。",
-        "description_zh": "评估语言模型准确回答简短事实性问题能力的基准。"
+        "description_zh": "评估语言模型准确回答简短事实性问题能力的基准。",
+        "radar_dimensions": [
+          "knowledge"
+        ]
       }
     },
     {
@@ -8572,7 +8801,10 @@
           "input_rejected_key": "l4-name"
         },
         "key_mapping_reason": "数据集中包含 'prompt' 字段，可能作为问题输入，'l3-name' 和 'l4-name' 可能对应两个选项，适用于偏好/排序任务。cate-idx 和 l2-name 不属于常用字段，因此选择最匹配的类型。",
-        "description_zh": "与新兴法规对齐的 AI 安全基准，涵盖运营、内容和安全风险。"
+        "description_zh": "与新兴法规对齐的 AI 安全基准，涵盖运营、内容和安全风险。",
+        "radar_dimensions": [
+          "safety"
+        ]
       }
     },
     {
@@ -8653,7 +8885,10 @@
           "input_question_key": "prompt"
         },
         "key_mapping_reason": "只有 'prompt' 字段可用于映射，这可能是一个偏好排序任务的数据集，由于缺乏更多信息，只能推测并映射到 'prompt'。 [WARNING: Missing keys: ['input_better_key', 'input_rejected_key']]",
-        "description_zh": "80,000 条可能被大语言模型拒绝的无害提示，覆盖 10 个常见拒绝类别。"
+        "description_zh": "80,000 条可能被大语言模型拒绝的无害提示，覆盖 10 个常见拒绝类别。",
+        "radar_dimensions": [
+          "safety"
+        ]
       }
     },
     {
@@ -8757,7 +8992,12 @@
           "input_context_key": "hint_included"
         },
         "key_mapping_reason": "该数据集提供了一个提示（prompt）和一组目标函数（target_functions），且这些目标可被视为回答，符合生成式单参考答案（key2_qa）的特征。hint_included字段可以作为上下文信息进行映射。",
-        "description_zh": "明确具有恶意意图的智能体任务，包括欺诈、网络犯罪和骚扰。"
+        "description_zh": "明确具有恶意意图的智能体任务，包括欺诈、网络犯罪和骚扰。",
+        "radar_dimensions": [
+          "instruction",
+          "safety",
+          "reasoning"
+        ]
       }
     },
     {
@@ -8821,7 +9061,10 @@
           "input_context_key": "input"
         },
         "key_mapping_reason": "该数据集提供了指令（instruction），输出（output），以及输入（input）。instruction 可以被看作是问题，output 是单一的参考答案，而 input 可以作为上下文。因此，这符合生成式单参考答案的任务特征。",
-        "description_zh": "用于文本生成中后门攻击的基准。"
+        "description_zh": "用于文本生成中后门攻击的基准。",
+        "radar_dimensions": [
+          "safety"
+        ]
       }
     },
     {
@@ -8908,7 +9151,10 @@
           "input_label_key": "category"
         },
         "key_mapping_reason": "题干和选项表明这是一个选择题；‘category’可以用来标识正确答案。因此这是单正确选择题，即 key3_q_choices_a 类型。没有明确的上下文字段，故不映射 `input_context_key`。",
-        "description_zh": "涵盖攻击性内容、偏见、违法活动及其他安全关键主题的多选题基准。"
+        "description_zh": "涵盖攻击性内容、偏见、违法活动及其他安全关键主题的多选题基准。",
+        "radar_dimensions": [
+          "safety"
+        ]
       }
     },
     {
@@ -8976,7 +9222,11 @@
           "input_context_key": "topic"
         },
         "key_mapping_reason": "题目中有一个 question，两个不同的 conversations 分别表示选择题中的选项和答案，适合选择题类型。而且有一个 topic 可以作为 context。",
-        "description_zh": "涵盖 10 个主题及约 10 个子主题的有害问题集。"
+        "description_zh": "涵盖 10 个主题及约 10 个子主题的有害问题集。",
+        "radar_dimensions": [
+          "knowledge",
+          "safety"
+        ]
       }
     },
     {
@@ -9052,7 +9302,10 @@
           "input_target_key": "response"
         },
         "key_mapping_reason": "该数据集包含提示（prompt）和对应的回答（response），适合生成任务中的单参考答案。在字段中没有明确表示是多参考答案，同时没有明确的选择项或对比项，因此推断为生成任务中的单参考答案。",
-        "description_zh": "从 AnthropicRedTeam 中采样、涵盖 14 个危害类别的提示集合。"
+        "description_zh": "从 AnthropicRedTeam 中采样、涵盖 14 个危害类别的提示集合。",
+        "radar_dimensions": [
+          "safety"
+        ]
       }
     },
     {
@@ -9136,7 +9389,10 @@
           "input_rejected_key": "ChatGPT_response"
         },
         "key_mapping_reason": "数据集中包含多个模型的响应，如 GPT4_response、ChatGPT_response 等，同时还有对应的 GPT4_harmful 和 ChatGPT_harmful 字段，这表明该数据集可能用于偏好比较。结合字段意义，选择两个模型的响应作为 better 和 rejected 做比较，因此属于偏好/排序：成对比较的任务类型。",
-        "description_zh": "包含 12 种危害类型提示的数据集，负责任的大语言模型不应回答这些提示。"
+        "description_zh": "包含 12 种危害类型提示的数据集，负责任的大语言模型不应回答这些提示。",
+        "radar_dimensions": [
+          "safety"
+        ]
       }
     },
     {
@@ -9362,7 +9618,10 @@
           "input_text_key": "text"
         },
         "key_mapping_reason": "数据集仅包含单个文本字段 'text'，与 'toxicity_ai' 和 'toxicity_human' 评分相关，似乎用于文本打分任务，符合 key1_text_score 类型。",
-        "description_zh": "关于少数群体的有毒和无害陈述集合。"
+        "description_zh": "关于少数群体的有毒和无害陈述集合。",
+        "radar_dimensions": [
+          "safety"
+        ]
       }
     },
     {
@@ -9428,7 +9687,10 @@
           "input_rejected_key": "rejected"
         },
         "key_mapping_reason": "这个数据集包含两个字段 'chosen' 和 'rejected'，这符合偏好/排序任务的特征，其中 'chosen' 是更好或被选中的内容，而 'rejected' 是被拒绝的内容。 [WARNING: Missing keys: ['input_question_key']]",
-        "description_zh": "人工生成和标注的红队对话数据。"
+        "description_zh": "人工生成和标注的红队对话数据。",
+        "radar_dimensions": [
+          "safety"
+        ]
       }
     },
     {
@@ -9495,7 +9757,10 @@
           "input_rejected_key": "challenging"
         },
         "key_mapping_reason": "The dataset includes fields 'prompt', 'continuation', and 'challenging', which align with the key3_q_a_rejected type where prompts are provided along with two continuations, one preferred over the other. 'prompt' serves as the input question, 'continuation' as the better choice, and 'challenging' as the rejected choice.",
-        "description_zh": "从大型英文网络语料库中衍生的 10 万条自然出现的句子级提示数据集。"
+        "description_zh": "从大型英文网络语料库中衍生的 10 万条自然出现的句子级提示数据集。",
+        "radar_dimensions": [
+          "safety"
+        ]
       }
     },
     {
@@ -9572,7 +9837,10 @@
           "input_label_key": "bias_type"
         },
         "key_mapping_reason": "stereoset 数据集包含一个目标句子 'target' 和一组选择句子 'sentences' ，每个选择句子的偏见类型 'bias_type' 都需要进行评估。这符合选择题的格式，其中 'target' 是问题，'sentences' 是选项，'bias_type' 提供一种答案。",
-        "description_zh": "用于测量四个领域刻板印象偏见的大规模英文自然数据集。"
+        "description_zh": "用于测量四个领域刻板印象偏见的大规模英文自然数据集。",
+        "radar_dimensions": [
+          "safety"
+        ]
       }
     },
     {
@@ -9651,7 +9919,10 @@
           "input_label_key": "label"
         },
         "key_mapping_reason": "Winogender 是一种 Winograd Schema Challenge 类型的数据集，使用句子和代词进行核心指代消解评估。句子提供了问题内容，代词作为选择项，标签表明正确的指代。因此最适合选择题：单正确格式。",
-        "description_zh": "仅在句子中某个代词性别上有所不同的句子对。"
+        "description_zh": "仅在句子中某个代词性别上有所不同的句子对。",
+        "radar_dimensions": [
+          "safety"
+        ]
       }
     },
     {
@@ -9665,6 +9936,10 @@
         "answer"
       ],
       "meta": {
+        "radar_dimensions": [
+          "mathematics",
+          "reasoning"
+        ],
         "bench_name": "gsm8k",
         "source": "bench_table",
         "aliases": [
@@ -9728,6 +10003,10 @@
         "solution"
       ],
       "meta": {
+        "radar_dimensions": [
+          "mathematics",
+          "reasoning"
+        ],
         "bench_name": "hendrycks-math",
         "source": "bench_table",
         "aliases": [
@@ -9896,7 +10175,10 @@
           "input_target_key": "code"
         },
         "key_mapping_reason": "text is the natural language problem description, code is the reference solution.",
-        "description_zh": "Mostly Basic Python Problems：974 道众包 Python 编程题，专为入门级程序员设计。"
+        "description_zh": "Mostly Basic Python Problems：974 道众包 Python 编程题，专为入门级程序员设计。",
+        "radar_dimensions": [
+          "coding"
+        ]
       }
     },
     {
@@ -9964,7 +10246,10 @@
           "input_target_key": "canonical_solution"
         },
         "key_mapping_reason": "instruct_prompt is the instruction-following prompt, canonical_solution is the reference implementation.",
-        "description_zh": "BigCodeBench：包含 1,140 个函数级编程任务的高难度代码基准，需要使用多样化的库。"
+        "description_zh": "BigCodeBench：包含 1,140 个函数级编程任务的高难度代码基准，需要使用多样化的库。",
+        "radar_dimensions": [
+          "coding"
+        ]
       }
     },
     {
@@ -10036,7 +10321,11 @@
           "input_label_key": "label"
         },
         "key_mapping_reason": "ctx is the context/question, endings is the list of 4 possible continuations, label is the correct index.",
-        "description_zh": "HellaSwag：常识自然语言推理基准，模型需选择句子最合理的延续方式。"
+        "description_zh": "HellaSwag：常识自然语言推理基准，模型需选择句子最合理的延续方式。",
+        "radar_dimensions": [
+          "knowledge",
+          "reasoning"
+        ]
       }
     },
     {
@@ -10104,7 +10393,11 @@
           "input_context_key": "passage"
         },
         "key_mapping_reason": "question is the yes/no question, passage is the context, answer is the boolean ground truth.",
-        "description_zh": "BoolQ：是/否类阅读理解数据集，包含来自维基百科段落的 15,942 个示例。"
+        "description_zh": "BoolQ：是/否类阅读理解数据集，包含来自维基百科段落的 15,942 个示例。",
+        "radar_dimensions": [
+          "knowledge",
+          "language"
+        ]
       }
     },
     {
@@ -10212,7 +10505,10 @@
           "input_target_key": "target"
         },
         "key_mapping_reason": "input is the question/task description, target is the correct answer.",
-        "description_zh": "BIG-Bench Hard：BIG-Bench 中 23 个具有挑战性的任务，语言模型在这些任务上表现低于人类。"
+        "description_zh": "BIG-Bench Hard：BIG-Bench 中 23 个具有挑战性的任务，语言模型在这些任务上表现低于人类。",
+        "radar_dimensions": [
+          "reasoning"
+        ]
       }
     },
     {
@@ -10283,7 +10579,10 @@
           "input_target_key": "answer"
         },
         "key_mapping_reason": "question is the math problem, answer is the numerical answer.",
-        "description_zh": "AIME 2025：2025 年美国数学邀请赛试题，涵盖第一部分和第二部分。"
+        "description_zh": "AIME 2025：2025 年美国数学邀请赛试题，涵盖第一部分和第二部分。",
+        "radar_dimensions": [
+          "mathematics"
+        ]
       }
     },
     {
@@ -10360,7 +10659,10 @@
           "input_label_key": "cop"
         },
         "key_mapping_reason": "question is the medical question, opa-opd are the four options, cop is the correct option index (0-3).",
-        "description_zh": "MedMCQA：大规模多学科医学多选问答数据集，包含来自医学入学考试的 19.4 万道题目。"
+        "description_zh": "MedMCQA：大规模多学科医学多选问答数据集，包含来自医学入学考试的 19.4 万道题目。",
+        "radar_dimensions": [
+          "knowledge"
+        ]
       }
     },
     {
@@ -10432,7 +10734,10 @@
           "input_context_key": "context"
         },
         "key_mapping_reason": "question is the research question, context contains the abstract, final_decision is yes/no/maybe.",
-        "description_zh": "PubMedQA：生物医学研究问答数据集，包含来自 PubMed 摘要的 1,000 个专家标注问答实例。"
+        "description_zh": "PubMedQA：生物医学研究问答数据集，包含来自 PubMed 摘要的 1,000 个专家标注问答实例。",
+        "radar_dimensions": [
+          "knowledge"
+        ]
       }
     },
     {
@@ -10501,7 +10806,10 @@
           "input_label_key": "answer_idx"
         },
         "key_mapping_reason": "question is the clinical question, options is a dict of A-D choices, answer_idx is the correct option key.",
-        "description_zh": "MedQA USMLE：来自美国执业医师资格考试的四选项多选题，涵盖临床知识。"
+        "description_zh": "MedQA USMLE：来自美国执业医师资格考试的四选项多选题，涵盖临床知识。",
+        "radar_dimensions": [
+          "knowledge"
+        ]
       }
     },
     {
@@ -10565,7 +10873,10 @@
           "input_target_key": "label"
         },
         "key_mapping_reason": "input is the financial question with context, label is the correct answer.",
-        "description_zh": "ConvFinQA：对话式金融问答，需要对财务报告进行数值推理。"
+        "description_zh": "ConvFinQA：对话式金融问答，需要对财务报告进行数值推理。",
+        "radar_dimensions": [
+          "knowledge"
+        ]
       }
     },
     {
@@ -10628,7 +10939,10 @@
           "input_target_key": "answer"
         },
         "key_mapping_reason": "question is the search query, answer is a list of acceptable short answers.",
-        "description_zh": "Natural Questions Open：来源于谷歌搜索查询、以维基百科为答案依据的开放域问答数据集。"
+        "description_zh": "Natural Questions Open：来源于谷歌搜索查询、以维基百科为答案依据的开放域问答数据集。",
+        "radar_dimensions": [
+          "knowledge"
+        ]
       }
     },
     {
@@ -10704,7 +11018,10 @@
           "input_context_key": "hint"
         },
         "key_mapping_reason": "question is the science question, choices is the list of options, answer is the correct index, hint provides additional context.",
-        "description_zh": "ScienceQA：来自小学和高中课程的 2.1 万道多模态多项选择科学题。"
+        "description_zh": "ScienceQA：来自小学和高中课程的 2.1 万道多模态多项选择科学题。",
+        "radar_dimensions": [
+          "knowledge"
+        ]
       }
     },
     {
@@ -10770,7 +11087,11 @@
           "input_label_key": "answerKey"
         },
         "key_mapping_reason": "question is the science question, choices contains the options list, answerKey is the correct letter.",
-        "description_zh": "ARC 挑战集：1,172 道需要推理而非简单检索的高难度科学考试题。"
+        "description_zh": "ARC 挑战集：1,172 道需要推理而非简单检索的高难度科学考试题。",
+        "radar_dimensions": [
+          "knowledge",
+          "reasoning"
+        ]
       }
     }
   ]

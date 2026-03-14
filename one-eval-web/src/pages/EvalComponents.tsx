@@ -951,7 +951,7 @@ export const WorkflowBlock = ({ title, icon: Icon, nodes, activeNodeId, status, 
     };
     
     const theme = themes[colorTheme];
-    const isBlockActive = nodes.some(n => n.id === activeNodeId) || status === "completed" || status === "interrupted"; 
+    const isBlockActive = nodes.some(n => n.id === activeNodeId) || status === "completed" || status === "interrupted" || status === "running"; 
     
     // Auto-expand if active or completed, but also if it contains meaningful content (hacky check: if status is idle, collapse)
     // Actually just use isBlockActive logic which is fine.
@@ -991,27 +991,39 @@ export const WorkflowBlock = ({ title, icon: Icon, nodes, activeNodeId, status, 
                     {/* Connecting Line */}
                     <div className="absolute top-1/2 left-6 right-6 h-0.5 bg-slate-100 -z-0" />
                     
-                    {nodes.map((node) => {
+                    {nodes.map((node, index) => {
                         const isNodeActive = activeNodeId === node.id;
-                        
+                        // Determine if node is "passed" (completed)
+                        // A simple heuristic: if activeNodeId is later in the list than this node
+                        const activeIndex = nodes.findIndex(n => n.id === activeNodeId);
+                        const isPassed = activeIndex > -1 && index < activeIndex;
+                        const isCompletedStatus = status === "completed";
+
                         return (
                             <div key={node.id} className="relative z-10 flex flex-col items-center gap-3 group/node cursor-pointer">
                                 <motion.div 
                                     className={cn(
                                         "w-10 h-10 rounded-full flex items-center justify-center border-4 transition-all duration-300 bg-white shadow-sm relative",
-                                        isNodeActive ? `${theme.nodeActive} shadow-lg scale-110` : "border-slate-100 text-slate-300"
+                                        isNodeActive 
+                                            ? `${theme.nodeActive} shadow-lg scale-110` 
+                                            : (isPassed || isCompletedStatus) 
+                                                ? `${theme.text.replace('text-', 'border-')} ${theme.text}` 
+                                                : "border-slate-100 text-slate-300"
                                     )}
                                     whileHover={{ scale: 1.1 }}
                                 >
                                     {isNodeActive && (
                                         <span className="absolute inset-0 rounded-full animate-ping opacity-75 bg-current" />
                                     )}
-                                    <div className={cn("w-2 h-2 rounded-full relative z-10", isNodeActive ? "bg-white" : "bg-slate-300")} />
+                                    {(isPassed || isCompletedStatus) && !isNodeActive && (
+                                         <div className={cn("w-2 h-2 rounded-full relative z-10", theme.nodeActive.split(' ')[0])} />
+                                    )}
+                                    <div className={cn("w-2 h-2 rounded-full relative z-10", isNodeActive ? "bg-white" : ((isPassed || isCompletedStatus) ? "hidden" : "bg-slate-300"))} />
                                 </motion.div>
                                 <div className="flex flex-col items-center">
                                     <span className={cn(
                                         "text-[10px] font-bold uppercase tracking-wider transition-colors px-2 py-1 rounded-md",
-                                        isNodeActive ? `${theme.iconBg} ${theme.text}` : "text-slate-400"
+                                        isNodeActive ? `${theme.iconBg} ${theme.text}` : ((isPassed || isCompletedStatus) ? theme.text : "text-slate-400")
                                     )}>
                                         {node.label}
                                     </span>

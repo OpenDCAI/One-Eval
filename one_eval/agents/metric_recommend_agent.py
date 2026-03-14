@@ -356,6 +356,13 @@ class MetricRecommendAgent(CustomAgent):
                 self._ensure_primary(validated)
                 state.metric_plan[bench.bench_name] = validated
 
+        # === FIX: Ensure metric_plan is visible in bench.meta for Frontend ===
+        for bench in state.benches:
+            if bench.bench_name in state.metric_plan:
+                if not bench.meta:
+                    bench.meta = {}
+                bench.meta["metric_plan"] = state.metric_plan[bench.bench_name]
+
         state.result[self.role_name] = {
             "metric_plan": state.metric_plan,
             "registry_hits": list(registry_suggestions.keys()), # 记录哪些有规则建议

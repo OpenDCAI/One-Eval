@@ -323,20 +323,20 @@ export const ReportView = ({ report, lang }: { report: ReportData, lang: Lang })
                     <div>
                         <div className="flex items-center gap-2 mb-2">
                             <Activity className="w-5 h-5 text-emerald-400" />
-                            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{tt("评测报告", "Evaluation Report")}</span>
+                            <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">{tt("评测报告", "Evaluation Report")}</span>
                         </div>
-                        <h1 className="text-3xl font-bold mb-2">{report.model}</h1>
-                        <div className="text-slate-300 text-sm max-w-xl leading-relaxed">
+                        <h1 className="text-3xl font-bold mb-2 text-white">{report.model}</h1>
+                        <div className="text-white text-sm max-w-xl leading-relaxed">
                             <SimpleMarkdown content={report.llm_summary || tt("暂无摘要。", "No summary available.")} />
                         </div>
                     </div>
                     
                     <div className="text-right">
-                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">{tt("综合得分", "Overall Score")}</div>
+                        <div className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1">{tt("综合得分", "Overall Score")}</div>
                         <div className="text-5xl font-black font-mono text-emerald-400 tracking-tight">
                             {report.overall.score.toFixed(4)}
                         </div>
-                        <div className="text-xs text-slate-500 mt-2">
+                        <div className="text-xs text-slate-400 mt-2">
                             {tt("生成时间", "Generated at")} {new Date(report.generated_at * 1000).toLocaleDateString()}
                         </div>
                     </div>
