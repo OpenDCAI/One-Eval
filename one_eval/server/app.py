@@ -605,6 +605,7 @@ async def run_graph_background(thread_id: str, input_state: Any, resume_command:
 def _launch_graph_task(thread_id: str, input_state: Any = None, resume_command: Optional[Command] = None):
     old = RUNNING_WORKFLOW_TASKS.get(thread_id)
     if old and not old.done():
+        log.warning(f"Cancelling existing task for {thread_id} because a new task is being launched. New State: {bool(input_state)}, Resume: {resume_command}")
         old.cancel()
     task = asyncio.create_task(run_graph_background(thread_id, input_state, resume_command=resume_command))
     RUNNING_WORKFLOW_TASKS[thread_id] = task
@@ -614,10 +615,14 @@ def _launch_graph_task(thread_id: str, input_state: Any = None, resume_command: 
 async def stop_workflow(thread_id: str):
     task = RUNNING_WORKFLOW_TASKS.get(thread_id)
     if not task:
+        log.info(f"Stop request for {thread_id}, but no running task found.")
         return {"thread_id": thread_id, "status": "idle", "detail": "no running workflow"}
     if task.done():
         RUNNING_WORKFLOW_TASKS.pop(thread_id, None)
+        log.info(f"Stop request for {thread_id}, task already finished.")
         return {"thread_id": thread_id, "status": "idle", "detail": "workflow already finished"}
+    
+    log.warning(f"Stop request received for {thread_id}. Cancelling task...")
     task.cancel()
     return {"thread_id": thread_id, "status": "stopping"}
 

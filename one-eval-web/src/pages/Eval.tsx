@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { ChatPanel, WorkflowBlock, SummaryPanel, Bench, WorkflowState, BenchCard, GalleryModal } from "./EvalComponents";
 import { SimpleMarkdown } from "@/components/ui/simple-markdown";
 import { useLang } from "@/lib/i18n";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 // --- Types ---
 interface StatusResponse {
@@ -97,6 +98,35 @@ export const Eval = () => {
   const [manualModelPath, setManualModelPath] = useState<string>("");
   const [manualBenches, setManualBenches] = useState<Bench[]>([]);
   const [editMetricPlan, setEditMetricPlan] = useState<Record<string, any[]> | null>(null);
+  const [addingMetricBench, setAddingMetricBench] = useState<string | null>(null);
+  const [metricSearch, setMetricSearch] = useState("");
+
+  const handleAddMetric = (benchName: string, metric: MetricMeta) => {
+      const newPlan = { ...(editMetricPlan || state?.metric_plan || {}) };
+      // Deep copy to avoid mutation
+      Object.keys(newPlan).forEach(k => {
+          if (!Array.isArray(newPlan[k])) newPlan[k] = [];
+          else newPlan[k] = [...newPlan[k]];
+      });
+      
+      if (!newPlan[benchName]) newPlan[benchName] = [];
+      
+      // Check duplicate
+      if (newPlan[benchName].some((m: any) => m.name === metric.name)) {
+          return;
+      }
+      
+      newPlan[benchName].push({
+          name: metric.name,
+          priority: "secondary", // Default
+          desc: metric.desc,
+          args: {}
+      });
+      
+      setEditMetricPlan(newPlan);
+      setAddingMetricBench(null);
+      setMetricSearch("");
+  };
   
   // Chat State
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -265,17 +295,6 @@ export const Eval = () => {
     return () => clearInterval(interval);
   }, [threadId, status, isResuming, t]);
 
-  // Init Edit Benches when entering interrupted state (handled in polling now for better control)
-  // But also fallback here
-  useEffect(() => {
-      if (status === "interrupted" && state?.benches && editBenches.length === 0) {
-          setEditBenches(state.benches);
-      }
-      if (status === "interrupted" && currentNode?.includes("MetricReviewNode") && state?.metric_plan && !editMetricPlan) {
-          setEditMetricPlan(state.metric_plan);
-      }
-  }, [status, state?.benches, state?.metric_plan, currentNode]);
-
   // Sync state and params
   useEffect(() => {
       if (!state) return;
@@ -301,6 +320,49 @@ export const Eval = () => {
           if (found) setSelectedModel(found);
       }
   }, [state, availableModels.length, selectedModel]);
+
+  // Auto-expand results
+  useEffect(() => {
+    if (!state?.benches) return;
+
+    // Expand Metric Results when they are ready (success)
+    const newExpandedMetricResults = [...expandedMetricResults];
+    let changed = false;
+    
+    state.benches.forEach((b) => {
+        const hasResult = !!b.meta?.eval_result;
+        const isAlreadyExpanded = newExpandedMetricResults.includes(b.bench_name);
+        
+        if (hasResult && !isAlreadyExpanded) {
+            newExpandedMetricResults.push(b.bench_name);
+            changed = true;
+        }
+    });
+    
+    if (changed) {
+        setExpandedMetricResults(newExpandedMetricResults);
+    }
+
+    // Expand Bench Cards if they are running or just finished
+    const newExpandedResults = [...expandedResults];
+    let resultsChanged = false;
+    state.benches.forEach((b, idx) => {
+         const isRunning = b.eval_status === "running";
+         const isSuccess = b.eval_status === "success";
+         const isExpanded = newExpandedResults.includes(idx);
+         
+         // Auto expand running or success benches if not already expanded
+         if ((isRunning || isSuccess) && !isExpanded) {
+             newExpandedResults.push(idx);
+             resultsChanged = true;
+         }
+    });
+
+    if (resultsChanged) {
+        setExpandedResults(newExpandedResults);
+    }
+
+  }, [state?.benches]);
 
   const handleStart = async (userQuery: string) => {
     if (!userQuery) return;
@@ -732,7 +794,7 @@ export const Eval = () => {
       const nodes = currentNode ? [currentNode] : [];
       const isSearchActive = ["QueryUnderstandNode", "BenchSearchNode", "HumanReviewNode"].some(n => nodes.some(cn => cn.includes(n)));
       const isPrepActive = ["DatasetStructureNode", "BenchConfigRecommendNode", "BenchTaskInferNode", "DownloadNode"].some(n => nodes.some(cn => cn.includes(n)));
-      const isExecActive = ["PreEvalReviewNode", "DataFlowEvalNode", "MetricRecommendNode", "MetricReviewNode", "ScoreCalcNode"].some(n => nodes.some(cn => cn.includes(n)));
+      const isExecActive = ["PreEvalReviewNode", "DataFlowEvalNode", "MetricRecommendNode", "MetricReviewNode", "ScoreCalcNode", "ReportGenNode"].some(n => nodes.some(cn => cn.includes(n)));
 
       if (status === 'completed') return 'completed';
       
@@ -1515,7 +1577,8 @@ export const Eval = () => {
                             { id: "DataFlowEvalNode", label: t({ zh: "评测", en: "Evaluation" }) },
                             { id: "MetricRecommendNode", label: t({ zh: "指标", en: "Metrics" }) },
                             { id: "MetricReviewNode", label: t({ zh: "复核", en: "Review" }) },
-                            { id: "ScoreCalcNode", label: t({ zh: "计分", en: "Scoring" }) }
+                            { id: "ScoreCalcNode", label: t({ zh: "计分", en: "Scoring" }) },
+                            { id: "ReportGenNode", label: t({ zh: "报告", en: "Report" }) }
                         ]}
                    >
                        <div className="space-y-6">
@@ -1736,7 +1799,7 @@ export const Eval = () => {
                                </div>
                            </div>
                            {/* Metric Review Interrupt Block */}
-                           {status === "interrupted" && currentNode?.includes("MetricReviewNode") && (editMetricPlan || state?.metric_plan) && (
+                           {status === "interrupted" && currentNode?.includes("MetricReviewNode") && (editMetricPlan || (state?.metric_plan && Object.keys(state.metric_plan).length > 0)) && (
                                <div className="bg-white p-6 rounded-xl border-2 border-amber-200 shadow-lg shadow-amber-50 animate-in fade-in slide-in-from-bottom-4 duration-500">
                                    <div className="flex items-center justify-between mb-4">
                                        <div className="flex items-center gap-3">
@@ -1761,7 +1824,62 @@ export const Eval = () => {
                                            <div key={benchName} className="border border-slate-200 rounded-lg p-4 bg-slate-50/50">
                                                <div className="flex items-center justify-between mb-3">
                                                    <span className="font-bold text-slate-700">{benchName}</span>
-                                                  <span className="text-xs font-bold text-slate-400 bg-white px-2 py-1 rounded border border-slate-100">{t({ zh: `${metrics.length} 个指标`, en: `${metrics.length} metrics` })}</span>
+                                                   <div className="flex items-center gap-2 relative">
+                                                       <span className="text-xs font-bold text-slate-400 bg-white px-2 py-1 rounded border border-slate-100">{t({ zh: `${metrics.length} 个指标`, en: `${metrics.length} metrics` })}</span>
+                                                       
+                                                       {/* Add Metric Button */}
+                                                       <Button 
+                                                           variant="ghost" 
+                                                           size="icon" 
+                                                           className="h-6 w-6 text-slate-400 hover:text-emerald-500 hover:bg-emerald-50"
+                                                           onClick={() => {
+                                                               setAddingMetricBench(addingMetricBench === benchName ? null : benchName);
+                                                               setMetricSearch("");
+                                                           }}
+                                                       >
+                                                           <Plus className="w-4 h-4" />
+                                                       </Button>
+
+                                                       {/* Add Metric Dropdown */}
+                                                       {addingMetricBench === benchName && (
+                                                           <div className="absolute top-8 right-0 z-50 w-64 bg-white border border-slate-200 rounded-lg shadow-xl p-2 animate-in fade-in zoom-in-95 duration-200">
+                                                               <div className="relative mb-2">
+                                                                   <Search className="absolute left-2 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                                                                   <Input 
+                                                                       placeholder={t({ zh: "搜索指标...", en: "Search metrics..." })} 
+                                                                       className="h-8 pl-8 text-xs"
+                                                                       value={metricSearch}
+                                                                       onChange={(e) => setMetricSearch(e.target.value)}
+                                                                       autoFocus
+                                                                   />
+                                                               </div>
+                                                               <div className="max-h-48 overflow-y-auto space-y-1">
+                                                                   {metricRegistry
+                                                                       .filter(m => 
+                                                                           (m.name.toLowerCase().includes(metricSearch.toLowerCase()) || 
+                                                                           m.desc.toLowerCase().includes(metricSearch.toLowerCase())) &&
+                                                                           !metrics.some(existing => existing.name === m.name)
+                                                                       )
+                                                                       .map((m) => (
+                                                                           <div 
+                                                                               key={m.name} 
+                                                                               className="flex flex-col p-2 hover:bg-slate-50 rounded cursor-pointer group"
+                                                                               onClick={() => handleAddMetric(benchName, m)}
+                                                                           >
+                                                                               <span className="text-xs font-bold text-slate-700">{m.name}</span>
+                                                                               <span className="text-[10px] text-slate-400 line-clamp-1">{m.desc}</span>
+                                                                           </div>
+                                                                       ))
+                                                                   }
+                                                                   {metricRegistry.filter(m => (m.name.toLowerCase().includes(metricSearch.toLowerCase()) || m.desc.toLowerCase().includes(metricSearch.toLowerCase())) && !metrics.some(existing => existing.name === m.name)).length === 0 && (
+                                                                       <div className="p-2 text-center text-xs text-slate-400">
+                                                                           {t({ zh: "无匹配指标", en: "No metrics found" })}
+                                                                       </div>
+                                                                   )}
+                                                               </div>
+                                                           </div>
+                                                       )}
+                                                   </div>
                                                </div>
                                                <div className="flex flex-wrap gap-3">
                                                    {metrics.map((m, idx) => {
@@ -1771,14 +1889,7 @@ export const Eval = () => {
                                                                <div className="flex justify-between items-start">
                                                                     <div className="flex items-center gap-2">
                                                                        <span className="font-bold text-slate-800">{m.name}</span>
-                                                                       {m.priority && (
-                                                                           <span className={cn(
-                                                                               "text-[10px] px-1.5 py-0.5 rounded uppercase tracking-wider font-bold",
-                                                                               m.priority === "primary" ? "bg-violet-100 text-violet-600" : "bg-slate-100 text-slate-500"
-                                                                           )}>
-                                                                               {m.priority}
-                                                                           </span>
-                                                                       )}
+
                                                                     </div>
                                                                     {/* Delete Button */}
                                                                     <Button 
@@ -1952,53 +2063,82 @@ export const Eval = () => {
                                                                 {expandedMetricResults.includes(b.bench_name) ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                                                             </div>
                                                             {expandedMetricResults.includes(b.bench_name) && (
-                                                                <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-top-1 duration-200">
-                                                                    {res ? Object.entries(res)
-                                                                        .filter(([key]) => !["bench_name_or_prefix",
-                                                                             "metric", 
-                                                                             "type", 
-                                                                             "valid_samples", 
-                                                                             "total_samples", 
-                                                                             "metric_summary_analyst", 
-                                                                             "case_study_analyst"
-                                                                            ].includes(key))
-                                                                        .map(([key, value]) => {
-                                                                        const meta = metricRegistry.find(m => m.name === key || m.aliases.includes(key));
-                                                                        return (
-                                                                            <div key={key} className="bg-white rounded-lg border border-slate-200 p-3 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
-                                                                                <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-slate-50 to-transparent opacity-50 rounded-bl-full pointer-events-none" />
-                                                                                
-                                                                                <div className="flex justify-between items-start mb-2 relative z-10">
-                                                                                    <div className="flex flex-col">
-                                                                                        <span className="text-xs font-bold text-slate-700 flex items-center gap-2">
-                                                                                            {key}
-                                                                                        </span>
-                                                                                        {meta?.desc && (
-                                                                                            <span className="text-[10px] text-slate-400 mt-0.5 line-clamp-1" title={meta.desc}>
-                                                                                                {meta.desc}
-                                                                                            </span>
-                                                                                        )}
-                                                                                    </div>
-                                                                                    <span className="font-mono font-bold text-lg text-emerald-600">
-                                                                                        {(() => {
-                                                                                            const v = typeof value === 'string' ? parseFloat(value) : value;
-                                                                                            if (typeof v === 'number' && !isNaN(v)) {
-                                                                                                return Number.isInteger(v) ? v : v.toFixed(4);
-                                                                                            }
-                                                                                            return String(value);
-                                                                                        })()}
-                                                                                    </span>
-                                                                                </div>
-                                                                                
-                                                                                {meta?.usage && (
-                                                                                    <div className="mt-2 pt-2 border-t border-slate-50 text-[10px] text-slate-500 relative z-10">
-                                                                                        <span className="font-bold text-slate-300 uppercase mr-1">Usage:</span>
-                                                                                        {meta.usage}
-                                                                                    </div>
-                                                                                )}
+                                                                <div className="animate-in fade-in slide-in-from-top-1 duration-200">
+                                                                    {res ? (
+                                                                        <>
+                                                                            <div className="h-64 w-full mb-4 bg-white p-4 rounded-lg border border-slate-100">
+                                                                                <ResponsiveContainer width="100%" height="100%">
+                                                                                    <BarChart
+                                                                                        data={Object.entries(res)
+                                                                                            .filter(([key]) => !["bench_name_or_prefix", "metric", "type", "valid_samples", "total_samples", "metric_summary_analyst", "case_study_analyst"].includes(key))
+                                                                                            .map(([key, value]) => ({
+                                                                                                name: key,
+                                                                                                score: typeof value === 'number' ? value : parseFloat(String(value)) || 0
+                                                                                            }))}
+                                                                                        margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                                                                                    >
+                                                                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                                                                                        <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={{ stroke: '#cbd5e1' }} tickLine={false} />
+                                                                                        <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={{ stroke: '#cbd5e1' }} tickLine={false} />
+                                                                                        <Tooltip 
+                                                                                            contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                                                                            itemStyle={{ fontSize: '12px', color: '#334155' }}
+                                                                                            labelStyle={{ fontSize: '12px', fontWeight: 'bold', color: '#0f172a', marginBottom: '4px' }}
+                                                                                        />
+                                                                                        <Bar dataKey="score" fill="#10b981" radius={[4, 4, 0, 0]} barSize={40} />
+                                                                                    </BarChart>
+                                                                                </ResponsiveContainer>
                                                                             </div>
-                                                                        );
-                                                                    }) : (
+                                                                            <div className="grid grid-cols-2 gap-3">
+                                                                                {Object.entries(res)
+                                                                                    .filter(([key]) => !["bench_name_or_prefix",
+                                                                                         "metric", 
+                                                                                         "type", 
+                                                                                         "valid_samples", 
+                                                                                         "total_samples", 
+                                                                                         "metric_summary_analyst", 
+                                                                                         "case_study_analyst"
+                                                                                        ].includes(key))
+                                                                                    .map(([key, value]) => {
+                                                                                    const meta = metricRegistry.find(m => m.name === key || m.aliases.includes(key));
+                                                                                    return (
+                                                                                        <div key={key} className="bg-white rounded-lg border border-slate-200 p-3 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+                                                                                            <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-bl from-slate-50 to-transparent opacity-50 rounded-bl-full pointer-events-none" />
+                                                                                            
+                                                                                            <div className="flex justify-between items-start mb-2 relative z-10">
+                                                                                                <div className="flex flex-col">
+                                                                                                    <span className="text-xs font-bold text-slate-700 flex items-center gap-2">
+                                                                                                        {key}
+                                                                                                    </span>
+                                                                                                    {meta?.desc && (
+                                                                                                        <span className="text-[10px] text-slate-400 mt-0.5 line-clamp-1" title={meta.desc}>
+                                                                                                            {meta.desc}
+                                                                                                        </span>
+                                                                                                    )}
+                                                                                                </div>
+                                                                                                <span className="font-mono font-bold text-lg text-emerald-600">
+                                                                                                    {(() => {
+                                                                                                        const v = typeof value === 'string' ? parseFloat(value) : value;
+                                                                                                        if (typeof v === 'number' && !isNaN(v)) {
+                                                                                                            return Number.isInteger(v) ? v : v.toFixed(4);
+                                                                                                        }
+                                                                                                        return String(value);
+                                                                                                    })()}
+                                                                                                </span>
+                                                                                            </div>
+                                                                                            
+                                                                                            {meta?.usage && (
+                                                                                                <div className="mt-2 pt-2 border-t border-slate-50 text-[10px] text-slate-500 relative z-10">
+                                                                                                    <span className="font-bold text-slate-300 uppercase mr-1">Usage:</span>
+                                                                                                    {meta.usage}
+                                                                                                </div>
+                                                                                            )}
+                                                                                        </div>
+                                                                                    );
+                                                                                })}
+                                                                            </div>
+                                                                        </>
+                                                                    ) : (
                                                                         <div className="col-span-2 text-xs text-slate-400 italic p-2">{t({ zh: "暂无详细指标结果。", en: "No detailed metrics available yet." })}</div>
                                                                     )}
                                                                 </div>

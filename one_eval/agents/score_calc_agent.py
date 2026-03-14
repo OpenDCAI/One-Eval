@@ -155,9 +155,19 @@ class ScoreCalcAgent(CustomAgent):
         computed: List[str] = []
         failed: List[Dict[str, Any]] = []
 
-        for bench in benches:
+        total_benches = len(benches)
+        log.info(f"Start processing {total_benches} benches for score calculation.")
+
+        for i, bench in enumerate(benches):
             bench_name = bench.bench_name
+            log.info(f"[{bench_name}] Processing ({i+1}/{total_benches})...")
             
+            # Check eval status first
+            if getattr(bench, "eval_status", None) == "failed":
+                log.warning(f"[{bench_name}] eval_status is 'failed', skipping score calculation.")
+                failed.append({"bench": bench_name, "error": "Previous evaluation failed"})
+                continue
+
             # === 自动关联 DataFlowEvalNode 的结果 ===
             if bench.meta and bench.meta.get("eval_detail_path"):
                 detail_path = bench.meta["eval_detail_path"]
@@ -167,9 +177,12 @@ class ScoreCalcAgent(CustomAgent):
                 # MetricRunner 会优先读取 records_path
                 bench.meta["artifact_paths"]["records_path"] = detail_path
                 log.info(f"[{bench_name}] Linked eval_detail_path to artifact_paths['records_path']: {detail_path}")
+            else:
+                log.warning(f"[{bench_name}] Missing eval_detail_path. MetricRunner might fail or fallback to raw dataset.")
 
             plan = metric_plan.get(bench_name, []) or []
             if not plan:
+                log.warning(f"[{bench_name}] No metric plan found, skipping.")
                 continue
 
             runtime_plan = copy.deepcopy(plan)
@@ -182,7 +195,14 @@ class ScoreCalcAgent(CustomAgent):
                 args["language"] = report_lang
                 metric_cfg["args"] = args
 
-            bench_result = runner.run_bench(bench, runtime_plan)
+            log.info(f"[{bench_name}] Running metrics: {[p.get('name') for p in runtime_plan if isinstance(p, dict)]}")
+            
+            try:
+                bench_result = runner.run_bench(bench, runtime_plan)
+            except Exception as e:
+                log.error(f"[{bench_name}] Critical error in runner.run_bench: {e}", exc_info=True)
+                bench_result = {"error": str(e)}
+                
             state.eval_results[bench_name] = bench_result
 
             metrics = bench_result.get("metrics", {})
