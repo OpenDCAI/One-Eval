@@ -2,11 +2,6 @@
   <!-- TODO: Add Project Logo Here -->
   <img src="./static/logo/logo.png" width="360" alt="One-Eval Logo" />
 
-  <h4 align="center">
-    <i>✨ One Eval, Evaluation in One ✨</i>
-  </h4>
-  <br>
-
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-2F80ED?style=flat-square&logo=apache&logoColor=white)](./LICENSE)
 [![Repo Size](https://img.shields.io/github/repo-size/OpenDCAI/One-Eval?color=green)](https://github.com/OpenDCAI/One-Eval)
@@ -17,6 +12,11 @@
 
 </div>
 
+  <h4 align="center">
+    <i>✨ One Eval, Evaluation in One ✨</i>
+  </h4>
+  <br>
+  
 One-Eval is an automated Agent-based evaluation framework for Large Language Models, designed to achieve **NL2Eval**: automatically orchestrating evaluation workflows and generating reports from natural language requirements.\
 Built on [DataFlow](https://github.com/OpenDCAI/DataFlow) and [LangGraph](https://github.com/langchain-ai/langgraph), it emphasizes a traceable, interruptible, and scalable evaluation loop.
 

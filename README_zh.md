@@ -2,11 +2,6 @@
   <!-- TODO: 在这里放项目 Logo -->
   <img src="./static/logo/logo.png" width="360" alt="One-Eval Logo" />
 
-  <h4 align="center">
-    <i>✨ 一句话，实现模型评估 ✨</i>
-  </h4>
-  <br>
-
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-Apache_2.0-2F80ED?style=flat-square&logo=apache&logoColor=white)](./LICENSE)
 [![Repo Size](https://img.shields.io/github/repo-size/OpenDCAI/One-Eval?color=green)](https://github.com/OpenDCAI/One-Eval)
@@ -17,6 +12,11 @@
 
 </div>
 
+  <h4 align="center">
+    <i>✨ 一句话，实现模型评估 ✨</i>
+  </h4>
+  <br>
+  
 One-Eval 是一个面向大模型的自动化评测框架，核心目标是实现 **NL2Eval**：一句话从用户需求到优雅的模型评测报告。  
 项目基于 [DataFlow](https://github.com/OpenDCAI/DataFlow) 与 [LangGraph](https://github.com/langchain-ai/langgraph) 构建，用最简单直观的方式帮助你优雅地完成模型评测。
 
