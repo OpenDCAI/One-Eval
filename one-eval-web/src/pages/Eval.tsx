@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, type ReactNode, type MouseEvent } from "react";
 import axios from "axios";
 import { motion } from "framer-motion";
 import { 
@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { ChatPanel, WorkflowBlock, SummaryPanel, Bench, WorkflowState, BenchCard, GalleryModal } from "./EvalComponents";
 import { SimpleMarkdown } from "@/components/ui/simple-markdown";
 import { useLang } from "@/lib/i18n";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 // --- Types ---
 interface StatusResponse {
@@ -39,7 +39,7 @@ interface HistoryItem {
 interface ChatMessage {
     id: string;
     role: "user" | "ai" | "system";
-    content: string | React.ReactNode;
+    content: string | ReactNode;
     timestamp: number;
 }
 
@@ -557,7 +557,7 @@ export const Eval = () => {
       ]);
   };
 
-  const handleDeleteHistory = async (e: React.MouseEvent, threadIdToDelete: string) => {
+  const handleDeleteHistory = async (e: MouseEvent, threadIdToDelete: string) => {
       e.stopPropagation();
       try {
           await axios.delete(`${apiBaseUrl}/api/workflow/history/${threadIdToDelete}`);
