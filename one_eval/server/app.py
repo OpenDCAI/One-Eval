@@ -471,6 +471,9 @@ class StartWorkflowRequest(BaseModel):
     user_query: str
     target_model_name: str
     target_model_path: str
+    is_api: bool = False
+    api_url: Optional[str] = None
+    api_key: Optional[str] = None
     language: str = "zh"
     tensor_parallel_size: int = 1
     max_tokens: int = 2048
@@ -547,6 +550,9 @@ async def start_workflow(req: StartWorkflowRequest):
         hf_count=req.hf_count,
         target_model=ModelConfig(
             model_name_or_path=req.target_model_path,
+            is_api=req.is_api,
+            api_url=req.api_url,
+            api_key=req.api_key,
             tensor_parallel_size=req.tensor_parallel_size,
             max_tokens=req.max_tokens,
             temperature=req.temperature,

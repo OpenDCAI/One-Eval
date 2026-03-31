@@ -14,6 +14,9 @@ import { useLang } from "@/lib/i18n";
 interface ModelConfig {
   name: string;
   path: string;
+  is_api?: boolean;
+  api_url?: string;
+  api_key?: string;
 }
 
 interface SettingsCardProps {
@@ -80,7 +83,7 @@ export const Settings = () => {
   const { lang } = useLang();
   const tt = (zh: string, en: string) => (lang === "zh" ? zh : en);
   const [models, setModels] = useState<ModelConfig[]>([]);
-  const [newModel, setNewModel] = useState({ name: "", path: "" });
+  const [newModel, setNewModel] = useState<ModelConfig>({ name: "", path: "", is_api: false, api_url: "", api_key: "" });
   const [loading, setLoading] = useState(false);
   const [apiBaseUrl] = useState(() => localStorage.getItem("oneEval.apiBaseUrl") || "http://localhost:8000");
   const [hfEndpoint, setHfEndpoint] = useState("https://hf-mirror.com");
@@ -143,9 +146,15 @@ export const Settings = () => {
     if (!newModel.name || !newModel.path) return;
     setLoading(true);
     try {
-      await axios.post(`${apiBaseUrl}/api/models`, newModel);
-      setModels([...models, newModel]);
-      setNewModel({ name: "", path: "" });
+      const payload: any = { name: newModel.name, path: newModel.path };
+      if (newModel.is_api) {
+        payload.is_api = true;
+        payload.api_url = newModel.api_url;
+        payload.api_key = newModel.api_key;
+      }
+      await axios.post(`${apiBaseUrl}/api/models`, payload);
+      setModels([...models, payload]);
+      setNewModel({ name: "", path: "", is_api: false, api_url: "", api_key: "" });
     } catch (e) {
       console.error(e);
     }
@@ -510,23 +519,58 @@ export const Settings = () => {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>{tt("模型路径 / HuggingFace ID", "Model Path / HuggingFace ID")}</Label>
+                  <div className="flex items-center justify-between">
+                      <Label>{tt("模型路径 / API 模型名", "Model Path / API Model Name")}</Label>
+                      <div className="flex items-center gap-1.5">
+                          <input 
+                             type="checkbox" 
+                             id="apiModelSetting"
+                             checked={newModel.is_api} 
+                             onChange={(e) => setNewModel({...newModel, is_api: e.target.checked})} 
+                          />
+                          <label htmlFor="apiModelSetting" className="text-[10px] text-blue-600 cursor-pointer font-medium">{tt("API 模型", "API Model")}</label>
+                      </div>
+                  </div>
                   <Input 
-                    placeholder="/mnt/models/..." 
+                    placeholder={newModel.is_api ? "gpt-4o" : "/mnt/models/..."} 
                     value={newModel.path}
                     onChange={e => setNewModel({...newModel, path: e.target.value})}
                     className="bg-white"
                   />
                 </div>
+                
+                {newModel.is_api && (
+                    <>
+                        <div className="space-y-2">
+                            <Label>API URL</Label>
+                            <Input 
+                                placeholder="https://api.openai.com/v1/chat/completions" 
+                                value={newModel.api_url}
+                                onChange={e => setNewModel({...newModel, api_url: e.target.value})}
+                                className="bg-white"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <Label>API Key</Label>
+                            <Input 
+                                type="password"
+                                placeholder="sk-..." 
+                                value={newModel.api_key}
+                                onChange={e => setNewModel({...newModel, api_key: e.target.value})}
+                                className="bg-white"
+                            />
+                        </div>
+                    </>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <Button
                   variant="outline"
                   onClick={() => handleTestModelLoad(newModel.path)}
-                  disabled={!newModel.path.trim() || !!testingModelPath}
+                  disabled={!newModel.path.trim() || !!testingModelPath || newModel.is_api}
                   className="w-full"
                 >
-                  {testingModelPath === newModel.path.trim() ? tt("测试中...", "Testing...") : tt("测试加载模型", "Test Model Load")}
+                  {testingModelPath === newModel.path.trim() ? tt("测试中...", "Testing...") : tt("测试加载本地模型", "Test Local Model Load")}
                 </Button>
                 <Button onClick={handleSaveModel} disabled={loading} className="w-full text-white bg-slate-900 hover:bg-slate-800">
                   {loading ? tt("保存中...", "Saving...") : <><Save className="w-4 h-4 mr-2"/> {tt("加入注册表", "Add to Registry")}</>}
@@ -552,18 +596,23 @@ export const Settings = () => {
                   <div key={i}>
                     <div className="flex items-center justify-between p-4 rounded-xl border border-slate-100 bg-white hover:border-slate-200 hover:shadow-sm transition-all">
                       <div className="flex-1 min-w-0 mr-4">
-                        <div className="font-semibold text-slate-900">{m.name}</div>
+                        <div className="font-semibold text-slate-900 flex items-center gap-2">
+                          {m.name}
+                          {m.is_api && <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-bold uppercase">API</span>}
+                        </div>
                         <div className="text-xs text-slate-500 truncate font-mono mt-1" title={m.path}>{m.path}</div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleTestModelLoad(m.path)}
-                          disabled={testingModelPath === m.path}
-                        >
-                          {testingModelPath === m.path ? tt("测试中...", "Testing...") : tt("测试加载", "Test Load")}
-                        </Button>
+                        {!m.is_api && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleTestModelLoad(m.path)}
+                              disabled={testingModelPath === m.path}
+                            >
+                              {testingModelPath === m.path ? tt("测试中...", "Testing...") : tt("测试加载", "Test Load")}
+                            </Button>
+                        )}
                       </div>
                     </div>
                     {modelTestMsg[m.path] && (

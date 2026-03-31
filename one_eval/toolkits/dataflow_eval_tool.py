@@ -18,8 +18,67 @@ from dataflow.core import LLMServingABC
 
 from one_eval.core.state import BenchInfo, ModelConfig
 from one_eval.logger import get_logger
+import random
 
 log = get_logger("DataFlowEvalTool")
+
+
+class RobustAPILLMServing(APILLMServing_request):
+    """
+    A robust wrapper around DataFlow's APILLMServing_request that intercepts 
+    and handles HTTP 429 Too Many Requests errors with exponential backoff and jitter,
+    without modifying the underlying DataFlow library.
+    """
+    def _api_chat_with_id(self, id: int, payload, model: str, is_embedding: bool = False, json_schema: dict = None):
+        start = time.time()
+        # Call the original method
+        try:
+            # We need to temporarily mock the session's post method to catch 429s before the original method suppresses them
+            original_post = self.session.post
+            
+            def custom_post(*args, **kwargs):
+                resp = original_post(*args, **kwargs)
+                if resp.status_code == 429:
+                    class RateLimitException(Exception): pass
+                    raise RateLimitException("429 Too Many Requests")
+                return resp
+                
+            self.session.post = custom_post
+            try:
+                return super()._api_chat_with_id(id, payload, model, is_embedding, json_schema)
+            finally:
+                # Always restore the original method
+                self.session.post = original_post
+        except Exception as e:
+            if e.__class__.__name__ == "RateLimitException":
+                raise e
+            # Re-raise for the retry loop to handle
+            raise e
+
+    def _api_chat_id_retry(self, id, payload, model, is_embedding: bool = False, json_schema: dict = None):
+        for i in range(self.max_retries):
+            try:
+                result = self._api_chat_with_id(id, payload, model, is_embedding, json_schema)
+                if result[1] is not None:
+                    return result
+                
+                # If None is returned (non-429 error), use standard backoff
+                sleep_time = (2 ** i) + random.uniform(0, 1)
+                self.logger.info(f"Retrying API request (id={id}) after {sleep_time:.2f}s (Attempt {i+1}/{self.max_retries})")
+                time.sleep(sleep_time)
+            except Exception as e:
+                if e.__class__.__name__ == "RateLimitException":
+                    # Specific backoff for rate limits, longer and with more jitter
+                    sleep_time = (2 ** i) * 1.5 + random.uniform(0, 2)
+                    self.logger.warning(f"Rate limit hit. Retrying API request (id={id}) after {sleep_time:.2f}s (Attempt {i+1}/{self.max_retries})")
+                    time.sleep(sleep_time)
+                else:
+                    sleep_time = (2 ** i) + random.uniform(0, 1)
+                    self.logger.warning(f"Error hit. Retrying API request (id={id}) after {sleep_time:.2f}s (Attempt {i+1}/{self.max_retries})")
+                    time.sleep(sleep_time)
+                    
+        self.logger.error(f"Failed to get response for id={id} after {self.max_retries} retries.")
+        return id, None
 
 
 class DataFlowEvalTool:
@@ -101,10 +160,15 @@ class DataFlowEvalTool:
         log.info(f"Initializing LLM Serving: {model_name_or_path} (is_api={config.is_api})")
         
         if config.is_api:
-            self.llm_serving = APILLMServing_request(
-                api_url=config.api_url,
+            # DataFlow's APILLMServing_request strictly reads API key from environment variables.
+            # We temporarily set it here before initialization to avoid modifying DataFlow library.
+            if config.api_key:
+                os.environ["DF_API_KEY"] = config.api_key
+                
+            self.llm_serving = RobustAPILLMServing(
+                api_url=config.api_url or "https://api.openai.com/v1/chat/completions",
                 model_name=model_name_or_path,
-                api_key=config.api_key,
+                key_name_of_api_key="DF_API_KEY",
                 max_workers=16, # 默认并发
                 # API 模式下的 generation 参数通常在调用时传递，或者由 Serving 类处理
             )

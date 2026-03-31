@@ -96,6 +96,9 @@ export const Eval = () => {
   const [expandedMetricSummaries, setExpandedMetricSummaries] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState<any | null>(null);
   const [manualModelPath, setManualModelPath] = useState<string>("");
+  const [manualModelUrl, setManualModelUrl] = useState<string>("");
+  const [manualModelKey, setManualModelKey] = useState<string>("");
+  const [isApiModel, setIsApiModel] = useState<boolean>(false);
   const [manualBenches, setManualBenches] = useState<Bench[]>([]);
   const [editMetricPlan, setEditMetricPlan] = useState<Record<string, any[]> | null>(null);
   const [addingMetricBench, setAddingMetricBench] = useState<string | null>(null);
@@ -372,21 +375,31 @@ export const Eval = () => {
     setMessages(prev => [...prev, { id: Date.now().toString(), role: "user", content: userQuery, timestamp: Date.now() }]);
 
     try {
-      // Fetch default model
-      let targetModelName = "Qwen2.5-7B";
-      let targetModelPath = "/mnt/DataFlow/models/Qwen2.5-7B-Instruct";
-      try {
-        const modelsRes = await axios.get(`${apiBaseUrl}/api/models`);
-        if (modelsRes.data && modelsRes.data.length > 0) {
-            targetModelName = modelsRes.data[0].name;
-            targetModelPath = modelsRes.data[0].path;
-        }
-      } catch (e) {}
+      let targetModelName = manualModelPath || "Qwen2.5-7B";
+      let targetModelPath = manualModelPath || "/mnt/DataFlow/models/Qwen2.5-7B-Instruct";
+      
+      if (!isApiModel && !manualModelPath) {
+          if (selectedModel) {
+              targetModelName = selectedModel.name;
+              targetModelPath = selectedModel.path;
+          } else {
+              try {
+                const modelsRes = await axios.get(`${apiBaseUrl}/api/models`);
+                if (modelsRes.data && modelsRes.data.length > 0) {
+                    targetModelName = modelsRes.data[0].name;
+                    targetModelPath = modelsRes.data[0].path;
+                }
+              } catch (e) {}
+          }
+      }
 
       const res = await axios.post(`${apiBaseUrl}/api/workflow/start`, {
         user_query: userQuery,
         target_model_name: targetModelName,
         target_model_path: targetModelPath,
+        is_api: isApiModel,
+        api_url: manualModelUrl,
+        api_key: manualModelKey,
         use_rag: useRAG,
         local_count: localCount,
         hf_count: hfCount,
@@ -707,7 +720,9 @@ export const Eval = () => {
 
       const modelPayload: any = {
           model_name_or_path: targetModelPath,
-          is_api: false,
+          is_api: isApiModel,
+          api_url: manualModelUrl,
+          api_key: manualModelKey,
           temperature: evalParams.temperature,
           top_p: evalParams.top_p,
           top_k: evalParams.top_k,
@@ -1035,34 +1050,69 @@ export const Eval = () => {
                        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-4">
                            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Model</div>
                            <div className="grid grid-cols-12 gap-4">
-                               <div className="col-span-6">
-                                   <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Model Preset</label>
+                               <div className="col-span-6 flex items-center justify-between">
+                                   <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">{t({ zh: "模型选择", en: "Model Selection" })}</label>
+                               </div>
+                               <div className="col-span-12">
                                    <select
                                        value={(selectedModel?.name ?? state?.target_model_name ?? "") as any}
                                        onChange={(e) => {
                                            const found = availableModels.find((m: any) => m?.name === e.target.value);
                                            if (found) {
                                                setSelectedModel(found);
-                                               if (found?.path) setManualModelPath(found.path);
+                                               setIsApiModel(found.is_api || false);
+                                               if (found.path) setManualModelPath(found.path);
+                                               if (found.is_api) {
+                                                   setManualModelUrl(found.api_url || "");
+                                                   setManualModelKey(found.api_key || "");
+                                               }
                                            }
                                        }}
                                        disabled={status === "running"}
                                        className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all disabled:opacity-50 disabled:bg-slate-50/50"
                                    >
                                        {availableModels.map((m: any) => (
-                                           <option key={m.name} value={m.name}>{m.name}</option>
+                                           <option key={m.name} value={m.name}>
+                                               {m.name} {m.is_api ? '(API)' : ''}
+                                           </option>
                                        ))}
                                    </select>
                                </div>
                                <div className="col-span-6">
-                                   <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Model Path</label>
+                                   <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">{isApiModel ? t({ zh: "模型名称", en: "Model Name" }) : t({ zh: "模型路径", en: "Model Path" })}</label>
                                    <Input
                                        value={manualModelPath}
                                        onChange={(e) => setManualModelPath(e.target.value)}
                                        disabled={status === "running"}
+                                       placeholder={isApiModel ? "e.g. gpt-4" : "/path/to/model"}
                                        className="h-9 bg-white border-slate-200 rounded-lg text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
                                    />
                                </div>
+                               {isApiModel && (
+                                   <>
+                                       <div className="col-span-6">
+                                           <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">API URL</label>
+                                           <Input
+                                               value={manualModelUrl}
+                                               onChange={(e) => setManualModelUrl(e.target.value)}
+                                               disabled={status === "running"}
+                                               placeholder="https://api.openai.com/v1"
+                                               className="h-9 bg-white border-slate-200 rounded-lg text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
+                                           />
+                                       </div>
+                                       <div className="col-span-6">
+                                           <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">API Key</label>
+                                           <Input
+                                               type="password"
+                                               value={manualModelKey}
+                                               onChange={(e) => setManualModelKey(e.target.value)}
+                                               disabled={status === "running"}
+                                               placeholder="sk-..."
+                                               className="h-9 bg-white border-slate-200 rounded-lg text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
+                                           />
+                                       </div>
+                                   </>
+                               )}
                            </div>
                        </div>
 
@@ -1663,14 +1713,21 @@ export const Eval = () => {
                                                    const found = availableModels.find((m: any) => m?.name === e.target.value);
                                                   if (found) {
                                                       setSelectedModel(found);
+                                                      setIsApiModel(found.is_api || false);
                                                       if (found?.path) setManualModelPath(found.path);
+                                                      if (found.is_api) {
+                                                          setManualModelUrl(found.api_url || "");
+                                                          setManualModelKey(found.api_key || "");
+                                                      }
                                                   }
                                                }}
                                                disabled={status === "running"}
                                                className="w-full h-9 rounded-lg border border-emerald-200 bg-white px-3 text-sm font-bold text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all disabled:opacity-50 disabled:bg-slate-50/50"
                                            >
                                                {availableModels.map((m: any) => (
-                                                   <option key={m.name} value={m.name}>{m.name}</option>
+                                                   <option key={m.name} value={m.name}>
+                                                       {m.name} {m.is_api ? '(API)' : ''}
+                                                   </option>
                                                ))}
                                            </select>
                                        ) : (
@@ -1679,6 +1736,32 @@ export const Eval = () => {
                                            </div>
                                        )}
                                    </div>
+                                   
+                                   {isApiModel && (
+                                       <>
+                                           <div className="col-span-6 min-w-0">
+                                               <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">API URL</label>
+                                               <Input
+                                                   value={manualModelUrl}
+                                                   onChange={(e) => setManualModelUrl(e.target.value)}
+                                                   disabled={status === "running"}
+                                                   placeholder="https://api.openai.com/v1"
+                                                   className="h-9 bg-white border-emerald-200 rounded-lg focus-visible:ring-emerald-500/20 focus-visible:border-emerald-500 text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
+                                               />
+                                           </div>
+                                           <div className="col-span-6 min-w-0">
+                                               <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">API Key</label>
+                                               <Input
+                                                   type="password"
+                                                   value={manualModelKey}
+                                                   onChange={(e) => setManualModelKey(e.target.value)}
+                                                   disabled={status === "running"}
+                                                   placeholder="sk-..."
+                                                   className="h-9 bg-white border-emerald-200 rounded-lg focus-visible:ring-emerald-500/20 focus-visible:border-emerald-500 text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
+                                               />
+                                           </div>
+                                       </>
+                                   )}
                                    
                                    <div className="col-span-3 min-w-0">
                                        <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Temperature</label>
@@ -2251,20 +2334,22 @@ export const Eval = () => {
        </div>
 
        {/* --- Right Sidebar (Chat) --- */}
-       <div className="h-full z-40 shadow-2xl relative flex-shrink-0">
-           <ChatPanel 
-                messages={messages} 
-                status={status}
-                onSendMessage={handleStart}
-                onConfirm={handleResume}
-                onStop={handleStopWorkflow}
-                isWaitingForInput={status !== "idle"}
-                activeNodeId={activeNode} 
-                isCollapsed={isChatCollapsed}
-                onToggleCollapse={() => setIsChatCollapsed(!isChatCollapsed)}
-                lang={lang}
-                interruptToken={interruptToken}
-           />
+       <div className="h-full z-40 shadow-2xl relative flex-shrink-0 flex flex-col bg-white border-l border-slate-200 transition-all duration-300" style={{ width: isChatCollapsed ? '0px' : '400px' }}>
+           <div className="flex-1 overflow-hidden">
+               <ChatPanel 
+                    messages={messages} 
+                    status={status}
+                    onSendMessage={handleStart}
+                    onConfirm={handleResume}
+                    onStop={handleStopWorkflow}
+                    isWaitingForInput={status !== "idle"}
+                    activeNodeId={activeNode} 
+                    isCollapsed={isChatCollapsed}
+                    onToggleCollapse={() => setIsChatCollapsed(!isChatCollapsed)}
+                    lang={lang}
+                    interruptToken={interruptToken}
+               />
+           </div>
        </div>
 
        {/* Gallery Modal */}
