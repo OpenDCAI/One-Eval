@@ -152,7 +152,12 @@ class DataFlowEvalNode(BaseNode):
                 if thread_id:
                     set_progress(thread_id, p)
 
-            result = tool.run_eval(bench, model_config, progress_callback=_on_progress)
+            result = tool.run_eval(
+                bench,
+                model_config,
+                judge_model_config=state.reference_model,
+                progress_callback=_on_progress,
+            )
 
             if thread_id:
                 set_progress(thread_id, {

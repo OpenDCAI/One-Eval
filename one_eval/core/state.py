@@ -55,6 +55,11 @@ class ModelConfig:
     is_api: bool = False
     api_url: Optional[str] = None
     api_key: Optional[str] = None
+    api_provider: str = "openai_compatible"
+    api_extra_body: Dict[str, Any] = field(default_factory=dict)
+    api_max_workers: int = 16
+    api_connect_timeout: float = 10.0
+    api_read_timeout: float = 120.0
     
     # Generation parameters
     temperature: float = 0.0

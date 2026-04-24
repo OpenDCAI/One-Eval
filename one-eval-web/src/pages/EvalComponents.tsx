@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import type { Lang } from "@/lib/i18n";
 
@@ -28,6 +29,7 @@ export interface WorkflowState {
   benches: Bench[];
   target_model_name?: string;
   target_model?: any;
+  reference_model?: any;
   metric_plan?: Record<string, any[]>;
   reports?: Record<string, any>;
 }
@@ -127,6 +129,10 @@ export const BenchCard = ({ bench, activeNode, lang, onUpdate, onRetryDownload }
     const [selectedSplit, setSelectedSplit] = useState<string>("");
     const [selectedEvalType, setSelectedEvalType] = useState<string>("");
     const [selectedPreviewRow, setSelectedPreviewRow] = useState<number>(0);
+    const [judgeEnabled, setJudgeEnabled] = useState(false);
+    const [judgeRuleKey, setJudgeRuleKey] = useState("");
+    const [judgeSystemPrompt, setJudgeSystemPrompt] = useState("");
+    const [judgePromptTemplate, setJudgePromptTemplate] = useState("");
     
     // Safe parsing helper
     const safeParse = (data: any) => {
@@ -163,6 +169,7 @@ export const BenchCard = ({ bench, activeNode, lang, onUpdate, onRetryDownload }
     const structure = safeParse(meta.structure); 
     const keyMapping = safeParse(meta.key_mapping); 
     const downloadConfig = safeParse(meta.download_config); 
+    const judgeConfig = safeParse(meta.judge_config) || {};
     const evalType = bench.bench_dataflow_eval_type || bench.eval_type || meta.bench_dataflow_eval_type; 
     const evalTypeLabel = (() => {
         const found = EVAL_TYPE_OPTIONS.find(x => x.value === (selectedEvalType || evalType));
@@ -202,6 +209,34 @@ export const BenchCard = ({ bench, activeNode, lang, onUpdate, onRetryDownload }
         const keys = Array.from(new Set([...required, ...Object.keys(editKeyMap || {})]));
         return keys;
     })();
+    const judgeReferenceKeys = (() => {
+        const et = selectedEvalType || String(evalType || "");
+        const pairs: Array<{ label: string; value: string }> = [];
+        const push = (label: string, key: string | undefined) => {
+            if (key) pairs.push({ label, value: key });
+        };
+        push(tt("问题", "Question"), editKeyMap.input_question_key);
+        push(tt("上下文", "Context"), editKeyMap.input_context_key);
+        if (et === "key1_text_score") push(tt("待评分文本", "Input Text"), editKeyMap.input_text_key);
+        if (et === "key2_qa") push(tt("参考答案", "Reference"), editKeyMap.input_target_key);
+        if (et === "key2_q_ma") push(tt("参考答案集合", "References"), editKeyMap.input_targets_key);
+        if (et === "key3_q_choices_a") {
+            push(tt("选项", "Choices"), editKeyMap.input_choices_key);
+            push(tt("正确标签", "Correct Label"), editKeyMap.input_label_key);
+        }
+        if (et === "key3_q_choices_as") {
+            push(tt("选项", "Choices"), editKeyMap.input_choices_key);
+            push(tt("正确标签集合", "Correct Labels"), editKeyMap.input_labels_key);
+        }
+        if (et === "key3_q_a_rejected") {
+            push(tt("优选答案", "Preferred Answer"), editKeyMap.input_better_key);
+            push(tt("拒绝答案", "Rejected Answer"), editKeyMap.input_rejected_key);
+        }
+        if (judgeRuleKey) {
+            pairs.push({ label: tt("逐条规则字段", "Per-row Rule Key"), value: judgeRuleKey });
+        }
+        return pairs;
+    })();
     const keyOptionsListId = `key-options-${String(bench.bench_name || "bench").replace(/[^a-zA-Z0-9_-]/g, "_")}`;
 
     // Init state from bench
@@ -223,6 +258,10 @@ export const BenchCard = ({ bench, activeNode, lang, onUpdate, onRetryDownload }
             }
         }
         setSelectedPreviewRow(0);
+        setJudgeEnabled(Boolean(judgeConfig.enabled || judgeConfig.use_llm_as_judge));
+        setJudgeRuleKey(String(judgeConfig.rule_key || ""));
+        setJudgeSystemPrompt(String(judgeConfig.system_prompt || ""));
+        setJudgePromptTemplate(String(judgeConfig.prompt_template || ""));
     }, [isDetailsOpen, bench.bench_name]);
 
     const handleSave = () => {
@@ -243,6 +282,13 @@ export const BenchCard = ({ bench, activeNode, lang, onUpdate, onRetryDownload }
              config: selectedSubset,
              split: selectedSplit,
              reason: currentReason
+        };
+        updatedBench.meta.judge_config = {
+            enabled: judgeEnabled,
+            use_llm_as_judge: judgeEnabled,
+            rule_key: judgeRuleKey.trim(),
+            system_prompt: judgeSystemPrompt.trim(),
+            prompt_template: judgePromptTemplate.trim(),
         };
 
         onUpdate(updatedBench);
@@ -326,6 +372,11 @@ export const BenchCard = ({ bench, activeNode, lang, onUpdate, onRetryDownload }
                     {evalType && (
                         <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded border border-blue-100 font-medium">
                             {typeof evalType === 'object' ? JSON.stringify(evalType) : String(evalType)}
+                        </span>
+                    )}
+                    {Boolean(judgeConfig.enabled || judgeConfig.use_llm_as_judge) && (
+                        <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-100 font-medium">
+                            LLM Judge
                         </span>
                     )}
                     {tags.slice(0, 3).map((tag: any, i: number) => {
@@ -581,6 +632,75 @@ export const BenchCard = ({ bench, activeNode, lang, onUpdate, onRetryDownload }
                                         ))}
                                     </div>
                                 </div>
+
+                            <div className="bg-emerald-50/50 p-5 rounded-xl border border-emerald-100 space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <div>
+                                        <h4 className="text-sm font-bold text-emerald-800 flex items-center gap-2">
+                                            <span className="w-2 h-2 rounded-full bg-emerald-500"/> LLM as Judge
+                                        </h4>
+                                        <div className="text-xs text-emerald-700 mt-1">
+                                            {tt("开启后将使用 Settings 中保存的 judge 模型，对每条样本做语义正确性判断。", "When enabled, the saved judge model from Settings will score each sample semantically.")}
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => setJudgeEnabled(!judgeEnabled)}
+                                        className={cn(
+                                            "px-3 py-1.5 rounded-md text-xs font-bold transition-all border",
+                                            judgeEnabled ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-slate-600 border-slate-200"
+                                        )}
+                                    >
+                                        {judgeEnabled ? tt("已启用", "Enabled") : tt("未启用", "Disabled")}
+                                    </button>
+                                </div>
+
+                                <div className="grid grid-cols-1 gap-4">
+                                    <div className="space-y-2">
+                                        <Label className="text-xs font-bold uppercase tracking-wider text-emerald-700">{tt("规则字段 Key", "Rule Key")}</Label>
+                                        <Input
+                                            list={keyOptionsListId}
+                                            value={judgeRuleKey}
+                                            onChange={(e) => setJudgeRuleKey(e.target.value)}
+                                            placeholder={tt("可选：逐条样本的评分规则字段", "Optional per-row scoring rule key")}
+                                            className="bg-white border-emerald-200 font-mono text-xs"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-xs font-bold uppercase tracking-wider text-emerald-700">{tt("System Prompt", "System Prompt")}</Label>
+                                        <textarea
+                                            value={judgeSystemPrompt}
+                                            onChange={(e) => setJudgeSystemPrompt(e.target.value)}
+                                            placeholder={tt("可选：覆盖默认 judge system prompt", "Optional: override the default judge system prompt")}
+                                            className="min-h-[90px] w-full rounded-md border border-emerald-200 bg-white px-3 py-2 text-xs font-mono"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label className="text-xs font-bold uppercase tracking-wider text-emerald-700">{tt("Prompt Template", "Prompt Template")}</Label>
+                                        <textarea
+                                            value={judgePromptTemplate}
+                                            onChange={(e) => setJudgePromptTemplate(e.target.value)}
+                                            placeholder={"{question}\n{context}\n{choices}\n{prediction}\n{reference_answer}\n{rule}"}
+                                            className="min-h-[120px] w-full rounded-md border border-emerald-200 bg-white px-3 py-2 text-xs font-mono"
+                                        />
+                                        <div className="text-[11px] text-emerald-700">
+                                            {tt("可用变量：question, context, choices, prediction, reference_answer, reference_answers, correct_answer, correct_answers, better_answer, rejected_answer, rule。", "Available variables: question, context, choices, prediction, reference_answer, reference_answers, correct_answer, correct_answers, better_answer, rejected_answer, rule.")}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="rounded-lg border border-emerald-100 bg-white p-3">
+                                    <div className="text-xs font-bold text-emerald-800 mb-2">{tt("Judge 当前会读取的字段", "Judge Fields In Use")}</div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {judgeReferenceKeys.length > 0 ? judgeReferenceKeys.map((item) => (
+                                            <span key={`${item.label}:${item.value}`} className="text-[11px] bg-emerald-50 text-emerald-700 px-2 py-1 rounded border border-emerald-100 font-mono">
+                                                {item.label}: {item.value}
+                                            </span>
+                                        )) : (
+                                            <span className="text-[11px] text-slate-500">{tt("请先完善上面的 key mapping。", "Complete the key mapping above first.")}</span>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
 
                             {/* Local Cache Path */}
                             {downloadPath && (

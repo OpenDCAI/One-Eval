@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/ensure-rollup-native.cjs && vite",
     "build": "node scripts/ensure-rollup-native.cjs && tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"

@@ -99,10 +99,19 @@ export const Eval = () => {
   const [manualModelUrl, setManualModelUrl] = useState<string>("");
   const [manualModelKey, setManualModelKey] = useState<string>("");
   const [isApiModel, setIsApiModel] = useState<boolean>(false);
+  const [manualApiProvider, setManualApiProvider] = useState<string>("openai_compatible");
+  const [manualApiExtraBody, setManualApiExtraBody] = useState<string>("");
+  const [manualApiMaxWorkers, setManualApiMaxWorkers] = useState<number>(16);
+  const [manualApiConnectTimeout, setManualApiConnectTimeout] = useState<number>(10);
+  const [manualApiReadTimeout, setManualApiReadTimeout] = useState<number>(120);
   const [manualBenches, setManualBenches] = useState<Bench[]>([]);
   const [editMetricPlan, setEditMetricPlan] = useState<Record<string, any[]> | null>(null);
   const [addingMetricBench, setAddingMetricBench] = useState<string | null>(null);
   const [metricSearch, setMetricSearch] = useState("");
+  const [judgeModelInfo, setJudgeModelInfo] = useState<{ enabled: boolean; model_name_or_path: string }>({
+      enabled: false,
+      model_name_or_path: "",
+  });
 
   const handleAddMetric = (benchName: string, metric: MetricMeta) => {
       const newPlan = { ...(editMetricPlan || state?.metric_plan || {}) };
@@ -165,6 +174,14 @@ export const Eval = () => {
           const draft = JSON.parse(raw);
           if (draft?.query) setQuery(draft.query);
           if (draft?.manualModelPath) setManualModelPath(draft.manualModelPath);
+          if (draft?.manualModelUrl) setManualModelUrl(draft.manualModelUrl);
+          if (draft?.manualModelKey) setManualModelKey(draft.manualModelKey);
+          if (typeof draft?.isApiModel === "boolean") setIsApiModel(draft.isApiModel);
+          if (typeof draft?.manualApiProvider === "string") setManualApiProvider(draft.manualApiProvider);
+          if (typeof draft?.manualApiExtraBody === "string") setManualApiExtraBody(draft.manualApiExtraBody);
+          if (typeof draft?.manualApiMaxWorkers === "number") setManualApiMaxWorkers(draft.manualApiMaxWorkers);
+          if (typeof draft?.manualApiConnectTimeout === "number") setManualApiConnectTimeout(draft.manualApiConnectTimeout);
+          if (typeof draft?.manualApiReadTimeout === "number") setManualApiReadTimeout(draft.manualApiReadTimeout);
           if (Array.isArray(draft?.manualBenches)) setManualBenches(draft.manualBenches);
           if (Array.isArray(draft?.editBenches)) setEditBenches(draft.editBenches);
           if (draft?.evalParams && typeof draft.evalParams === "object") {
@@ -177,11 +194,96 @@ export const Eval = () => {
       } catch {}
   }, [draftKey, threadId]);
 
+  const applyModelSelection = (model: any) => {
+      setSelectedModel(model);
+      const nextIsApi = Boolean(model?.is_api);
+      setIsApiModel(nextIsApi);
+      setManualModelPath(String(model?.path || model?.model_name_or_path || ""));
+      if (nextIsApi) {
+          setManualModelUrl(String(model?.api_url || ""));
+          setManualModelKey(String(model?.api_key || ""));
+          setManualApiProvider(String(model?.api_provider || "openai_compatible"));
+          setManualApiExtraBody(model?.api_extra_body ? JSON.stringify(model.api_extra_body, null, 2) : "");
+          setManualApiMaxWorkers(Number(model?.api_max_workers || 16));
+          setManualApiConnectTimeout(Number(model?.api_connect_timeout || 10));
+          setManualApiReadTimeout(Number(model?.api_read_timeout || 120));
+      }
+  };
+
+  const filteredModels = useMemo(
+      () => availableModels.filter((model: any) => Boolean(model?.is_api) === isApiModel),
+      [availableModels, isApiModel]
+  );
+
+  const buildTargetModelPayload = () => {
+      const sourceModel = selectedModel || state?.target_model || null;
+      const modelNameOrPath = String(
+          sourceModel?.path || sourceModel?.model_name_or_path || manualModelPath || ""
+      ).trim();
+      if (!modelNameOrPath) return null;
+
+      const apiExtraBodyRaw = sourceModel?.api_extra_body ?? manualApiExtraBody;
+      let apiExtraBody = {};
+      if (typeof apiExtraBodyRaw === "string" && apiExtraBodyRaw.trim()) {
+          const parsed = JSON.parse(apiExtraBodyRaw);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+              apiExtraBody = parsed;
+          }
+      } else if (apiExtraBodyRaw && typeof apiExtraBodyRaw === "object" && !Array.isArray(apiExtraBodyRaw)) {
+          apiExtraBody = apiExtraBodyRaw;
+      }
+
+      const payload: any = {
+          model_name_or_path: modelNameOrPath,
+          is_api: Boolean(sourceModel?.is_api ?? isApiModel),
+          temperature: evalParams.temperature,
+          top_p: evalParams.top_p,
+          top_k: evalParams.top_k,
+          repetition_penalty: evalParams.repetition_penalty,
+          max_tokens: evalParams.max_tokens,
+          seed: evalParams.seed,
+      };
+
+      if (payload.is_api) {
+          payload.api_url = String(sourceModel?.api_url || manualModelUrl || "").trim();
+          payload.api_key = String(sourceModel?.api_key || manualModelKey || "").trim();
+          payload.api_provider = String(sourceModel?.api_provider || manualApiProvider || "openai_compatible");
+          payload.api_extra_body = apiExtraBody;
+          payload.api_max_workers = Number(sourceModel?.api_max_workers || manualApiMaxWorkers || 16);
+          payload.api_connect_timeout = Number(sourceModel?.api_connect_timeout || manualApiConnectTimeout || 10);
+          payload.api_read_timeout = Number(sourceModel?.api_read_timeout || manualApiReadTimeout || 120);
+      } else {
+          payload.tensor_parallel_size = evalParams.tensor_parallel_size;
+          payload.max_model_len = evalParams.max_model_len;
+          payload.gpu_memory_utilization = evalParams.gpu_memory_utilization;
+      }
+
+      return payload;
+  };
+
   useEffect(() => {
       if (selectedModel?.path && !manualModelPath) {
           setManualModelPath(selectedModel.path);
       }
   }, [selectedModel?.path]);
+
+  useEffect(() => {
+      if (!availableModels.length) return;
+      if (!selectedModel && !state?.target_model && !state?.target_model_name) {
+          applyModelSelection(availableModels[0]);
+          return;
+      }
+      
+      if (selectedModel && Boolean(selectedModel.is_api) !== isApiModel) {
+          if (filteredModels.length > 0) {
+              applyModelSelection(filteredModels[0]);
+          } else {
+              setSelectedModel(null);
+          }
+      } else if (selectedModel && filteredModels.length > 0 && !filteredModels.some((m: any) => m.name === selectedModel.name)) {
+          applyModelSelection(filteredModels[0]);
+      }
+  }, [availableModels, filteredModels, selectedModel, state, isApiModel]);
   
   // Fetch Models
   useEffect(() => {
@@ -201,7 +303,36 @@ export const Eval = () => {
               }
           })
           .catch(e => console.error("Failed to fetch metrics registry", e));
+
+      axios.get(`${apiBaseUrl}/api/config/judge_model`)
+          .then(res => {
+              setJudgeModelInfo({
+                  enabled: Boolean(res.data?.enabled) && Boolean(res.data?.model_name_or_path),
+                  model_name_or_path: String(res.data?.model_name_or_path || ""),
+              });
+          })
+          .catch(e => console.error("Failed to fetch judge model config", e));
   }, [apiBaseUrl]);
+
+  const benchUsesJudge = (bench: any) => {
+      const judgeCfg = bench?.meta?.judge_config;
+      return Boolean(judgeCfg?.enabled || judgeCfg?.use_llm_as_judge);
+  };
+
+  const ensureJudgeModelReady = (benches: any[]) => {
+      if (!Array.isArray(benches) || !benches.some(benchUsesJudge)) return true;
+      if (judgeModelInfo.enabled) return true;
+      setMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: "system",
+          content: t({
+              zh: "当前有 Bench 启用了 llm as judge，但 Settings 中还没有可用的 judge 模型。请先到 Settings 保存 Judge 模型配置。",
+              en: "Some benches enable llm-as-judge, but no judge model is configured in Settings. Please save a judge model first.",
+          }),
+          timestamp: Date.now(),
+      }]);
+      return false;
+  };
 
   // Fetch History
   const fetchHistory = async () => {
@@ -304,7 +435,7 @@ export const Eval = () => {
 
       // Sync target model
       if (state.target_model && !selectedModel) {
-          setSelectedModel(state.target_model);
+          applyModelSelection(state.target_model);
           
           // Sync eval params from the target model
           setEvalParams({
@@ -320,9 +451,9 @@ export const Eval = () => {
           });
       } else if (state.target_model_name && !selectedModel && availableModels.length > 0) {
           const found = availableModels.find(m => m.name === state.target_model_name);
-          if (found) setSelectedModel(found);
+          if (found) applyModelSelection(found);
       }
-  }, [state, availableModels.length, selectedModel]);
+  }, [state, availableModels, selectedModel]);
 
   // Auto-expand results
   useEffect(() => {
@@ -375,35 +506,43 @@ export const Eval = () => {
     setMessages(prev => [...prev, { id: Date.now().toString(), role: "user", content: userQuery, timestamp: Date.now() }]);
 
     try {
-      let targetModelName = manualModelPath || "Qwen2.5-7B";
-      let targetModelPath = manualModelPath || "/mnt/DataFlow/models/Qwen2.5-7B-Instruct";
-      
-      if (!isApiModel && !manualModelPath) {
-          if (selectedModel) {
-              targetModelName = selectedModel.name;
-              targetModelPath = selectedModel.path;
-          } else {
-              try {
-                const modelsRes = await axios.get(`${apiBaseUrl}/api/models`);
-                if (modelsRes.data && modelsRes.data.length > 0) {
-                    targetModelName = modelsRes.data[0].name;
-                    targetModelPath = modelsRes.data[0].path;
-                }
-              } catch (e) {}
-          }
+      const modelPayload = buildTargetModelPayload();
+      const effectiveModel = selectedModel || state?.target_model || null;
+      if (!modelPayload || !effectiveModel) {
+          setMessages(prev => [...prev, {
+              id: Date.now().toString(),
+              role: "system",
+              content: t({ zh: "请先在 Settings 中注册并选择一个目标模型。", en: "Please register and select a target model in Settings first." }),
+              timestamp: Date.now()
+          }]);
+          return;
       }
 
       const res = await axios.post(`${apiBaseUrl}/api/workflow/start`, {
         user_query: userQuery,
-        target_model_name: targetModelName,
-        target_model_path: targetModelPath,
-        is_api: isApiModel,
-        api_url: manualModelUrl,
-        api_key: manualModelKey,
+        target_model_name: effectiveModel?.name || state?.target_model_name || modelPayload.model_name_or_path,
+        target_model_path: modelPayload.model_name_or_path,
+        is_api: modelPayload.is_api,
+        api_url: modelPayload.api_url,
+        api_key: modelPayload.api_key,
+        api_provider: modelPayload.api_provider,
+        api_extra_body: modelPayload.api_extra_body,
+        api_max_workers: modelPayload.api_max_workers,
+        api_connect_timeout: modelPayload.api_connect_timeout,
+        api_read_timeout: modelPayload.api_read_timeout,
         use_rag: useRAG,
         local_count: localCount,
         hf_count: hfCount,
-        language: lang
+        language: lang,
+        temperature: modelPayload.temperature,
+        top_p: modelPayload.top_p,
+        top_k: modelPayload.top_k,
+        repetition_penalty: modelPayload.repetition_penalty,
+        max_tokens: modelPayload.max_tokens,
+        tensor_parallel_size: modelPayload.tensor_parallel_size,
+        max_model_len: modelPayload.max_model_len,
+        gpu_memory_utilization: modelPayload.gpu_memory_utilization,
+        seed: modelPayload.seed,
       });
       setThreadId(res.data.thread_id);
       setStatus("running");
@@ -412,15 +551,18 @@ export const Eval = () => {
 
     } catch (e) {
       console.error(e);
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: "system", content: t({ zh: "启动流程失败，请检查服务连接。", en: "Failed to start workflow. Check connection." }), timestamp: Date.now() }]);
+      const detail = axios.isAxiosError(e) ? (e.response?.data?.detail || e.message) : (e instanceof Error ? e.message : "");
+      setMessages(prev => [...prev, { id: Date.now().toString(), role: "system", content: t({ zh: `启动流程失败，请检查配置或服务连接。${detail ? ` ${detail}` : ""}`, en: `Failed to start workflow. Check configuration or connection.${detail ? ` ${detail}` : ""}` }), timestamp: Date.now() }]);
     }
   };
 
   const handleResume = async () => {
     if (!threadId) return;
+    const benchesForResume = (editBenches.length ? editBenches : (state?.benches || [])) as any[];
+    if (!ensureJudgeModelReady(benchesForResume)) return;
 
     if (status === "interrupted" && currentNode?.includes("PreEvalReviewNode")) {
-        const benchesToCheck = (editBenches.length ? editBenches : (state?.benches || [])) as any[];
+        const benchesToCheck = benchesForResume;
         const missingEvalType = benchesToCheck
             .filter((b: any) => {
                 const v = String(b?.bench_dataflow_eval_type || b?.eval_type || b?.meta?.bench_dataflow_eval_type || "").trim();
@@ -462,21 +604,7 @@ export const Eval = () => {
           // For now, if we are interrupted and in exec phase (or prep phase finished), we attach eval params.
           // Since we don't have explicit node name for custom interrupt, we attach params generally if they exist.
           
-          const nextModel = selectedModel ?? state?.target_model ?? null;
-          const modelForUpdate = nextModel
-              ? { 
-                    ...nextModel, 
-                    temperature: evalParams.temperature, 
-                    top_p: evalParams.top_p, 
-                    top_k: evalParams.top_k,
-                    repetition_penalty: evalParams.repetition_penalty,
-                    max_tokens: evalParams.max_tokens,
-                    tensor_parallel_size: evalParams.tensor_parallel_size,
-                    max_model_len: evalParams.max_model_len,
-                    gpu_memory_utilization: evalParams.gpu_memory_utilization,
-                    seed: evalParams.seed
-                }
-              : null;
+          const modelForUpdate = buildTargetModelPayload();
           const shouldSendBenches = Boolean(
               status === "interrupted"
               && !currentNode?.includes("MetricReviewNode")
@@ -551,6 +679,14 @@ export const Eval = () => {
           workMode,
           evalParams,
           manualModelPath,
+          manualModelUrl,
+          manualModelKey,
+          isApiModel,
+          manualApiProvider,
+          manualApiExtraBody,
+          manualApiMaxWorkers,
+          manualApiConnectTimeout,
+          manualApiReadTimeout,
           manualBenches,
           editBenches,
           useRAG,
@@ -669,22 +805,9 @@ export const Eval = () => {
   const handleRerunExecution = async () => {
       if (!threadId) return;
 
-      const benchesToSend = (status === "interrupted" ? editBenches : (state?.benches || [])) || [];
-      const nextModel = selectedModel ?? state?.target_model ?? null;
-      const modelForUpdate = nextModel
-          ? { 
-                ...nextModel, 
-                temperature: evalParams.temperature, 
-                top_p: evalParams.top_p, 
-                top_k: evalParams.top_k,
-                repetition_penalty: evalParams.repetition_penalty,
-                max_tokens: evalParams.max_tokens,
-                tensor_parallel_size: evalParams.tensor_parallel_size,
-                max_model_len: evalParams.max_model_len,
-                gpu_memory_utilization: evalParams.gpu_memory_utilization,
-                seed: evalParams.seed
-            }
-          : null;
+      const benchesToSend = (editBenches.length ? editBenches : (state?.benches || [])) || [];
+      if (!ensureJudgeModelReady(benchesToSend as any[])) return;
+      const modelForUpdate = buildTargetModelPayload();
       const stateUpdates: any = {
           benches: benchesToSend,
           target_model_name: selectedModel?.name ?? state?.target_model_name,
@@ -701,15 +824,16 @@ export const Eval = () => {
   };
 
   const handleManualStart = async () => {
-      const targetModelPath = manualModelPath || selectedModel?.path || "";
-      if (!targetModelPath) {
-          setMessages(prev => [...prev, { id: Date.now().toString(), role: "system", content: t({ zh: "手动模式：请先填写模型路径。", en: "Manual mode: please set a model path." }), timestamp: Date.now() }]);
+      const modelPayload: any = buildTargetModelPayload();
+      if (!modelPayload) {
+          setMessages(prev => [...prev, { id: Date.now().toString(), role: "system", content: t({ zh: "手动模式：请先在 Settings 中注册并选择一个目标模型。", en: "Manual mode: please register and select a target model in Settings first." }), timestamp: Date.now() }]);
           return;
       }
       if (!manualBenches.length) {
           setMessages(prev => [...prev, { id: Date.now().toString(), role: "system", content: t({ zh: "手动模式：请至少添加一个 Bench。", en: "Manual mode: please add at least one bench." }), timestamp: Date.now() }]);
           return;
       }
+      if (!ensureJudgeModelReady(manualBenches as any[])) return;
 
       const benchesPayload = manualBenches.map((b: any) => ({
           bench_name: b.bench_name,
@@ -718,25 +842,9 @@ export const Eval = () => {
           meta: b.meta || {}
       }));
 
-      const modelPayload: any = {
-          model_name_or_path: targetModelPath,
-          is_api: isApiModel,
-          api_url: manualModelUrl,
-          api_key: manualModelKey,
-          temperature: evalParams.temperature,
-          top_p: evalParams.top_p,
-          top_k: evalParams.top_k,
-          repetition_penalty: evalParams.repetition_penalty,
-          max_tokens: evalParams.max_tokens,
-          tensor_parallel_size: evalParams.tensor_parallel_size,
-          max_model_len: evalParams.max_model_len,
-          gpu_memory_utilization: evalParams.gpu_memory_utilization,
-          seed: evalParams.seed
-      };
-
       const res = await axios.post(`${apiBaseUrl}/api/workflow/manual_start`, {
           user_query: query || "manual eval",
-          target_model_name: selectedModel?.name || "manual",
+          target_model_name: selectedModel?.name || state?.target_model_name || modelPayload.model_name_or_path,
           target_model: modelPayload,
           benches: benchesPayload
       });
@@ -1052,67 +1160,60 @@ export const Eval = () => {
                            <div className="grid grid-cols-12 gap-4">
                                <div className="col-span-6 flex items-center justify-between">
                                    <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">{t({ zh: "模型选择", en: "Model Selection" })}</label>
+                                   <div className="flex p-0.5 bg-slate-100 rounded border border-slate-200">
+                                       <button
+                                           className={`text-[10px] px-2 py-0.5 font-bold rounded-sm transition-all ${!isApiModel ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                                           onClick={() => setIsApiModel(false)}
+                                           disabled={status === "running"}
+                                       >
+                                           {t({ zh: "本地", en: "Local" })}
+                                       </button>
+                                       <button
+                                           className={`text-[10px] px-2 py-0.5 font-bold rounded-sm transition-all ${isApiModel ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                                           onClick={() => setIsApiModel(true)}
+                                           disabled={status === "running"}
+                                       >
+                                           {t({ zh: "API", en: "API" })}
+                                       </button>
+                                   </div>
                                </div>
                                <div className="col-span-12">
                                    <select
                                        value={(selectedModel?.name ?? state?.target_model_name ?? "") as any}
                                        onChange={(e) => {
-                                           const found = availableModels.find((m: any) => m?.name === e.target.value);
+                                            const found = filteredModels.find((m: any) => m?.name === e.target.value);
                                            if (found) {
-                                               setSelectedModel(found);
-                                               setIsApiModel(found.is_api || false);
-                                               if (found.path) setManualModelPath(found.path);
-                                               if (found.is_api) {
-                                                   setManualModelUrl(found.api_url || "");
-                                                   setManualModelKey(found.api_key || "");
-                                               }
+                                               applyModelSelection(found);
                                            }
                                        }}
-                                       disabled={status === "running"}
+                                        disabled={status === "running" || filteredModels.length === 0}
                                        className="w-full h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm font-bold text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all disabled:opacity-50 disabled:bg-slate-50/50"
                                    >
-                                       {availableModels.map((m: any) => (
+                                        {filteredModels.map((m: any) => (
                                            <option key={m.name} value={m.name}>
                                                {m.name} {m.is_api ? '(API)' : ''}
                                            </option>
                                        ))}
                                    </select>
                                </div>
-                               <div className="col-span-6">
-                                   <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">{isApiModel ? t({ zh: "模型名称", en: "Model Name" }) : t({ zh: "模型路径", en: "Model Path" })}</label>
-                                   <Input
-                                       value={manualModelPath}
-                                       onChange={(e) => setManualModelPath(e.target.value)}
-                                       disabled={status === "running"}
-                                       placeholder={isApiModel ? "e.g. gpt-4" : "/path/to/model"}
-                                       className="h-9 bg-white border-slate-200 rounded-lg text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
-                                   />
-                               </div>
-                               {isApiModel && (
-                                   <>
-                                       <div className="col-span-6">
-                                           <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">API URL</label>
-                                           <Input
-                                               value={manualModelUrl}
-                                               onChange={(e) => setManualModelUrl(e.target.value)}
-                                               disabled={status === "running"}
-                                               placeholder="https://api.openai.com/v1"
-                                               className="h-9 bg-white border-slate-200 rounded-lg text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
-                                           />
-                                       </div>
-                                       <div className="col-span-6">
-                                           <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">API Key</label>
-                                           <Input
-                                               type="password"
-                                               value={manualModelKey}
-                                               onChange={(e) => setManualModelKey(e.target.value)}
-                                               disabled={status === "running"}
-                                               placeholder="sk-..."
-                                               className="h-9 bg-white border-slate-200 rounded-lg text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
-                                           />
-                                       </div>
-                                   </>
-                               )}
+                                <div className="col-span-12 rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3 text-xs text-slate-600">
+                                    {selectedModel ? (
+                                        isApiModel ? (
+                                            <>
+                                                <div className="font-semibold text-slate-800">{t({ zh: "复用 Settings 中已保存的 API 目标模型配置", en: "Reuse saved API target model configuration from Settings" })}</div>
+                                                <div className="mt-1 font-mono">{selectedModel.path}</div>
+                                                <div className="mt-1">{String(selectedModel.api_provider || "openai_compatible")} · {String(selectedModel.api_url || "-")}</div>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div className="font-semibold text-slate-800">{t({ zh: "复用 Settings 中已保存的本地目标模型路径", en: "Reuse saved local target model path from Settings" })}</div>
+                                                <div className="mt-1 font-mono">{selectedModel.path}</div>
+                                            </>
+                                        )
+                                    ) : (
+                                        <div>{t({ zh: "请先在 Settings 中注册并选择一个目标模型。", en: "Please register and select a target model in Settings first." })}</div>
+                                    )}
+                                </div>
                            </div>
                        </div>
 
@@ -1145,30 +1246,34 @@ export const Eval = () => {
                                        className="h-9 bg-white border-slate-200 rounded-lg text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
                                    />
                                </div>
-                               <div className="col-span-3 min-w-0">
-                                   <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Top K</label>
-                                   <Input
-                                       type="number"
-                                       step="1"
-                                       value={evalParams.top_k}
-                                       onChange={e => setEvalParams({ ...evalParams, top_k: parseInt(e.target.value) || 0 })}
-                                       disabled={status === "running"}
-                                       className="h-9 bg-white border-slate-200 rounded-lg text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
-                                   />
-                               </div>
-                               <div className="col-span-3 min-w-0">
-                                   <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Repetition</label>
-                                   <Input
-                                       type="number"
-                                       step="0.05"
-                                       min="0.5"
-                                       max="2"
-                                       value={evalParams.repetition_penalty}
-                                       onChange={e => setEvalParams({ ...evalParams, repetition_penalty: parseFloat(e.target.value) || 1 })}
-                                       disabled={status === "running"}
-                                       className="h-9 bg-white border-slate-200 rounded-lg text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
-                                   />
-                               </div>
+                               {!isApiModel && (
+                                   <>
+                                       <div className="col-span-3 min-w-0">
+                                           <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Top K</label>
+                                           <Input
+                                               type="number"
+                                               step="1"
+                                               value={evalParams.top_k}
+                                               onChange={e => setEvalParams({ ...evalParams, top_k: parseInt(e.target.value) || 0 })}
+                                               disabled={status === "running"}
+                                               className="h-9 bg-white border-slate-200 rounded-lg text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
+                                           />
+                                       </div>
+                                       <div className="col-span-3 min-w-0">
+                                           <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Repetition</label>
+                                           <Input
+                                               type="number"
+                                               step="0.05"
+                                               min="0.5"
+                                               max="2"
+                                               value={evalParams.repetition_penalty}
+                                               onChange={e => setEvalParams({ ...evalParams, repetition_penalty: parseFloat(e.target.value) || 1 })}
+                                               disabled={status === "running"}
+                                               className="h-9 bg-white border-slate-200 rounded-lg text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
+                                           />
+                                       </div>
+                                   </>
+                               )}
 
                                <div className="col-span-4 min-w-0">
                                    <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Max Tokens</label>
@@ -1181,42 +1286,46 @@ export const Eval = () => {
                                        className="h-9 bg-white border-slate-200 rounded-lg text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
                                    />
                                </div>
-                               <div className="col-span-4 min-w-0">
-                                   <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Tensor Parallel</label>
-                                   <Input
-                                       type="number"
-                                       step="1"
-                                       min="1"
-                                       value={evalParams.tensor_parallel_size}
-                                       onChange={e => setEvalParams({ ...evalParams, tensor_parallel_size: parseInt(e.target.value) || 1 })}
-                                       disabled={status === "running"}
-                                       className="h-9 bg-white border-slate-200 rounded-lg text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
-                                   />
-                               </div>
-                               <div className="col-span-4 min-w-0">
-                                   <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">GPU Mem Util</label>
-                                   <Input
-                                       type="number"
-                                       step="0.05"
-                                       min="0.1"
-                                       max="1"
-                                       value={evalParams.gpu_memory_utilization}
-                                       onChange={e => setEvalParams({ ...evalParams, gpu_memory_utilization: parseFloat(e.target.value) || 0.9 })}
-                                       disabled={status === "running"}
-                                       className="h-9 bg-white border-slate-200 rounded-lg text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
-                                   />
-                               </div>
-                               <div className="col-span-6 min-w-0">
-                                   <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Max Model Len</label>
-                                   <Input
-                                       type="number"
-                                       step="1024"
-                                       value={evalParams.max_model_len}
-                                       onChange={e => setEvalParams({ ...evalParams, max_model_len: parseInt(e.target.value) || 0 })}
-                                       disabled={status === "running"}
-                                       className="h-9 bg-white border-slate-200 rounded-lg text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
-                                   />
-                               </div>
+                               {!isApiModel && (
+                                   <>
+                                       <div className="col-span-4 min-w-0">
+                                           <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Tensor Parallel</label>
+                                           <Input
+                                               type="number"
+                                               step="1"
+                                               min="1"
+                                               value={evalParams.tensor_parallel_size}
+                                               onChange={e => setEvalParams({ ...evalParams, tensor_parallel_size: parseInt(e.target.value) || 1 })}
+                                               disabled={status === "running"}
+                                               className="h-9 bg-white border-slate-200 rounded-lg text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
+                                           />
+                                       </div>
+                                       <div className="col-span-4 min-w-0">
+                                           <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">GPU Mem Util</label>
+                                           <Input
+                                               type="number"
+                                               step="0.05"
+                                               min="0.1"
+                                               max="1"
+                                               value={evalParams.gpu_memory_utilization}
+                                               onChange={e => setEvalParams({ ...evalParams, gpu_memory_utilization: parseFloat(e.target.value) || 0.9 })}
+                                               disabled={status === "running"}
+                                               className="h-9 bg-white border-slate-200 rounded-lg text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
+                                           />
+                                       </div>
+                                       <div className="col-span-6 min-w-0">
+                                           <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Max Model Len</label>
+                                           <Input
+                                               type="number"
+                                               step="1024"
+                                               value={evalParams.max_model_len}
+                                               onChange={e => setEvalParams({ ...evalParams, max_model_len: parseInt(e.target.value) || 0 })}
+                                               disabled={status === "running"}
+                                               className="h-9 bg-white border-slate-200 rounded-lg text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
+                                           />
+                                       </div>
+                                   </>
+                               )}
                                <div className="col-span-6 min-w-0">
                                    <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Seed</label>
                                    <Input
@@ -1705,26 +1814,38 @@ export const Eval = () => {
                                })()}
                                <div className="grid grid-cols-12 gap-x-4 gap-y-4">
                                    <div className="col-span-12 min-w-0">
-                                       <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">{t({ zh: "目标模型", en: "Target Model" })}</label>
-                                       {availableModels && availableModels.length > 0 ? (
+                                       <div className="flex items-center justify-between mb-1.5">
+                                           <label className="text-[10px] uppercase font-bold text-slate-400 px-1">{t({ zh: "目标模型", en: "Target Model" })}</label>
+                                           <div className="flex p-0.5 bg-slate-100 rounded border border-emerald-200/50">
+                                               <button
+                                                   className={`text-[10px] px-2 py-0.5 font-bold rounded-sm transition-all ${!isApiModel ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                                                   onClick={() => setIsApiModel(false)}
+                                                   disabled={status === "running"}
+                                               >
+                                                   {t({ zh: "本地", en: "Local" })}
+                                               </button>
+                                               <button
+                                                   className={`text-[10px] px-2 py-0.5 font-bold rounded-sm transition-all ${isApiModel ? 'bg-white shadow-sm text-slate-900' : 'text-slate-500 hover:text-slate-700'}`}
+                                                   onClick={() => setIsApiModel(true)}
+                                                   disabled={status === "running"}
+                                               >
+                                                   {t({ zh: "API", en: "API" })}
+                                               </button>
+                                           </div>
+                                       </div>
+                                        {filteredModels.length > 0 ? (
                                            <select
                                                value={(selectedModel?.name ?? state?.target_model_name ?? "") as any}
                                                onChange={(e) => {
-                                                   const found = availableModels.find((m: any) => m?.name === e.target.value);
+                                                    const found = filteredModels.find((m: any) => m?.name === e.target.value);
                                                   if (found) {
-                                                      setSelectedModel(found);
-                                                      setIsApiModel(found.is_api || false);
-                                                      if (found?.path) setManualModelPath(found.path);
-                                                      if (found.is_api) {
-                                                          setManualModelUrl(found.api_url || "");
-                                                          setManualModelKey(found.api_key || "");
-                                                      }
+                                                      applyModelSelection(found);
                                                   }
                                                }}
-                                               disabled={status === "running"}
+                                               disabled={status === "running" || filteredModels.length === 0}
                                                className="w-full h-9 rounded-lg border border-emerald-200 bg-white px-3 text-sm font-bold text-slate-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all disabled:opacity-50 disabled:bg-slate-50/50"
                                            >
-                                               {availableModels.map((m: any) => (
+                                               {filteredModels.map((m: any) => (
                                                    <option key={m.name} value={m.name}>
                                                        {m.name} {m.is_api ? '(API)' : ''}
                                                    </option>
@@ -1736,32 +1857,24 @@ export const Eval = () => {
                                            </div>
                                        )}
                                    </div>
-                                   
-                                   {isApiModel && (
-                                       <>
-                                           <div className="col-span-6 min-w-0">
-                                               <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">API URL</label>
-                                               <Input
-                                                   value={manualModelUrl}
-                                                   onChange={(e) => setManualModelUrl(e.target.value)}
-                                                   disabled={status === "running"}
-                                                   placeholder="https://api.openai.com/v1"
-                                                   className="h-9 bg-white border-emerald-200 rounded-lg focus-visible:ring-emerald-500/20 focus-visible:border-emerald-500 text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
-                                               />
-                                           </div>
-                                           <div className="col-span-6 min-w-0">
-                                               <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">API Key</label>
-                                               <Input
-                                                   type="password"
-                                                   value={manualModelKey}
-                                                   onChange={(e) => setManualModelKey(e.target.value)}
-                                                   disabled={status === "running"}
-                                                   placeholder="sk-..."
-                                                   className="h-9 bg-white border-emerald-200 rounded-lg focus-visible:ring-emerald-500/20 focus-visible:border-emerald-500 text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
-                                               />
-                                           </div>
-                                       </>
-                                   )}
+                                   <div className="col-span-12 rounded-xl border border-emerald-200 bg-emerald-50/50 px-4 py-3 text-xs text-slate-600">
+                                       {selectedModel ? (
+                                           isApiModel ? (
+                                               <>
+                                                   <div className="font-semibold text-slate-800">{t({ zh: "执行阶段直接复用 Settings 中已保存的 API 目标模型配置", en: "Execution reuses the saved API target model configuration from Settings" })}</div>
+                                                   <div className="mt-1 font-mono">{selectedModel.path}</div>
+                                                   <div className="mt-1">{String(selectedModel.api_provider || "openai_compatible")} · {String(selectedModel.api_url || "-")}</div>
+                                               </>
+                                           ) : (
+                                               <>
+                                                   <div className="font-semibold text-slate-800">{t({ zh: "执行阶段直接复用 Settings 中已保存的本地目标模型路径", en: "Execution reuses the saved local target model path from Settings" })}</div>
+                                                   <div className="mt-1 font-mono">{selectedModel.path}</div>
+                                               </>
+                                           )
+                                       ) : (
+                                           <div>{t({ zh: "请先在 Settings 中注册并选择一个目标模型。", en: "Please register and select a target model in Settings first." })}</div>
+                                       )}
+                                   </div>
                                    
                                    <div className="col-span-3 min-w-0">
                                        <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Temperature</label>
@@ -1791,31 +1904,35 @@ export const Eval = () => {
                                        />
                                    </div>
                                    
-                                   <div className="col-span-3 min-w-0">
-                                       <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Top K</label>
-                                       <Input 
-                                           type="number" 
-                                           step="1"
-                                           value={evalParams.top_k} 
-                                           onChange={e => setEvalParams({...evalParams, top_k: parseInt(e.target.value) || 0})}
-                                           disabled={status === "running"}
-                                           className="h-9 bg-white border-emerald-200 rounded-lg focus-visible:ring-emerald-500/20 focus-visible:border-emerald-500 text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
-                                       />
-                                   </div>
+                                   {!isApiModel && (
+                                       <>
+                                           <div className="col-span-3 min-w-0">
+                                               <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Top K</label>
+                                               <Input 
+                                                   type="number" 
+                                                   step="1"
+                                                   value={evalParams.top_k} 
+                                                   onChange={e => setEvalParams({...evalParams, top_k: parseInt(e.target.value) || 0})}
+                                                   disabled={status === "running"}
+                                                   className="h-9 bg-white border-emerald-200 rounded-lg focus-visible:ring-emerald-500/20 focus-visible:border-emerald-500 text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
+                                               />
+                                           </div>
 
-                                   <div className="col-span-3 min-w-0">
-                                       <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Repetition</label>
-                                       <Input 
-                                           type="number" 
-                                           step="0.05"
-                                           min="0.5"
-                                           max="2"
-                                           value={evalParams.repetition_penalty} 
-                                           onChange={e => setEvalParams({...evalParams, repetition_penalty: parseFloat(e.target.value) || 1})}
-                                           disabled={status === "running"}
-                                           className="h-9 bg-white border-emerald-200 rounded-lg focus-visible:ring-emerald-500/20 focus-visible:border-emerald-500 text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
-                                       />
-                                   </div>
+                                           <div className="col-span-3 min-w-0">
+                                               <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Repetition</label>
+                                               <Input 
+                                                   type="number" 
+                                                   step="0.05"
+                                                   min="0.5"
+                                                   max="2"
+                                                   value={evalParams.repetition_penalty} 
+                                                   onChange={e => setEvalParams({...evalParams, repetition_penalty: parseFloat(e.target.value) || 1})}
+                                                   disabled={status === "running"}
+                                                   className="h-9 bg-white border-emerald-200 rounded-lg focus-visible:ring-emerald-500/20 focus-visible:border-emerald-500 text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
+                                               />
+                                           </div>
+                                       </>
+                                   )}
 
                                    <div className="col-span-4 min-w-0">
                                        <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Max Tokens</label>
@@ -1829,44 +1946,48 @@ export const Eval = () => {
                                        />
                                    </div>
 
-                                   <div className="col-span-4 min-w-0">
-                                       <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Tensor Parallel</label>
-                                       <Input 
-                                           type="number" 
-                                           step="1"
-                                           min="1"
-                                           value={evalParams.tensor_parallel_size} 
-                                           onChange={e => setEvalParams({...evalParams, tensor_parallel_size: parseInt(e.target.value) || 1})}
-                                           disabled={status === "running"}
-                                           className="h-9 bg-white border-emerald-200 rounded-lg focus-visible:ring-emerald-500/20 focus-visible:border-emerald-500 text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
-                                       />
-                                   </div>
+                                   {!isApiModel && (
+                                       <>
+                                           <div className="col-span-4 min-w-0">
+                                               <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Tensor Parallel</label>
+                                               <Input 
+                                                   type="number" 
+                                                   step="1"
+                                                   min="1"
+                                                   value={evalParams.tensor_parallel_size} 
+                                                   onChange={e => setEvalParams({...evalParams, tensor_parallel_size: parseInt(e.target.value) || 1})}
+                                                   disabled={status === "running"}
+                                                   className="h-9 bg-white border-emerald-200 rounded-lg focus-visible:ring-emerald-500/20 focus-visible:border-emerald-500 text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
+                                               />
+                                           </div>
 
-                                   <div className="col-span-4 min-w-0">
-                                       <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">GPU Mem Util</label>
-                                       <Input 
-                                           type="number" 
-                                           step="0.05"
-                                           min="0.1"
-                                           max="1"
-                                           value={evalParams.gpu_memory_utilization} 
-                                           onChange={e => setEvalParams({...evalParams, gpu_memory_utilization: parseFloat(e.target.value) || 0.9})}
-                                           disabled={status === "running"}
-                                           className="h-9 bg-white border-emerald-200 rounded-lg focus-visible:ring-emerald-500/20 focus-visible:border-emerald-500 text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
-                                       />
-                                   </div>
+                                           <div className="col-span-4 min-w-0">
+                                               <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">GPU Mem Util</label>
+                                               <Input 
+                                                   type="number" 
+                                                   step="0.05"
+                                                   min="0.1"
+                                                   max="1"
+                                                   value={evalParams.gpu_memory_utilization} 
+                                                   onChange={e => setEvalParams({...evalParams, gpu_memory_utilization: parseFloat(e.target.value) || 0.9})}
+                                                   disabled={status === "running"}
+                                                   className="h-9 bg-white border-emerald-200 rounded-lg focus-visible:ring-emerald-500/20 focus-visible:border-emerald-500 text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
+                                               />
+                                           </div>
 
-                                   <div className="col-span-6 min-w-0">
-                                       <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Max Model Len</label>
-                                       <Input 
-                                           type="number" 
-                                           step="1024"
-                                           value={evalParams.max_model_len} 
-                                           onChange={e => setEvalParams({...evalParams, max_model_len: parseInt(e.target.value) || 0})}
-                                           disabled={status === "running"}
-                                           className="h-9 bg-white border-emerald-200 rounded-lg focus-visible:ring-emerald-500/20 focus-visible:border-emerald-500 text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
-                                       />
-                                   </div>
+                                           <div className="col-span-6 min-w-0">
+                                               <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Max Model Len</label>
+                                               <Input 
+                                                   type="number" 
+                                                   step="1024"
+                                                   value={evalParams.max_model_len} 
+                                                   onChange={e => setEvalParams({...evalParams, max_model_len: parseInt(e.target.value) || 0})}
+                                                   disabled={status === "running"}
+                                                   className="h-9 bg-white border-emerald-200 rounded-lg focus-visible:ring-emerald-500/20 focus-visible:border-emerald-500 text-xs font-mono shadow-sm disabled:opacity-50 disabled:bg-slate-50/50"
+                                               />
+                                           </div>
+                                       </>
+                                   )}
 
                                    <div className="col-span-6 min-w-0">
                                        <label className="text-[10px] uppercase font-bold text-slate-400 mb-1.5 block px-1">Seed</label>

@@ -11093,6 +11093,290 @@
           "reasoning"
         ]
       }
+    },
+    {
+      "bench_name": "ifeval",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/google/IFEval",
+      "bench_dataflow_eval_type": "key1_text_score",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "key",
+        "prompt",
+        "instruction_id_list",
+        "kwargs"
+      ],
+      "meta": {
+        "bench_name": "ifeval",
+        "source": "bench_table",
+        "aliases": [
+          "ifeval",
+          "IFEval"
+        ],
+        "category": "Instruction & Chat",
+        "tags": [
+          "instruction-following"
+        ],
+        "description": "Instruction-following benchmark with verifiable constraints such as formatting, style, and keyword frequency requirements.",
+        "description_zh": "用于评估模型是否严格遵循可验证指令约束的基准，覆盖格式、风格与关键词控制等要求。",
+        "hf_meta": {
+          "bench_name": "ifeval",
+          "hf_repo": "google/IFEval",
+          "card_text": "Instruction-following benchmark with verifiable constraints such as formatting, style, and keyword frequency requirements.",
+          "tags": [
+            "instruction-following"
+          ],
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "google/IFEval",
+          "revision": null,
+          "subsets": [
+            {
+              "subset": "default",
+              "splits": [
+                {
+                  "name": "train",
+                  "num_examples": 541
+                }
+              ],
+              "features": null
+            }
+          ],
+          "ok": true,
+          "error": null
+        },
+        "download_config": {
+          "config": "default",
+          "split": "train",
+          "reason": "IFEval 当前公开数据主要位于 default/train，可直接用于指令遵循能力抽样评测。"
+        },
+        "key_mapping": {
+          "input_text_key": "prompt"
+        },
+        "key_mapping_reason": "IFEval 的核心输入是 prompt，本体更接近对生成文本的规则遵循打分，因此先按 text-score 型基准登记。",
+        "radar_dimensions": [
+          "instruction",
+          "language"
+        ]
+      }
+    },
+    {
+      "bench_name": "medqa",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/truehealth/medqa",
+      "bench_dataflow_eval_type": "key3_q_choices_a",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "question",
+        "options",
+        "answer"
+      ],
+      "meta": {
+        "bench_name": "medqa",
+        "source": "bench_table",
+        "aliases": [
+          "medqa",
+          "MedQA"
+        ],
+        "category": "Domain-Specific",
+        "tags": [
+          "medical",
+          "healthcare"
+        ],
+        "description": "Medical multiple-choice QA benchmark for evaluating clinical knowledge and medical reasoning.",
+        "description_zh": "面向医学知识与临床推理能力的多选问答基准。",
+        "hf_meta": {
+          "bench_name": "medqa",
+          "hf_repo": "truehealth/medqa",
+          "card_text": "Medical multiple-choice QA benchmark for evaluating clinical knowledge and medical reasoning.",
+          "tags": [
+            "medical",
+            "healthcare"
+          ],
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "truehealth/medqa",
+          "revision": null,
+          "subsets": [
+            {
+              "subset": "default",
+              "splits": [
+                {
+                  "name": "test",
+                  "num_examples": null
+                }
+              ],
+              "features": null
+            }
+          ],
+          "ok": true,
+          "error": null
+        },
+        "download_config": {
+          "config": "default",
+          "split": "test",
+          "reason": "医学评测优先使用 test split，便于与其他目标模型做稳定横向比较。"
+        },
+        "key_mapping": {
+          "input_question_key": "question",
+          "input_choices_key": [
+            "options.A",
+            "options.B",
+            "options.C",
+            "options.D",
+            "options.E"
+          ],
+          "input_label_key": "answer_idx"
+        },
+        "key_mapping_reason": "MedQA 通常以题干、候选项和正确答案构成，适合按单选题类型登记。",
+        "radar_dimensions": [
+          "knowledge",
+          "reasoning"
+        ]
+      }
+    },
+    {
+      "bench_name": "legalbench",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/Equall/legalbench_instruct",
+      "bench_dataflow_eval_type": "key2_qa",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "prompt",
+        "response"
+      ],
+      "meta": {
+        "bench_name": "legalbench",
+        "source": "bench_table",
+        "aliases": [
+          "legalbench",
+          "LegalBench"
+        ],
+        "category": "Domain-Specific",
+        "tags": [
+          "legal",
+          "reasoning"
+        ],
+        "description": "Legal instruction-following and reasoning benchmark derived from diverse legal tasks and downstream scenarios.",
+        "description_zh": "覆盖法律知识应用、法律推理与法律场景任务的指令型基准。",
+        "hf_meta": {
+          "bench_name": "legalbench",
+          "hf_repo": "Equall/legalbench_instruct",
+          "card_text": "Legal instruction-following and reasoning benchmark derived from diverse legal tasks and downstream scenarios.",
+          "tags": [
+            "legal",
+            "reasoning"
+          ],
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "Equall/legalbench_instruct",
+          "revision": null,
+          "subsets": [
+            {
+              "subset": "default",
+              "splits": [
+                {
+                  "name": "train",
+                  "num_examples": 90400
+                }
+              ],
+              "features": null
+            }
+          ],
+          "ok": true,
+          "error": null
+        },
+        "download_config": {
+          "config": "default",
+          "split": "train",
+          "reason": "当前公开仓库主要以 default/train 形式提供，可作为法律领域指令能力基准入口。"
+        },
+        "key_mapping": {
+          "input_question_key": "prompt",
+          "input_target_key": "response"
+        },
+        "key_mapping_reason": "legalbench_instruct 更接近指令-回答配对数据，先按生成式单参考答案任务登记。",
+        "radar_dimensions": [
+          "knowledge",
+          "reasoning",
+          "instruction"
+        ]
+      }
+    },
+    {
+      "bench_name": "financeqa",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/AfterQuery/FinanceQA",
+      "bench_dataflow_eval_type": "key2_qa",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "COMPANY_ID",
+        "QUERY",
+        "ANSWER",
+        "CONTEXT",
+        "INDEX"
+      ],
+      "meta": {
+        "bench_name": "financeqa",
+        "source": "bench_table",
+        "aliases": [
+          "financeqa",
+          "FinanceQA"
+        ],
+        "category": "Domain-Specific",
+        "tags": [
+          "finance",
+          "reasoning"
+        ],
+        "description": "Financial QA benchmark for evaluating document-grounded financial analysis and answer extraction from filings.",
+        "description_zh": "用于评估财务分析、财报理解与基于文档回答能力的金融问答基准。",
+        "hf_meta": {
+          "bench_name": "financeqa",
+          "hf_repo": "AfterQuery/FinanceQA",
+          "card_text": "Financial QA benchmark for evaluating document-grounded financial analysis and answer extraction from filings.",
+          "tags": [
+            "finance",
+            "reasoning"
+          ],
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "AfterQuery/FinanceQA",
+          "revision": null,
+          "subsets": [
+            {
+              "subset": "FinanceQA",
+              "splits": [
+                {
+                  "name": "train",
+                  "num_examples": null
+                }
+              ],
+              "features": null
+            }
+          ],
+          "ok": true,
+          "error": null
+        },
+        "download_config": {
+          "config": "FinanceQA",
+          "split": "train",
+          "reason": "FinanceQA 当前公开版本以 FinanceQA/train 组织，适合作为金融领域问答与分析能力基准入口。"
+        },
+        "key_mapping": {
+          "input_question_key": "QUERY",
+          "input_target_key": "ANSWER",
+          "input_context_key": "CONTEXT"
+        },
+        "key_mapping_reason": "FinanceQA 典型结构为 query-answer-context 三元组，适合按生成式单参考答案任务登记。",
+        "radar_dimensions": [
+          "knowledge",
+          "reasoning"
+        ]
+      }
     }
   ]
 }

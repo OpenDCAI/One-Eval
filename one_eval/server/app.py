@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from contextlib import asynccontextmanager
+from urllib.parse import urlparse
 
 import requests
 from fastapi import FastAPI, HTTPException, BackgroundTasks
@@ -186,6 +187,43 @@ def load_server_config() -> Dict[str, Any]:
         "api_key": api_key,
         "timeout_s": agent_timeout_s,
     }
+
+    judge = cfg.get("judge_model")
+    if not isinstance(judge, dict):
+        judge = {}
+    judge_enabled = bool(judge.get("enabled", False))
+    judge_model_name = str(
+        judge.get("model_name_or_path")
+        or judge.get("model")
+        or ""
+    ).strip()
+    judge_api_key = judge.get("api_key")
+    if judge_api_key is not None and (not isinstance(judge_api_key, str) or not judge_api_key.strip()):
+        judge_api_key = None
+    cfg["judge_model"] = {
+        "enabled": judge_enabled,
+        "model_name_or_path": judge_model_name,
+        "is_api": bool(judge.get("is_api", True)),
+        "api_url": _normalize_chat_completions_url(
+            str(judge.get("api_url") or "").strip(),
+            str(judge.get("api_provider", "openai_compatible") or "openai_compatible"),
+        ) if judge_model_name or judge.get("api_url") else "",
+        "api_key": judge_api_key,
+        "api_provider": str(judge.get("api_provider", "openai_compatible") or "openai_compatible"),
+        "api_extra_body": _normalize_api_extra_body(judge.get("api_extra_body")),
+        "api_max_workers": max(1, int(judge.get("api_max_workers", 8) or 8)),
+        "api_connect_timeout": float(judge.get("api_connect_timeout", 10.0) or 10.0),
+        "api_read_timeout": float(judge.get("api_read_timeout", 120.0) or 120.0),
+        "temperature": float(judge.get("temperature", 0.0) or 0.0),
+        "top_p": float(judge.get("top_p", 1.0) or 1.0),
+        "top_k": int(judge.get("top_k", -1) if judge.get("top_k", -1) is not None else -1),
+        "repetition_penalty": float(judge.get("repetition_penalty", 1.0) or 1.0),
+        "max_tokens": int(judge.get("max_tokens", 1024) or 1024),
+        "seed": (int(judge["seed"]) if judge.get("seed") is not None else None),
+        "tensor_parallel_size": max(1, int(judge.get("tensor_parallel_size", 1) or 1)),
+        "max_model_len": _normalize_optional_int(judge.get("max_model_len")),
+        "gpu_memory_utilization": float(judge.get("gpu_memory_utilization", 0.9) or 0.9),
+    }
     return cfg
 
 def save_server_config(cfg: Dict[str, Any]) -> None:
@@ -212,6 +250,83 @@ def _normalize_openai_base_url(url: str) -> str:
     if u.endswith("/v1/"):
         u = u[:-1]
     return u
+
+def _normalize_chat_completions_url(url: str, provider: str = "openai_compatible") -> str:
+    raw = (url or "").strip()
+    provider_name = str(provider or "openai_compatible").strip().lower()
+    if not raw:
+        if provider_name == "deepseek":
+            return "https://api.deepseek.com/chat/completions"
+        return "https://api.openai.com/v1/chat/completions"
+    lowered = raw.lower().rstrip("/")
+    if lowered.endswith("/chat/completions"):
+        return raw.rstrip("/")
+    if lowered.endswith("/v1"):
+        return f"{raw.rstrip('/')}/chat/completions"
+    parsed = urlparse(raw)
+    if provider_name == "deepseek" and parsed.netloc.lower() == "api.deepseek.com":
+        return f"{raw.rstrip('/')}/chat/completions"
+    return raw
+
+def _normalize_api_extra_body(raw: Any) -> Dict[str, Any]:
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        s = raw.strip()
+        if not s:
+            return {}
+        parsed = json.loads(s)
+        if isinstance(parsed, dict):
+            return parsed
+    raise ValueError("api_extra_body must be a JSON object")
+
+def _normalize_optional_int(raw: Any) -> Optional[int]:
+    if raw in (None, "", 0, "0"):
+        return None
+    return int(raw)
+
+def _build_model_config_from_payload(payload: Dict[str, Any]) -> "ModelConfig":
+    model_name_or_path = (
+        payload.get("model_name_or_path")
+        or payload.get("path")
+        or payload.get("model_path")
+        or payload.get("hf_model_name_or_path")
+    )
+    if not model_name_or_path:
+        raise ValueError("target_model missing model_name_or_path/path")
+
+    return ModelConfig(
+        model_name_or_path=str(model_name_or_path),
+        is_api=bool(payload.get("is_api", False)),
+        api_url=payload.get("api_url"),
+        api_key=payload.get("api_key"),
+        api_provider=str(payload.get("api_provider", "openai_compatible") or "openai_compatible"),
+        api_extra_body=_normalize_api_extra_body(payload.get("api_extra_body")),
+        api_max_workers=max(1, int(payload.get("api_max_workers", 16) or 16)),
+        api_connect_timeout=float(payload.get("api_connect_timeout", 10.0) or 10.0),
+        api_read_timeout=float(payload.get("api_read_timeout", 120.0) or 120.0),
+        temperature=float(payload.get("temperature", 0.0) or 0.0),
+        top_p=float(payload.get("top_p", 1.0) or 1.0),
+        top_k=int(payload.get("top_k", -1) if payload.get("top_k", -1) is not None else -1),
+        repetition_penalty=float(payload.get("repetition_penalty", 1.0) or 1.0),
+        max_tokens=int(payload.get("max_tokens", 2048) or 2048),
+        seed=(int(payload["seed"]) if payload.get("seed") is not None else None),
+        tensor_parallel_size=max(1, int(payload.get("tensor_parallel_size", 1) or 1)),
+        max_model_len=_normalize_optional_int(payload.get("max_model_len")),
+        gpu_memory_utilization=float(payload.get("gpu_memory_utilization", 0.9) or 0.9),
+    )
+
+def _get_saved_judge_model_config() -> Optional["ModelConfig"]:
+    cfg = load_server_config()
+    judge = cfg.get("judge_model") or {}
+    if not isinstance(judge, dict) or not judge.get("enabled"):
+        return None
+    model_name_or_path = str(judge.get("model_name_or_path") or "").strip()
+    if not model_name_or_path:
+        return None
+    return _build_model_config_from_payload(judge)
 
 def apply_agent_env_from_config(cfg: Dict[str, Any]) -> None:
     agent = cfg.get("agent") or {}
@@ -276,6 +391,49 @@ class AgentConfigUpdateRequest(BaseModel):
     api_key: Optional[str] = None
     clear_api_key: bool = False
     timeout_s: Optional[int] = None
+
+class JudgeModelConfigResponse(BaseModel):
+    enabled: bool
+    model_name_or_path: str
+    is_api: bool
+    api_url: str
+    api_provider: str
+    api_extra_body: Dict[str, Any]
+    api_max_workers: int
+    api_connect_timeout: float
+    api_read_timeout: float
+    temperature: float
+    top_p: float
+    top_k: int
+    repetition_penalty: float
+    max_tokens: int
+    seed: Optional[int] = None
+    tensor_parallel_size: int
+    max_model_len: Optional[int] = None
+    gpu_memory_utilization: float
+    api_key_set: bool
+
+class JudgeModelConfigUpdateRequest(BaseModel):
+    enabled: Optional[bool] = None
+    model_name_or_path: Optional[str] = None
+    is_api: Optional[bool] = None
+    api_url: Optional[str] = None
+    api_key: Optional[str] = None
+    clear_api_key: bool = False
+    api_provider: Optional[str] = None
+    api_extra_body: Optional[Dict[str, Any]] = None
+    api_max_workers: Optional[int] = None
+    api_connect_timeout: Optional[float] = None
+    api_read_timeout: Optional[float] = None
+    temperature: Optional[float] = None
+    top_p: Optional[float] = None
+    top_k: Optional[int] = None
+    repetition_penalty: Optional[float] = None
+    max_tokens: Optional[int] = None
+    seed: Optional[int] = None
+    tensor_parallel_size: Optional[int] = None
+    max_model_len: Optional[int] = None
+    gpu_memory_utilization: Optional[float] = None
 
 class AgentTestResponse(BaseModel):
     ok: bool
@@ -392,6 +550,109 @@ def update_agent_config(req: AgentConfigUpdateRequest):
         "timeout_s": timeout_s,
     }
 
+@app.get("/api/config/judge_model", response_model=JudgeModelConfigResponse)
+def get_judge_model_config():
+    cfg = load_server_config()
+    judge = cfg.get("judge_model") or {}
+    api_key = judge.get("api_key")
+    return {
+        "enabled": bool(judge.get("enabled", False)),
+        "model_name_or_path": str(judge.get("model_name_or_path") or ""),
+        "is_api": bool(judge.get("is_api", True)),
+        "api_url": str(judge.get("api_url") or ""),
+        "api_provider": str(judge.get("api_provider", "openai_compatible") or "openai_compatible"),
+        "api_extra_body": _normalize_api_extra_body(judge.get("api_extra_body")),
+        "api_max_workers": max(1, int(judge.get("api_max_workers", 8) or 8)),
+        "api_connect_timeout": float(judge.get("api_connect_timeout", 10.0) or 10.0),
+        "api_read_timeout": float(judge.get("api_read_timeout", 120.0) or 120.0),
+        "temperature": float(judge.get("temperature", 0.0) or 0.0),
+        "top_p": float(judge.get("top_p", 1.0) or 1.0),
+        "top_k": int(judge.get("top_k", -1) if judge.get("top_k", -1) is not None else -1),
+        "repetition_penalty": float(judge.get("repetition_penalty", 1.0) or 1.0),
+        "max_tokens": int(judge.get("max_tokens", 1024) or 1024),
+        "seed": (int(judge["seed"]) if judge.get("seed") is not None else None),
+        "tensor_parallel_size": max(1, int(judge.get("tensor_parallel_size", 1) or 1)),
+        "max_model_len": _normalize_optional_int(judge.get("max_model_len")),
+        "gpu_memory_utilization": float(judge.get("gpu_memory_utilization", 0.9) or 0.9),
+        "api_key_set": isinstance(api_key, str) and bool(api_key.strip()),
+    }
+
+@app.post("/api/config/judge_model", response_model=JudgeModelConfigResponse)
+def update_judge_model_config(req: JudgeModelConfigUpdateRequest):
+    cfg = load_server_config()
+    judge = cfg.get("judge_model") or {}
+    if not isinstance(judge, dict):
+        judge = {}
+
+    next_cfg = {
+        "enabled": bool(judge.get("enabled", False)),
+        "model_name_or_path": str(judge.get("model_name_or_path") or ""),
+        "is_api": bool(judge.get("is_api", True)),
+        "api_url": str(judge.get("api_url") or ""),
+        "api_key": judge.get("api_key"),
+        "api_provider": str(judge.get("api_provider", "openai_compatible") or "openai_compatible"),
+        "api_extra_body": _normalize_api_extra_body(judge.get("api_extra_body")),
+        "api_max_workers": max(1, int(judge.get("api_max_workers", 8) or 8)),
+        "api_connect_timeout": float(judge.get("api_connect_timeout", 10.0) or 10.0),
+        "api_read_timeout": float(judge.get("api_read_timeout", 120.0) or 120.0),
+        "temperature": float(judge.get("temperature", 0.0) or 0.0),
+        "top_p": float(judge.get("top_p", 1.0) or 1.0),
+        "top_k": int(judge.get("top_k", -1) if judge.get("top_k", -1) is not None else -1),
+        "repetition_penalty": float(judge.get("repetition_penalty", 1.0) or 1.0),
+        "max_tokens": int(judge.get("max_tokens", 1024) or 1024),
+        "seed": (int(judge["seed"]) if judge.get("seed") is not None else None),
+        "tensor_parallel_size": max(1, int(judge.get("tensor_parallel_size", 1) or 1)),
+        "max_model_len": _normalize_optional_int(judge.get("max_model_len")),
+        "gpu_memory_utilization": float(judge.get("gpu_memory_utilization", 0.9) or 0.9),
+    }
+
+    if req.enabled is not None:
+        next_cfg["enabled"] = bool(req.enabled)
+    if req.model_name_or_path is not None:
+        next_cfg["model_name_or_path"] = str(req.model_name_or_path or "").strip()
+    if req.is_api is not None:
+        next_cfg["is_api"] = bool(req.is_api)
+    if req.api_provider is not None:
+        next_cfg["api_provider"] = str(req.api_provider or "openai_compatible").strip() or "openai_compatible"
+    if req.api_url is not None:
+        next_cfg["api_url"] = _normalize_chat_completions_url(req.api_url, next_cfg["api_provider"])
+    if req.clear_api_key:
+        next_cfg["api_key"] = None
+    elif req.api_key is not None:
+        api_key = req.api_key.strip()
+        if api_key:
+            next_cfg["api_key"] = api_key
+    if req.api_extra_body is not None:
+        next_cfg["api_extra_body"] = _normalize_api_extra_body(req.api_extra_body)
+    if req.api_max_workers is not None and req.api_max_workers > 0:
+        next_cfg["api_max_workers"] = int(req.api_max_workers)
+    if req.api_connect_timeout is not None and req.api_connect_timeout > 0:
+        next_cfg["api_connect_timeout"] = float(req.api_connect_timeout)
+    if req.api_read_timeout is not None and req.api_read_timeout > 0:
+        next_cfg["api_read_timeout"] = float(req.api_read_timeout)
+    if req.temperature is not None:
+        next_cfg["temperature"] = float(req.temperature)
+    if req.top_p is not None:
+        next_cfg["top_p"] = float(req.top_p)
+    if req.top_k is not None:
+        next_cfg["top_k"] = int(req.top_k)
+    if req.repetition_penalty is not None:
+        next_cfg["repetition_penalty"] = float(req.repetition_penalty)
+    if req.max_tokens is not None and req.max_tokens > 0:
+        next_cfg["max_tokens"] = int(req.max_tokens)
+    if req.seed is not None:
+        next_cfg["seed"] = int(req.seed)
+    if req.tensor_parallel_size is not None and req.tensor_parallel_size > 0:
+        next_cfg["tensor_parallel_size"] = int(req.tensor_parallel_size)
+    if req.max_model_len is not None:
+        next_cfg["max_model_len"] = _normalize_optional_int(req.max_model_len)
+    if req.gpu_memory_utilization is not None and req.gpu_memory_utilization > 0:
+        next_cfg["gpu_memory_utilization"] = float(req.gpu_memory_utilization)
+
+    cfg["judge_model"] = next_cfg
+    save_server_config(cfg)
+    return get_judge_model_config()
+
 class AgentTestRequest(BaseModel):
     provider: Optional[str] = None
     base_url: Optional[str] = None
@@ -471,9 +732,15 @@ class StartWorkflowRequest(BaseModel):
     user_query: str
     target_model_name: str
     target_model_path: str
+    reference_model: Optional[Dict[str, Any]] = None
     is_api: bool = False
     api_url: Optional[str] = None
     api_key: Optional[str] = None
+    api_provider: str = "openai_compatible"
+    api_extra_body: Optional[Dict[str, Any]] = None
+    api_max_workers: int = 16
+    api_connect_timeout: float = 10.0
+    api_read_timeout: float = 120.0
     language: str = "zh"
     tensor_parallel_size: int = 1
     max_tokens: int = 2048
@@ -486,6 +753,7 @@ class StartWorkflowRequest(BaseModel):
     repetition_penalty: float = 1.0
     max_model_len: Optional[int] = None
     gpu_memory_utilization: float = 0.9
+    seed: Optional[int] = None
 
 class ResumeWorkflowRequest(BaseModel):
     thread_id: str
@@ -517,6 +785,7 @@ class ManualStartRequest(BaseModel):
     target_model_name: Optional[str] = None
     language: str = "zh"
     target_model: Dict[str, Any]
+    reference_model: Optional[Dict[str, Any]] = None
     benches: List[ManualBenchRequest]
 
 class WorkflowStatusResponse(BaseModel):
@@ -541,6 +810,15 @@ async def start_workflow(req: StartWorkflowRequest):
     log.info(f"Starting workflow for thread_id={thread_id}")
 
     # Initialize State
+    reference_model = None
+    if isinstance(req.reference_model, dict):
+        try:
+            reference_model = _build_model_config_from_payload(req.reference_model)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"invalid reference_model: {e}")
+    else:
+        reference_model = _get_saved_judge_model_config()
+
     initial_state = NodeState(
         user_query=req.user_query,
         target_model_name=req.target_model_name,
@@ -548,19 +826,28 @@ async def start_workflow(req: StartWorkflowRequest):
         use_rag=req.use_rag,
         local_count=req.local_count,
         hf_count=req.hf_count,
-        target_model=ModelConfig(
-            model_name_or_path=req.target_model_path,
-            is_api=req.is_api,
-            api_url=req.api_url,
-            api_key=req.api_key,
-            tensor_parallel_size=req.tensor_parallel_size,
-            max_tokens=req.max_tokens,
-            temperature=req.temperature,
-            top_p=req.top_p,
-            top_k=req.top_k,
-            repetition_penalty=req.repetition_penalty,
-            max_model_len=req.max_model_len,
-            gpu_memory_utilization=req.gpu_memory_utilization,
+        reference_model=reference_model,
+        target_model=_build_model_config_from_payload(
+            {
+                "model_name_or_path": req.target_model_path,
+                "is_api": req.is_api,
+                "api_url": req.api_url,
+                "api_key": req.api_key,
+                "api_provider": req.api_provider,
+                "api_extra_body": req.api_extra_body,
+                "api_max_workers": req.api_max_workers,
+                "api_connect_timeout": req.api_connect_timeout,
+                "api_read_timeout": req.api_read_timeout,
+                "tensor_parallel_size": req.tensor_parallel_size,
+                "max_tokens": req.max_tokens,
+                "temperature": req.temperature,
+                "top_p": req.top_p,
+                "top_k": req.top_k,
+                "repetition_penalty": req.repetition_penalty,
+                "max_model_len": req.max_model_len,
+                "gpu_memory_utilization": req.gpu_memory_utilization,
+                "seed": req.seed,
+            }
         )
     )
     
@@ -726,34 +1013,16 @@ async def resume_workflow(thread_id: str, req: ResumeWorkflowRequest):
     if req.state_updates:
         if "target_model" in req.state_updates and isinstance(req.state_updates["target_model"], dict):
             try:
-                tm = req.state_updates["target_model"]
-                model_name_or_path = (
-                    tm.get("model_name_or_path")
-                    or tm.get("path")
-                    or tm.get("model_path")
-                    or tm.get("hf_model_name_or_path")
-                )
-                if not model_name_or_path:
-                    raise ValueError("target_model missing model_name_or_path/path")
-
-                req.state_updates["target_model"] = ModelConfig(
-                    model_name_or_path=str(model_name_or_path),
-                    is_api=bool(tm.get("is_api", False)),
-                    api_url=tm.get("api_url"),
-                    api_key=tm.get("api_key"),
-                    temperature=float(tm.get("temperature", 0.0) or 0.0),
-                    top_p=float(tm.get("top_p", 1.0) or 1.0),
-                    top_k=int(tm.get("top_k", -1) if tm.get("top_k", -1) is not None else -1),
-                    repetition_penalty=float(tm.get("repetition_penalty", 1.0) or 1.0),
-                    max_tokens=int(tm.get("max_tokens", 2048) or 2048),
-                    seed=(int(tm["seed"]) if tm.get("seed") is not None else None),
-                    tensor_parallel_size=int(tm.get("tensor_parallel_size", 1) or 1),
-                    max_model_len=tm.get("max_model_len"),
-                    gpu_memory_utilization=float(tm.get("gpu_memory_utilization", 0.9) or 0.9),
-                )
+                req.state_updates["target_model"] = _build_model_config_from_payload(req.state_updates["target_model"])
             except Exception as e:
                 log.error(f"Failed to parse target_model update: {e}")
                 del req.state_updates["target_model"]
+        if "reference_model" in req.state_updates and isinstance(req.state_updates["reference_model"], dict):
+            try:
+                req.state_updates["reference_model"] = _build_model_config_from_payload(req.state_updates["reference_model"])
+            except Exception as e:
+                log.error(f"Failed to parse reference_model update: {e}")
+                del req.state_updates["reference_model"]
 
         # Deserialize nested objects if needed
         if "benches" in req.state_updates and isinstance(req.state_updates["benches"], list):
@@ -847,34 +1116,16 @@ async def rerun_execution(thread_id: str, req: RerunExecutionRequest):
 
             if "target_model" in updates and isinstance(updates["target_model"], dict):
                 try:
-                    tm = updates["target_model"]
-                    model_name_or_path = (
-                        tm.get("model_name_or_path")
-                        or tm.get("path")
-                        or tm.get("model_path")
-                        or tm.get("hf_model_name_or_path")
-                    )
-                    if not model_name_or_path:
-                        raise ValueError("target_model missing model_name_or_path/path")
-
-                    updates["target_model"] = ModelConfig(
-                        model_name_or_path=str(model_name_or_path),
-                        is_api=bool(tm.get("is_api", False)),
-                        api_url=tm.get("api_url"),
-                        api_key=tm.get("api_key"),
-                        temperature=float(tm.get("temperature", 0.0) or 0.0),
-                        top_p=float(tm.get("top_p", 1.0) or 1.0),
-                        top_k=int(tm.get("top_k", -1) if tm.get("top_k", -1) is not None else -1),
-                        repetition_penalty=float(tm.get("repetition_penalty", 1.0) or 1.0),
-                        max_tokens=int(tm.get("max_tokens", 2048) or 2048),
-                        seed=(int(tm["seed"]) if tm.get("seed") is not None else None),
-                        tensor_parallel_size=int(tm.get("tensor_parallel_size", 1) or 1),
-                        max_model_len=tm.get("max_model_len"),
-                        gpu_memory_utilization=float(tm.get("gpu_memory_utilization", 0.9) or 0.9),
-                    )
+                    updates["target_model"] = _build_model_config_from_payload(updates["target_model"])
                 except Exception as e:
                     log.error(f"Failed to parse target_model update: {e}")
                     updates.pop("target_model", None)
+            if "reference_model" in updates and isinstance(updates["reference_model"], dict):
+                try:
+                    updates["reference_model"] = _build_model_config_from_payload(updates["reference_model"])
+                except Exception as e:
+                    log.error(f"Failed to parse reference_model update: {e}")
+                    updates.pop("reference_model", None)
 
             if "benches" in updates and isinstance(updates["benches"], list):
                 benches_data = updates["benches"]
@@ -921,30 +1172,18 @@ async def manual_start(req: ManualStartRequest):
     _set_thread_created_at(thread_id)
 
     tm = req.target_model or {}
-    model_name_or_path = (
-        tm.get("model_name_or_path")
-        or tm.get("path")
-        or tm.get("model_path")
-        or tm.get("hf_model_name_or_path")
-    )
-    if not model_name_or_path:
-        raise HTTPException(status_code=400, detail="target_model missing model_name_or_path/path")
-
-    model_cfg = ModelConfig(
-        model_name_or_path=str(model_name_or_path),
-        is_api=bool(tm.get("is_api", False)),
-        api_url=tm.get("api_url"),
-        api_key=tm.get("api_key"),
-        temperature=float(tm.get("temperature", 0.0) or 0.0),
-        top_p=float(tm.get("top_p", 1.0) or 1.0),
-        top_k=int(tm.get("top_k", -1) if tm.get("top_k", -1) is not None else -1),
-        repetition_penalty=float(tm.get("repetition_penalty", 1.0) or 1.0),
-        max_tokens=int(tm.get("max_tokens", 2048) or 2048),
-        seed=(int(tm["seed"]) if tm.get("seed") is not None else None),
-        tensor_parallel_size=int(tm.get("tensor_parallel_size", 1) or 1),
-        max_model_len=tm.get("max_model_len"),
-        gpu_memory_utilization=float(tm.get("gpu_memory_utilization", 0.9) or 0.9),
-    )
+    try:
+        model_cfg = _build_model_config_from_payload(tm)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    reference_model = None
+    if isinstance(req.reference_model, dict):
+        try:
+            reference_model = _build_model_config_from_payload(req.reference_model)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"invalid reference_model: {e}")
+    else:
+        reference_model = _get_saved_judge_model_config()
 
     benches: List[BenchInfo] = []
     for b in req.benches:
@@ -963,8 +1202,9 @@ async def manual_start(req: ManualStartRequest):
     initial_state = NodeState(
         user_query=req.user_query,
         request=MainRequest(language=req.language),
-        target_model_name=req.target_model_name or str(model_name_or_path),
+        target_model_name=req.target_model_name or str(model_cfg.model_name_or_path),
         target_model=model_cfg,
+        reference_model=reference_model,
         benches=benches,
         eval_cursor=0,
     )
@@ -978,6 +1218,7 @@ async def manual_start(req: ManualStartRequest):
                 "user_query": initial_state.user_query,
                 "target_model_name": initial_state.target_model_name,
                 "target_model": initial_state.target_model,
+                "reference_model": initial_state.reference_model,
                 "benches": initial_state.benches,
                 "eval_cursor": 0,
             },
@@ -1352,14 +1593,37 @@ async def get_history():
 @app.get("/api/models")
 def get_models():
     models = _load_json_file(MODELS_FILE, default=[])
-    return models if isinstance(models, list) else []
+    if not isinstance(models, list):
+        return []
+    normalized = []
+    for model in models:
+        if not isinstance(model, dict):
+            continue
+        item = dict(model)
+        item["is_api"] = bool(item.get("is_api", False))
+        if item["is_api"]:
+            item["api_provider"] = str(item.get("api_provider", "openai_compatible") or "openai_compatible")
+            item["api_extra_body"] = _normalize_api_extra_body(item.get("api_extra_body"))
+            item["api_max_workers"] = max(1, int(item.get("api_max_workers", 16) or 16))
+            item["api_connect_timeout"] = float(item.get("api_connect_timeout", 10.0) or 10.0)
+            item["api_read_timeout"] = float(item.get("api_read_timeout", 120.0) or 120.0)
+        normalized.append(item)
+    return normalized
 
 @app.post("/api/models")
 def add_model(model: Dict[str, Any]):
     models = _load_json_file(MODELS_FILE, default=[])
     if not isinstance(models, list):
         models = []
-    models.append(model)
+    item = dict(model or {})
+    item["is_api"] = bool(item.get("is_api", False))
+    if item["is_api"]:
+        item["api_provider"] = str(item.get("api_provider", "openai_compatible") or "openai_compatible")
+        item["api_extra_body"] = _normalize_api_extra_body(item.get("api_extra_body"))
+        item["api_max_workers"] = max(1, int(item.get("api_max_workers", 16) or 16))
+        item["api_connect_timeout"] = float(item.get("api_connect_timeout", 10.0) or 10.0)
+        item["api_read_timeout"] = float(item.get("api_read_timeout", 120.0) or 120.0)
+    models.append(item)
     _write_json_file(MODELS_FILE, models)
     return {"status": "success"}
 
@@ -1367,6 +1631,16 @@ class ModelLoadTestRequest(BaseModel):
     model_path: str
     tensor_parallel_size: int = 1
     max_tokens: int = 32
+
+class ModelRequestTestRequest(BaseModel):
+    model_name: str
+    api_url: str
+    api_key: Optional[str] = None
+    api_provider: str = "openai_compatible"
+    api_extra_body: Optional[Dict[str, Any]] = None
+    connect_timeout: float = 10.0
+    read_timeout: float = 120.0
+    test_message: str = "Hello!"
 
 @app.post("/api/models/test_load")
 def test_model_load(req: ModelLoadTestRequest):
@@ -1393,6 +1667,50 @@ def test_model_load(req: ModelLoadTestRequest):
         return {"ok": True, "detail": f"Model load test passed: {resolved}"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Model load test failed: {e}")
+
+@app.post("/api/models/test_request", response_model=AgentTestResponse)
+async def test_model_request(req: ModelRequestTestRequest):
+    model_name = (req.model_name or "").strip()
+    if not model_name:
+        raise HTTPException(status_code=400, detail="model_name is required")
+
+    api_url = _normalize_chat_completions_url(req.api_url, req.api_provider)
+    extra_body = _normalize_api_extra_body(req.api_extra_body)
+    headers: Dict[str, str] = {"Content-Type": "application/json"}
+    if isinstance(req.api_key, str) and req.api_key.strip():
+        headers["Authorization"] = f"Bearer {req.api_key.strip()}"
+
+    payload: Dict[str, Any] = {
+        "model": model_name,
+        "messages": [{"role": "user", "content": req.test_message or "Hello!"}],
+    }
+    payload.update(extra_body)
+
+    timeout = httpx.Timeout(connect=max(1.0, float(req.connect_timeout or 10.0)), read=max(1.0, float(req.read_timeout or 120.0)), write=max(1.0, float(req.read_timeout or 120.0)), pool=max(1.0, float(req.connect_timeout or 10.0)))
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        try:
+            r = await client.post(api_url, headers=headers, json=payload)
+        except Exception as e:
+            return {"ok": False, "status_code": None, "detail": f"Connection error: {e}", "mode": "chat"}
+
+    if 200 <= r.status_code < 300:
+        try:
+            data = r.json()
+            message = ((data.get("choices") or [{}])[0].get("message") or {})
+            content = message.get("content") or ""
+            reasoning = message.get("reasoning_content") or ""
+            preview = (content or reasoning or str(data))[:200]
+        except Exception:
+            preview = r.text[:200]
+        return {"ok": True, "status_code": r.status_code, "detail": f"POST /chat/completions ok: {preview}", "mode": "chat"}
+
+    try:
+        err_detail = r.json()
+    except Exception:
+        err_detail = r.text[:300]
+    if r.status_code in (401, 403):
+        return {"ok": False, "status_code": r.status_code, "detail": f"Unauthorized: {err_detail}", "mode": "chat"}
+    return {"ok": False, "status_code": r.status_code, "detail": f"Request failed: {err_detail}", "mode": "chat"}
 
 @app.get("/api/benches/gallery")
 def get_bench_gallery():
