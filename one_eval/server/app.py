@@ -607,6 +607,14 @@ async def run_graph_background(thread_id: str, input_state: Any, resume_command:
             task = RUNNING_WORKFLOW_TASKS.get(thread_id)
             if task is asyncio.current_task():
                 RUNNING_WORKFLOW_TASKS.pop(thread_id, None)
+            # Release vLLM GPU memory when workflow fully completes (not on interrupt/cancel)
+            if not _thread_interrupt_cache.get(thread_id):
+                try:
+                    from one_eval.toolkits.dataflow_eval_tool import DataFlowEvalTool
+                    DataFlowEvalTool.release_serving()
+                    log.info(f"Released vLLM serving after workflow {thread_id}")
+                except Exception as _e:
+                    log.warning(f"Failed to release vLLM serving: {_e}")
 
 def _launch_graph_task(thread_id: str, input_state: Any = None, resume_command: Optional[Command] = None):
     old = RUNNING_WORKFLOW_TASKS.get(thread_id)
