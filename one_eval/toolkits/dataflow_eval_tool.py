@@ -92,6 +92,18 @@ class DataFlowEvalTool:
     _cached_llm_serving: Optional[LLMServingABC] = None
     _cached_model_config: Optional[ModelConfig] = None
 
+    @classmethod
+    def release_serving(cls):
+        """释放 vLLM 显存，评测完成后调用"""
+        if cls._cached_llm_serving is not None:
+            try:
+                if hasattr(cls._cached_llm_serving, "cleanup"):
+                    cls._cached_llm_serving.cleanup()
+            except Exception:
+                pass
+            cls._cached_llm_serving = None
+            cls._cached_model_config = None
+
     def __init__(self, output_root: str = "cache/eval_results"):
         self.output_root = output_root
         os.makedirs(self.output_root, exist_ok=True)
