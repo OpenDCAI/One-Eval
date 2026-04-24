@@ -221,6 +221,15 @@ export const Home = () => {
                 {t({ zh: "查看基准库", en: "View Gallery" })}
               </Button>
             </Link>
+            <a
+              href="https://wcny4qa9krto.feishu.cn/wiki/AJX6w5SbGiJxctkQQdfckVqKnYf"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <Button size="lg" variant="outline" className="h-12 px-8 text-base border-slate-200 hover:bg-slate-50">
+                {t({ zh: "使用教程", en: "User Guide" })}
+              </Button>
+            </a>
           </div>
         </motion.div>
 

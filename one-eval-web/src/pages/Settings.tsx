@@ -103,7 +103,7 @@ export const Settings = () => {
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [newModel, setNewModel] = useState<ModelConfig>({ name: "", path: "", is_api: false, api_url: "", api_key: "", api_provider: "openai_compatible", api_extra_body: "", api_max_workers: 16, api_connect_timeout: 10, api_read_timeout: 120 });
   const [loading, setLoading] = useState(false);
-  const [apiBaseUrl] = useState(() => localStorage.getItem("oneEval.apiBaseUrl") || "http://localhost:8000");
+  const [apiBaseUrl] = useState(() => localStorage.getItem("oneEval.apiBaseUrl") || "http://localhost:8111");
   const [hfEndpoint, setHfEndpoint] = useState("https://hf-mirror.com");
   const [hfToken, setHfToken] = useState("");
   const [hfTokenSet, setHfTokenSet] = useState(false);
