@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
     Send, Check, Loader2, AlertCircle, ChevronDown, ChevronUp, 
-    Database, Bot, Maximize2, X, Save as SaveIcon, Tag
+    Database, Bot, Maximize2, X, Save as SaveIcon, Tag, BookOpen
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,8 +32,168 @@ export interface WorkflowState {
   reports?: Record<string, any>;
 }
 
+interface EvalTypeReferenceRow {
+    evalType: string;
+    paradigm: Record<Lang, string>;
+    logicalKeys: string[];
+    metric: Record<Lang, string>;
+    benchmark: string;
+}
+
+export const EVAL_TYPE_REFERENCE_ROWS: EvalTypeReferenceRow[] = [
+    {
+        evalType: "key1_text_score",
+        paradigm: { zh: "文本打分", en: "Text Scoring" },
+        logicalKeys: ["‘text’"],
+        metric: { zh: "‘ppl’", en: "‘ppl’" },
+        benchmark: "WikiText / PTB",
+    },
+    {
+        evalType: "key2_qa",
+        paradigm: { zh: "生成式：单参考答案", en: "Generative: Single Reference" },
+        logicalKeys: ["‘question’", "‘target’"],
+        metric: { zh: "‘math_verify’（可选语义评测）", en: "‘math_verify’ (optional semantic eval)" },
+        benchmark: "GSM8K / MATH",
+    },
+    {
+        evalType: "key2_q_ma",
+        paradigm: { zh: "生成式：多参考答案", en: "Generative: Multi Reference" },
+        logicalKeys: ["‘question’", "‘targets[]’"],
+        metric: { zh: "‘any_math_verify’", en: "‘any_math_verify’" },
+        benchmark: "SQuAD (multi-gold)",
+    },
+    {
+        evalType: "key3_q_choices_a",
+        paradigm: { zh: "选择题：单正确", en: "Multiple Choice: Single Correct" },
+        logicalKeys: ["‘question’", "‘choices[]’", "‘label’"],
+        metric: { zh: "‘ll_choice_acc’（loglikelihood 选项打分）", en: "‘ll_choice_acc’ (loglikelihood option scoring)" },
+        benchmark: "PIQA / ARC / MMLU",
+    },
+    {
+        evalType: "key3_q_choices_as",
+        paradigm: { zh: "选择题：多正确", en: "Multiple Choice: Multi Correct" },
+        logicalKeys: ["‘question’", "‘choices[]’", "‘labels[]’"],
+        metric: { zh: "‘micro_f1’", en: "‘micro_f1’" },
+        benchmark: "Multi-select / Multi-label",
+    },
+    {
+        evalType: "key3_q_a_rejected",
+        paradigm: { zh: "偏好/排序：成对比较", en: "Preference/Ranking: Pairwise" },
+        logicalKeys: ["‘question’", "‘better’", "‘rejected’"],
+        metric: { zh: "‘pairwise_ll_winrate’", en: "‘pairwise_ll_winrate’" },
+        benchmark: "DPO preference data",
+    },
+];
+
+export const EvalTypeReferenceModal = ({
+    isOpen,
+    onClose,
+    lang,
+    selectedEvalType,
+}: {
+    isOpen: boolean;
+    onClose: () => void;
+    lang: Lang;
+    selectedEvalType?: string;
+}) => {
+    const tt = (zh: string, en: string) => (lang === "zh" ? zh : en);
+    const renderQuotedText = (text: string) => {
+        const parts = text.split(/(‘[^’]+’)/g).filter(Boolean);
+        return parts.map((part, idx) => {
+            const m = part.match(/^‘([^’]+)’$/);
+            if (!m) return <span key={`${part}-${idx}`}>{part}</span>;
+            return (
+                <span
+                    key={`${m[1]}-${idx}`}
+                    className="inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-700"
+                >
+                    {m[1]}
+                </span>
+            );
+        });
+    };
+
+    return (
+        <Modal
+            isOpen={isOpen}
+            onClose={onClose}
+            maxWidthClass="max-w-6xl"
+            title={
+                <>
+                    <BookOpen className="w-6 h-6 text-blue-600" />
+                    {tt("评测类型参考表", "Eval Type Reference")}
+                </>
+            }
+            description={tt("用于快速确认 eval_type、逻辑字段和默认评测逻辑。", "Quickly verify eval_type, logical keys, and default metric logic.")}
+        >
+            <div className="space-y-3">
+                <div className="rounded-lg border border-blue-100 bg-blue-50/50 p-3 text-xs text-slate-700">
+                    <div>
+                        {renderQuotedText(
+                            tt(
+                                "字段约定：‘keys’ 不包含 prompt 本身，仅包含需嵌入 prompt 的变量字段。",
+                                "Field rule: ‘keys’ exclude prompt itself; only include variables injected into prompt."
+                            )
+                        )}
+                    </div>
+                    <div className="mt-1">
+                        {renderQuotedText(
+                            tt(
+                                "‘context’ 为统一可选字段：存在额外上下文即使用，没有时默认为空。",
+                                "‘context’ is an optional unified field: use it when extra context exists, default to empty when absent."
+                            )
+                        )}
+                    </div>
+                </div>
+
+                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                    <table className="w-full text-xs text-left">
+                        <thead className="bg-slate-100 text-[10px] uppercase text-slate-500 font-bold">
+                            <tr>
+                                <th className="px-3 py-2">eval_type</th>
+                                <th className="px-3 py-2">{tt("类型范式", "Paradigm")}</th>
+                                <th className="px-3 py-2">{tt("必要 keys", "Required keys")}</th>
+                                <th className="px-3 py-2">{tt("默认 metric/逻辑", "Default metric/logic")}</th>
+                                <th className="px-3 py-2">{tt("示例 Bench", "Example Bench")}</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {EVAL_TYPE_REFERENCE_ROWS.map((row) => {
+                                const isActive = selectedEvalType === row.evalType;
+                                return (
+                                    <tr key={row.evalType} className={cn(isActive ? "bg-amber-50/70" : "bg-white")}>
+                                        <td className="px-3 py-2 font-mono font-bold text-slate-700 whitespace-nowrap">{row.evalType}</td>
+                                        <td className="px-3 py-2 text-slate-700">{row.paradigm[lang]}</td>
+                                        <td className="px-3 py-2 text-slate-600">
+                                            <div className="flex flex-wrap gap-1">
+                                                {row.logicalKeys.map((k) => {
+                                                    const norm = k.replace(/^‘/, "").replace(/’$/, "");
+                                                    return (
+                                                        <span
+                                                            key={k}
+                                                            className="inline-flex items-center rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-700"
+                                                        >
+                                                            {norm}
+                                                        </span>
+                                                    );
+                                                })}
+                                            </div>
+                                        </td>
+                                        <td className="px-3 py-2 text-slate-700">{renderQuotedText(row.metric[lang])}</td>
+                                        <td className="px-3 py-2 text-slate-600 whitespace-nowrap">{row.benchmark}</td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </Modal>
+    );
+};
+
 // --- Modal Component ---
-const Modal = ({ isOpen, onClose, title, description, children, footer }: { isOpen: boolean, onClose: () => void, title: React.ReactNode, description?: string, children: React.ReactNode, footer?: React.ReactNode }) => {
+const Modal = ({ isOpen, onClose, title, description, children, footer, maxWidthClass = "max-w-3xl" }: { isOpen: boolean, onClose: () => void, title: React.ReactNode, description?: string, children: React.ReactNode, footer?: React.ReactNode, maxWidthClass?: string }) => {
     if (!isOpen) return null;
 
     return (
@@ -49,7 +209,7 @@ const Modal = ({ isOpen, onClose, title, description, children, footer }: { isOp
                 initial={{ opacity: 0, scale: 0.95, y: 10 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col relative z-10 overflow-hidden"
+                className={cn("bg-white rounded-2xl shadow-2xl w-full max-h-[85vh] flex flex-col relative z-10 overflow-hidden", maxWidthClass)}
             >
                 <div className="p-6 border-b border-slate-100 flex items-start justify-between bg-slate-50/50">
                     <div>
@@ -76,6 +236,7 @@ const Modal = ({ isOpen, onClose, title, description, children, footer }: { isOp
 // --- Bench Card Component ---
 export const BenchCard = ({ bench, activeNode, lang, onUpdate, onRetryDownload }: { bench: Bench, activeNode: string | null, lang: Lang, onUpdate?: (updatedBench: Bench) => void, onRetryDownload?: (params: { bench_name: string, config?: string, split?: string }) => Promise<void> }) => {
     const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+    const [isEvalTypeRefOpen, setIsEvalTypeRefOpen] = useState(false);
     const [isRetrying, setIsRetrying] = useState(false);
     const tt = (zh: string, en: string) => (lang === "zh" ? zh : en);
     const EVAL_TYPE_OPTIONS = [
@@ -512,7 +673,19 @@ export const BenchCard = ({ bench, activeNode, lang, onUpdate, onRetryDownload }
                                     <h4 className="text-sm font-bold text-indigo-800 flex items-center gap-2">
                                         <span className="w-2 h-2 rounded-full bg-indigo-500"/> {tt("评测类型", "Evaluation Type")}
                                     </h4>
-                                    <span className="text-[10px] text-indigo-500 uppercase font-bold tracking-wider">{tt("必填", "Required")}</span>
+                                    <div className="flex items-center gap-2">
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className="h-6 px-2 text-[10px] text-indigo-700 border-indigo-200 bg-white hover:bg-indigo-50"
+                                            onClick={() => setIsEvalTypeRefOpen(true)}
+                                        >
+                                            <BookOpen className="w-3 h-3 mr-1" />
+                                            {tt("参考表", "Reference")}
+                                        </Button>
+                                        <span className="text-[10px] text-indigo-500 uppercase font-bold tracking-wider">{tt("必填", "Required")}</span>
+                                    </div>
                                 </div>
                                 <select
                                     value={selectedEvalType}
@@ -693,6 +866,12 @@ export const BenchCard = ({ bench, activeNode, lang, onUpdate, onRetryDownload }
                     </Modal>
                 )}
             </AnimatePresence>
+            <EvalTypeReferenceModal
+                isOpen={isEvalTypeRefOpen}
+                onClose={() => setIsEvalTypeRefOpen(false)}
+                lang={lang}
+                selectedEvalType={selectedEvalType || (typeof evalType === "string" ? evalType : "")}
+            />
         </>
     );
 };

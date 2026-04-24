@@ -7,7 +7,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { ChatPanel, WorkflowBlock, SummaryPanel, Bench, WorkflowState, BenchCard, GalleryModal } from "./EvalComponents";
+import { ChatPanel, WorkflowBlock, SummaryPanel, Bench, WorkflowState, BenchCard, GalleryModal, EvalTypeReferenceModal } from "./EvalComponents";
 import { SimpleMarkdown } from "@/components/ui/simple-markdown";
 import { useLang } from "@/lib/i18n";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -73,6 +73,7 @@ export const Eval = () => {
   // UI State
   const [activeNode, setActiveNode] = useState<string | null>(null);
   const [isGalleryOpen, setIsGalleryOpen] = useState(false);
+  const [isEvalTypeRefOpen, setIsEvalTypeRefOpen] = useState(false);
   const [isResuming, setIsResuming] = useState(false); // Flag to prevent polling overwrites during resume
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [isChatCollapsed, setIsChatCollapsed] = useState(false);
@@ -150,7 +151,7 @@ export const Eval = () => {
   const [localCount, setLocalCount] = useState(3);
   const [hfCount, setHfCount] = useState(2);
 
-  const apiBaseUrl = useMemo(() => localStorage.getItem("oneEval.apiBaseUrl") || "http://localhost:8000", []);
+  const apiBaseUrl = useMemo(() => localStorage.getItem("oneEval.apiBaseUrl") || "http://localhost:8111", []);
   const draftKey = useMemo(() => "oneEval.evalDraft", []);
 
   useEffect(() => {
@@ -1579,6 +1580,17 @@ export const Eval = () => {
                         ]}
                    >
                        {/* Config View */}
+                       <div className="mb-3 flex justify-end">
+                           <Button
+                               size="sm"
+                               variant="outline"
+                               className="h-8 text-xs gap-1 border-amber-200 text-amber-700 hover:bg-amber-50"
+                               onClick={() => setIsEvalTypeRefOpen(true)}
+                           >
+                               <BookOpen className="w-3.5 h-3.5" />
+                               {t({ zh: "查看评测类型参考表", en: "Open Eval Type Reference" })}
+                           </Button>
+                       </div>
                        <div className="grid grid-cols-2 gap-4">
                            {/* Use editBenches if interrupted to show live updates, else state.benches */}
                            {(status === "interrupted" ? editBenches : state?.benches)?.map((b, i) => (
@@ -2358,6 +2370,11 @@ export const Eval = () => {
             onClose={() => setIsGalleryOpen(false)} 
             onSelect={handleGallerySelect}
             apiBaseUrl={apiBaseUrl}
+            lang={lang}
+       />
+       <EvalTypeReferenceModal
+            isOpen={isEvalTypeRefOpen}
+            onClose={() => setIsEvalTypeRefOpen(false)}
             lang={lang}
        />
 
