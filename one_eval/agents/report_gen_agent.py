@@ -4,6 +4,7 @@ import json
 import os
 import time
 import math
+import re
 from collections import Counter
 from typing import Any, Dict, List, Optional, Tuple
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -80,6 +81,17 @@ BENCH_KEYWORD_RULES = {
     "comprehension": ["language"],
 }
 
+DOMAIN_KEYWORD_RULES = {
+    "finance": ["finance", "financial", "finqa", "fin-bench", "finbench", "convfinqa", "financeqa", "stock", "bank", "fiscal"],
+    "medical": ["medical", "med", "medicine", "clinical", "health", "biomed", "usmle"],
+    "legal": ["legal", "law", "juris", "court", "contract", "statute"],
+    "math": ["math", "mathematics", "algebra", "geometry", "calculus", "arithmetic", "theorem"],
+    "coding": ["code", "coding", "program", "software", "humaneval", "mbpp", "leetcode"],
+    "reasoning": ["reason", "logic", "deduction", "inference"],
+    "safety": ["safety", "harm", "bias", "alignment", "jailbreak"],
+    "knowledge": ["knowledge", "qa", "exam", "mmlu", "ceval", "cmmlu"],
+}
+
 
 class ReportGenAgent(CustomAgent):
     @property
@@ -105,6 +117,8 @@ class ReportGenAgent(CustomAgent):
 
         bench_summaries = self._build_bench_summaries(benches, eval_results, metric_plan)
         overall_score = self._compute_overall_score(bench_summaries)
+        bench_profile = self._build_bench_profile_view(bench_summaries)
+        domain_performance = self._build_domain_performance_view(bench_summaries)
 
         lang = self._get_lang(state)
         macro_view = self._build_macro_view(bench_summaries, eval_results, lang)
@@ -115,6 +129,8 @@ class ReportGenAgent(CustomAgent):
         summary_payload = {
             "overall_score": overall_score,
             "benches": bench_summaries[:20],
+            "benchmark_profiles": bench_profile.get("rows", [])[:20],
+            "domain_performance": domain_performance.get("rows", [])[:10],
             "error_distribution": diagnostic_view.get("error_distribution", []),
             "metric_summaries": analyst_compact.get("metric_summary", []),
             "case_studies": analyst_compact.get("case_study", []),
@@ -129,6 +145,8 @@ class ReportGenAgent(CustomAgent):
                 "score": overall_score,
                 "bench_summaries": bench_summaries,
             },
+            "benchmark_profiles": bench_profile,
+            "domain_performance": domain_performance,
             "macro": macro_view,
             "diagnostic": {
                 "error_distribution": diagnostic_view.get("error_distribution", []),
@@ -174,6 +192,7 @@ class ReportGenAgent(CustomAgent):
             bench_name = bench.bench_name
             bench_result = eval_results.get(bench_name) or {}
             metrics = bench_result.get("metrics", {}) or {}
+            bench_meta = bench.meta or {}
             
             # --- MODIFIED: Use 'accuracy' from meta.eval_result as primary score ---
             raw_bench_score = ((bench.meta or {}).get("eval_result") or {}).get("accuracy")
@@ -193,22 +212,117 @@ class ReportGenAgent(CustomAgent):
             num_samples = int(bench_result.get("num_samples", 0) or 0)
 
             # 优先从 meta 读取维度
-            meta_dims = (bench.meta or {}).get("radar_dimensions")
+            meta_dims = bench_meta.get("radar_dimensions")
             if not isinstance(meta_dims, list):
                 # 回退到名称映射或 metric 推断
                 meta_dims = self._map_bench_to_dimensions(bench_name, list(metrics.keys()))
+            domain_tags = self._infer_domain_tags(bench_name, bench_meta, meta_dims)
+            primary_domain = domain_tags[0] if domain_tags else "general"
+            description = bench_meta.get("description_zh") or bench_meta.get("description") or ""
 
             for dim in meta_dims:
                 summaries.append({
                     "bench": bench_name,
                     "eval_type": dim,
-                    "domain": bench.meta.get("domain"),
-                    "task_type": bench.meta.get("task_type"),
+                    "domain": primary_domain,
+                    "domain_tags": domain_tags,
+                    "task_type": bench_meta.get("task_type"),
+                    "bench_category": bench_meta.get("category"),
+                    "bench_description": description,
                     "num_samples": num_samples,
                     "primary_metric": primary_name,
                     "primary_score": bench_score, # Force use meta score
                 })
         return summaries
+
+    def _build_bench_profile_view(self, summaries: List[Dict[str, Any]]) -> Dict[str, Any]:
+        bench_index: Dict[str, Dict[str, Any]] = {}
+        for s in summaries:
+            bench_name = str(s.get("bench") or "")
+            if not bench_name:
+                continue
+            score = self._safe_float(s.get("primary_score"))
+            sample = int(s.get("num_samples", 0) or 0)
+
+            if bench_name not in bench_index:
+                bench_index[bench_name] = {
+                    "bench": bench_name,
+                    "domain": s.get("domain") or "general",
+                    "domain_tags": s.get("domain_tags") or [],
+                    "task_type": s.get("task_type"),
+                    "category": s.get("bench_category"),
+                    "description": s.get("bench_description") or "",
+                    "num_samples": sample,
+                    "primary_metric": s.get("primary_metric") or "accuracy",
+                    "primary_score": score,
+                }
+                continue
+
+            row = bench_index[bench_name]
+            row["num_samples"] = max(int(row.get("num_samples", 0) or 0), sample)
+            if score > self._safe_float(row.get("primary_score")):
+                row["primary_score"] = score
+                row["primary_metric"] = s.get("primary_metric") or row.get("primary_metric")
+            merged_tags = list(dict.fromkeys((row.get("domain_tags") or []) + (s.get("domain_tags") or [])))
+            row["domain_tags"] = merged_tags
+            if row.get("domain") == "general" and s.get("domain"):
+                row["domain"] = s.get("domain")
+            if not row.get("description") and s.get("bench_description"):
+                row["description"] = s.get("bench_description")
+
+        rows = sorted(
+            bench_index.values(),
+            key=lambda x: (self._safe_float(x.get("primary_score")), int(x.get("num_samples", 0) or 0)),
+            reverse=True,
+        )
+        return {"rows": rows}
+
+    def _build_domain_performance_view(self, summaries: List[Dict[str, Any]]) -> Dict[str, Any]:
+        groups: Dict[str, Dict[str, Any]] = {}
+        for s in summaries:
+            domain = str(s.get("domain") or "general").strip().lower() or "general"
+            score = self._safe_float(s.get("primary_score"))
+            num = int(s.get("num_samples", 0) or 0)
+            bench_name = str(s.get("bench") or "")
+            if domain not in groups:
+                groups[domain] = {
+                    "score_sum": 0.0,
+                    "weight": 0,
+                    "benches": {},
+                }
+            weight = num if num > 0 else 1
+            groups[domain]["score_sum"] += score * weight
+            groups[domain]["weight"] += weight
+            if bench_name:
+                groups[domain]["benches"][bench_name] = score
+
+        rows: List[Dict[str, Any]] = []
+        for domain, item in groups.items():
+            benches_map = item.get("benches", {})
+            benches_sorted: List[Tuple[str, float]] = sorted(
+                benches_map.items(),
+                key=lambda x: self._safe_float(x[1]),
+                reverse=True,
+            )
+            avg_score = item["score_sum"] / item["weight"] if item["weight"] > 0 else 0.0
+            best_bench = benches_sorted[0][0] if benches_sorted else None
+            worst_bench = benches_sorted[-1][0] if benches_sorted else None
+            rows.append({
+                "domain": domain,
+                "avg_score": avg_score,
+                "num_samples": int(item.get("weight", 0) or 0),
+                "bench_count": len(benches_sorted),
+                "benches": [b[0] for b in benches_sorted],
+                "best_bench": best_bench,
+                "worst_bench": worst_bench,
+            })
+
+        rows = sorted(
+            rows,
+            key=lambda x: (self._safe_float(x.get("avg_score")), int(x.get("num_samples", 0) or 0)),
+            reverse=True,
+        )
+        return {"rows": rows}
 
     def _map_bench_to_dimensions(self, bench_name: str, metric_names: List[str]) -> List[str]:
         # 1. 关键词规则匹配（名称中包含关键词即可）
@@ -534,6 +648,58 @@ class ReportGenAgent(CustomAgent):
             return [str(domain), bench]
         return [bench]
 
+    def _infer_domain_tags(self, bench_name: str, bench_meta: Dict[str, Any], eval_dims: List[str]) -> List[str]:
+        tags = bench_meta.get("tags")
+        if isinstance(tags, str):
+            tags = [tags]
+        elif not isinstance(tags, list):
+            tags = []
+
+        direct_domain = bench_meta.get("domain")
+        raw_candidates: List[str] = []
+        if isinstance(direct_domain, str):
+            raw_candidates.append(direct_domain)
+        elif isinstance(direct_domain, list):
+            raw_candidates.extend([d for d in direct_domain if isinstance(d, str)])
+
+        task_type = bench_meta.get("task_type")
+        if isinstance(task_type, str):
+            raw_candidates.append(task_type)
+        elif isinstance(task_type, list):
+            raw_candidates.extend([t for t in task_type if isinstance(t, str)])
+
+        category = bench_meta.get("category")
+        if isinstance(category, str):
+            raw_candidates.append(category)
+
+        raw_candidates.extend([t for t in tags if isinstance(t, str)])
+        raw_candidates.extend([d for d in eval_dims if isinstance(d, str)])
+        description = bench_meta.get("description") or ""
+        if isinstance(description, str):
+            raw_candidates.append(description)
+        raw_candidates.append(bench_name or "")
+
+        blob = " ".join(raw_candidates).lower()
+        normalized: List[str] = []
+        for domain, keywords in DOMAIN_KEYWORD_RULES.items():
+            for kw in keywords:
+                if kw and kw in blob:
+                    normalized.append(domain)
+                    break
+
+        # fallback: 用简单分词，补捉可能未覆盖的显式 domain 值
+        tokens = set(re.findall(r"[a-zA-Z]+", blob))
+        if "finance" in tokens or "financial" in tokens or "finqa" in tokens:
+            normalized.append("finance")
+        if "medical" in tokens or "clinical" in tokens:
+            normalized.append("medical")
+        if "legal" in tokens or "law" in tokens:
+            normalized.append("legal")
+
+        if not normalized:
+            normalized.append("general")
+        return list(dict.fromkeys(normalized))
+
     def _get_question(self, rec: Dict[str, Any]) -> Any:
         for k in ["question", "query", "prompt", "instruction", "input", "text"]:
             if k in rec:
@@ -614,10 +780,22 @@ class ReportGenAgent(CustomAgent):
         lang = self._get_lang(state)
         if lang.lower().startswith("en"):
             system_prompt = "You are an evaluation report analyst."
-            user_prompt = f"Summarize the evaluation in concise English. Do not use markdown horizontal rules like --- . You may include simple emoji. Input:\n{json.dumps(payload, ensure_ascii=False)}"
+            user_prompt = (
+                "Summarize the evaluation in concise English. "
+                "You must include benchmark profile information and domain-specific performance analysis "
+                "(e.g., finance-domain strengths/weaknesses). "
+                "Do not use markdown horizontal rules like --- . "
+                f"Input:\n{json.dumps(payload, ensure_ascii=False)}"
+            )
         else:
             system_prompt = "你是评测报告分析专家。"
-            user_prompt = f"请用简洁中文总结模型表现。不要输出 markdown 分割线（例如 ---）。可以使用简单表情。输入如下：\n{json.dumps(payload, ensure_ascii=False)}"
+            user_prompt = (
+                "请用简洁中文总结模型表现。"
+                "必须包含 benchmark 本身信息（如领域、任务、数据规模）以及领域表现分析"
+                "（例如金融领域的优势/短板）。"
+                "不要输出 markdown 分割线（例如 ---）。"
+                f"输入如下：\n{json.dumps(payload, ensure_ascii=False)}"
+            )
 
         try:
             llm = self.create_llm(state)

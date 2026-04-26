@@ -185,7 +185,7 @@ function transformBenchGalleryItem(item: BenchGalleryItem): BenchItem {
 }
 
 function getApiBaseUrl(): string {
-  return localStorage.getItem("oneEval.apiBaseUrl") || "http://localhost:8111";
+  return localStorage.getItem("oneEval.apiBaseUrl") || "http://localhost:8000";
 }
 
 function loadGalleryBenches(): BenchItem[] {
