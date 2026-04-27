@@ -1,7 +1,7 @@
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { SimpleMarkdown } from "@/components/ui/simple-markdown";
-import { BarChart2, PieChart, Activity } from "lucide-react";
+import { BarChart2, PieChart, Activity, AlertTriangle, Bot } from "lucide-react";
 import type { Lang } from "@/lib/i18n";
 
 // --- Types ---
@@ -11,7 +11,9 @@ interface RadarData {
 }
 
 interface DonutData {
-  type: string;
+  id?: string;
+  type?: string;
+  label?: string;
   count: number;
   ratio: number;
 }
@@ -22,6 +24,35 @@ interface HistogramData {
   incorrect: number[];
 }
 
+interface BenchRow {
+  bench: string;
+  domain?: string;
+  domains?: string[];
+  domain_tags?: string[];
+  capabilities?: string[];
+  task_type?: string | string[];
+  eval_type?: string;
+  category?: string;
+  description?: string;
+  num_samples?: number;
+  valid_samples?: number;
+  total_samples?: number;
+  primary_metric?: string;
+  primary_score?: number;
+  score_source?: string;
+  warnings?: any[];
+}
+
+interface CaseRow {
+  bench: string;
+  question?: unknown;
+  model_output?: unknown;
+  ground_truth?: unknown;
+  error_type?: string;
+  error_id?: string;
+  score?: number;
+}
+
 interface ReportData {
   version: string;
   generated_at: number;
@@ -29,24 +60,20 @@ interface ReportData {
   overall: {
     score: number;
     bench_summaries: any[];
+    num_benches?: number;
+    num_samples?: number;
+  };
+  bench_results?: {
+    rows: BenchRow[];
   };
   benchmark_profiles?: {
-    rows: Array<{
-      bench: string;
-      domain: string;
-      domain_tags?: string[];
-      task_type?: string | string[];
-      category?: string;
-      description?: string;
-      num_samples?: number;
-      primary_metric?: string;
-      primary_score?: number;
-    }>;
+    rows: BenchRow[];
   };
   domain_performance?: {
     rows: Array<{
       domain: string;
       avg_score: number;
+      score?: number;
       num_samples: number;
       bench_count: number;
       benches: string[];
@@ -56,12 +83,16 @@ interface ReportData {
   };
   macro: {
     radar: RadarData;
-    sunburst: any; // We might skip sunburst or simplify it
+    sunburst: any;
     table: any[];
   };
   diagnostic: {
     error_distribution: DonutData[];
     length_histogram: HistogramData;
+  };
+  cases?: {
+    columns?: string[];
+    rows: CaseRow[];
   };
   analyst: {
     metric_summary: Record<string, string>;
@@ -70,11 +101,26 @@ interface ReportData {
   llm_summary: string;
 }
 
+const formatScore = (value?: number) => {
+  if (typeof value !== "number" || Number.isNaN(value)) return "N/A";
+  return value.toFixed(4);
+};
+
+const stringifyValue = (value: unknown) => {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+};
+
 // --- Components ---
 
 // 1. Simple Radar Chart (SVG)
 export const RadarChart = ({ data, size = 300 }: { data: RadarData; size?: number }) => {
-  const { labels, scores } = data;
+  const { labels = [], scores = [] } = data || {};
   const numPoints = labels.length;
   const radius = size / 2 - 40; // Padding
   const center = size / 2;
@@ -97,7 +143,6 @@ export const RadarChart = ({ data, size = 300 }: { data: RadarData; size?: numbe
   return (
     <div className="relative flex justify-center items-center" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="overflow-visible">
-        {/* Background Levels */}
         {levels.map((level, i) => (
           <polygon
             key={i}
@@ -112,34 +157,21 @@ export const RadarChart = ({ data, size = 300 }: { data: RadarData; size?: numbe
           />
         ))}
 
-        {/* Axes */}
         {labels.map((_, i) => {
           const { x, y } = getPoint(i, 1.1);
-          return (
-            <line
-              key={i}
-              x1={center}
-              y1={center}
-              x2={x}
-              y2={y}
-              stroke="#e2e8f0"
-              strokeWidth="1"
-            />
-          );
+          return <line key={i} x1={center} y1={center} x2={x} y2={y} stroke="#e2e8f0" strokeWidth="1" />;
         })}
 
-        {/* Data Polygon */}
         <motion.polygon
           initial={{ opacity: 0, scale: 0 }}
           animate={{ opacity: 0.6, scale: 1 }}
           transition={{ duration: 0.8, ease: "easeOut" }}
           points={polyPoints}
-          fill="rgba(99, 102, 241, 0.2)" // Violet-500
+          fill="rgba(99, 102, 241, 0.2)"
           stroke="rgba(99, 102, 241, 0.8)"
           strokeWidth="2"
         />
 
-        {/* Labels */}
         {labels.map((label, i) => {
           const { x, y } = getPoint(i, 1.25);
           return (
@@ -150,7 +182,7 @@ export const RadarChart = ({ data, size = 300 }: { data: RadarData; size?: numbe
               textAnchor="middle"
               dominantBaseline="middle"
               className="text-[10px] font-bold fill-slate-500 uppercase tracking-wider"
-              style={{ fontSize: '10px' }}
+              style={{ fontSize: "10px" }}
             >
               {label}
             </text>
@@ -169,13 +201,14 @@ export const DonutChart = ({ data, size = 200 }: { data: DonutData[]; size?: num
   const radius = size / 2 - 20;
   const thickness = 20;
   
-  // Colors for error types
-  const getColor = (type: string) => {
-    if (type.includes("Correct")) return "#10b981"; // Emerald-500
-    if (type.includes("Extraction")) return "#f59e0b"; // Amber-500
-    if (type.includes("Refusal")) return "#64748b"; // Slate-500
-    if (type.includes("Format")) return "#8b5cf6"; // Violet-500
-    return "#ef4444"; // Red-500 (Incorrect/Logic)
+  const getColor = (item: DonutData) => {
+    const id = (item.id || "").toLowerCase();
+    const label = `${item.type || ""} ${item.label || ""}`;
+    if (id === "correct" || label.includes("Correct") || label.includes("正确")) return "#10b981";
+    if (id === "extraction_error" || label.includes("Extraction") || label.includes("抽取")) return "#f59e0b";
+    if (id === "refusal_empty" || label.includes("Refusal") || label.includes("拒答") || label.includes("空输出")) return "#64748b";
+    if (id === "format_error" || label.includes("Format") || label.includes("格式")) return "#8b5cf6";
+    return "#ef4444";
   };
 
   if (total === 0) return <div className="text-slate-400 italic">No data</div>;
@@ -191,58 +224,40 @@ export const DonutChart = ({ data, size = 200 }: { data: DonutData[]; size?: num
                 
                 const startX = center + radius * Math.cos((accumulatedAngle - 90) * Math.PI / 180);
                 const startY = center + radius * Math.sin((accumulatedAngle - 90) * Math.PI / 180);
-                
                 const endX = center + radius * Math.cos((accumulatedAngle + angle - 90) * Math.PI / 180);
                 const endY = center + radius * Math.sin((accumulatedAngle + angle - 90) * Math.PI / 180);
 
-                // For donut hole
                 const innerRadius = radius - thickness;
                 const startInnerX = center + innerRadius * Math.cos((accumulatedAngle - 90) * Math.PI / 180);
                 const startInnerY = center + innerRadius * Math.sin((accumulatedAngle - 90) * Math.PI / 180);
                 const endInnerX = center + innerRadius * Math.cos((accumulatedAngle + angle - 90) * Math.PI / 180);
                 const endInnerY = center + innerRadius * Math.sin((accumulatedAngle + angle - 90) * Math.PI / 180);
 
-                const path = `
-                    M ${startX} ${startY}
-                    A ${radius} ${radius} 0 ${largeArcFlag} 1 ${endX} ${endY}
-                    L ${endInnerX} ${endInnerY}
-                    A ${innerRadius} ${innerRadius} 0 ${largeArcFlag} 0 ${startInnerX} ${startInnerY}
-                    Z
-                `;
-                
+                const path = `M ${startX} ${startY} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${endX} ${endY} L ${endInnerX} ${endInnerY} A ${innerRadius} ${innerRadius} 0 ${largeArcFlag} 0 ${startInnerX} ${startInnerY} Z`;
                 const element = (
                     <motion.path
                         key={i}
                         d={path}
-                        fill={getColor(d.type)}
+                        fill={getColor(d)}
                         initial={{ opacity: 0, scale: 0.9 }}
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ delay: i * 0.1 }}
                         className="hover:opacity-80 transition-opacity cursor-pointer"
                     />
                 );
-                
                 accumulatedAngle += angle;
                 return element;
             })}
-            
-            {/* Center Text */}
-            <text x={center} y={center} textAnchor="middle" dominantBaseline="middle" className="fill-slate-700 font-bold text-xl">
-                {total}
-            </text>
-            <text x={center} y={center + 20} textAnchor="middle" dominantBaseline="middle" className="fill-slate-400 text-xs uppercase font-bold tracking-wider">
-                Total
-            </text>
+            <text x={center} y={center} textAnchor="middle" dominantBaseline="middle" className="fill-slate-700 font-bold text-xl">{total}</text>
+            <text x={center} y={center + 20} textAnchor="middle" dominantBaseline="middle" className="fill-slate-400 text-xs uppercase font-bold tracking-wider">Total</text>
         </svg>
       </div>
-      
-      {/* Legend */}
       <div className="space-y-3">
           {data.map((d, i) => (
               <div key={i} className="flex items-center gap-3">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getColor(d.type) }} />
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getColor(d) }} />
                   <div>
-                      <div className="text-xs font-bold text-slate-700">{d.type}</div>
+                      <div className="text-xs font-bold text-slate-700">{d.label || d.type}</div>
                       <div className="text-[10px] text-slate-400">{d.count} samples ({Math.round(d.ratio * 100)}%)</div>
                   </div>
               </div>
@@ -253,19 +268,20 @@ export const DonutChart = ({ data, size = 200 }: { data: DonutData[]; size?: num
 };
 
 // 3. Simple Bar Chart (HTML/CSS) for Benchmarks
-export const BarChart = ({ data }: { data: { label: string; value: number; color?: string }[] }) => {
+export const BarChart = ({ data }: { data: { label: string; value: number; color?: string; subLabel?: string }[] }) => {
     return (
         <div className="space-y-3 w-full">
             {data.map((d, i) => (
                 <div key={i} className="space-y-1">
-                    <div className="flex justify-between text-xs">
-                        <span className="font-bold text-slate-700 truncate max-w-[200px]" title={d.label}>{d.label}</span>
-                        <span className="font-mono text-slate-500">{d.value.toFixed(2)}</span>
+                    <div className="flex justify-between text-xs gap-3">
+                        <span className="font-bold text-slate-700 truncate max-w-[240px]" title={d.label}>{d.label}</span>
+                        <span className="font-mono text-slate-500">{formatScore(d.value)}</span>
                     </div>
+                    {d.subLabel ? <div className="text-[10px] text-slate-400 truncate">{d.subLabel}</div> : null}
                     <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
                         <motion.div 
                             initial={{ width: 0 }}
-                            animate={{ width: `${d.value * 100}%` }}
+                            animate={{ width: `${Math.max(0, Math.min(1, d.value)) * 100}%` }}
                             transition={{ duration: 0.5, delay: i * 0.05 }}
                             className={cn("h-full rounded-full", d.color || "bg-blue-500")}
                         />
@@ -279,47 +295,21 @@ export const BarChart = ({ data }: { data: { label: string; value: number; color
 // 4. Histogram Chart (HTML/CSS) for Length Distribution
 export const HistogramChart = ({ data, height = 200 }: { data: HistogramData; height?: number }) => {
     if (!data || !data.bins || data.bins.length === 0) return <div className="text-slate-400 italic">No data</div>;
-
     const maxVal = Math.max(...data.correct, ...data.incorrect, 1);
-    
     return (
         <div className="w-full">
              <div className="flex items-end gap-1 w-full" style={{ height }}>
                 {data.bins.map((bin, i) => {
                     const correctHeight = (data.correct[i] / maxVal) * 100;
                     const incorrectHeight = (data.incorrect[i] / maxVal) * 100;
-                    
                     return (
                         <div key={i} className="flex-1 flex flex-col justify-end h-full gap-0.5 group relative">
-                             {/* Tooltip */}
                              <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10 pointer-events-none">
-                                 Len &lt; {bin}: {data.correct[i]} ✓ / {data.incorrect[i]} ✗
+                                 Len &lt; {bin}: {data.correct[i]} ok / {data.incorrect[i]} err
                              </div>
-
-                             {/* Incorrect Bar (Top Stack) */}
-                             {incorrectHeight > 0 && (
-                                 <motion.div 
-                                     initial={{ height: 0 }}
-                                     animate={{ height: `${incorrectHeight}%` }}
-                                     className="w-full bg-red-400 rounded-t-sm opacity-80 hover:opacity-100 transition-opacity"
-                                 />
-                             )}
-                             
-                             {/* Correct Bar (Bottom Stack) */}
-                             {correctHeight > 0 && (
-                                 <motion.div 
-                                     initial={{ height: 0 }}
-                                     animate={{ height: `${correctHeight}%` }}
-                                     className="w-full bg-emerald-400 rounded-b-sm opacity-80 hover:opacity-100 transition-opacity"
-                                 />
-                             )}
-                             
-                             {/* X-Axis Label (Simplified) */}
-                             {i % 2 === 0 && (
-                                 <div className="absolute top-full mt-1 text-[9px] text-slate-400 text-center w-full">
-                                     {bin}
-                                 </div>
-                             )}
+                             {incorrectHeight > 0 && <motion.div initial={{ height: 0 }} animate={{ height: `${incorrectHeight}%` }} className="w-full bg-red-400 rounded-t-sm opacity-80 hover:opacity-100 transition-opacity" />}
+                             {correctHeight > 0 && <motion.div initial={{ height: 0 }} animate={{ height: `${correctHeight}%` }} className="w-full bg-emerald-400 rounded-b-sm opacity-80 hover:opacity-100 transition-opacity" />}
+                             {i % 2 === 0 && <div className="absolute top-full mt-1 text-[9px] text-slate-400 text-center w-full">{bin}</div>}
                         </div>
                     );
                 })}
@@ -332,158 +322,167 @@ export const HistogramChart = ({ data, height = 200 }: { data: HistogramData; he
     );
 };
 
+const Tags = ({ items }: { items?: string[] }) => {
+    const values = (items || []).filter(Boolean).slice(0, 4);
+    if (!values.length) return null;
+    return (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+            {values.map((item) => (
+                <span key={item} className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                    {item}
+                </span>
+            ))}
+        </div>
+    );
+};
+
 // --- Main Report View Component ---
 export const ReportView = ({ report, lang }: { report: ReportData, lang: Lang }) => {
     if (!report) return null;
     const tt = (zh: string, en: string) => (lang === "zh" ? zh : en);
-    const benchProfiles = report.benchmark_profiles?.rows || [];
+    const benchProfiles = report.bench_results?.rows || report.benchmark_profiles?.rows || [];
     const domainRows = report.domain_performance?.rows || [];
+    // Representative failure cases are intentionally hidden because extraction-based errors can be noisy.
+    const totalSamples = report.overall.num_samples ?? benchProfiles.reduce((sum, b) => sum + Number(b.num_samples || 0), 0);
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500 pb-20">
-            {/* Header Section (保持不变) */}
-            <div className="bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none" />
-                
-                <div className="relative z-10 flex justify-between items-start">
-                    <div>
+            <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-800 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-400/10 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none" />
+                <div className="relative z-10 flex flex-col gap-8 lg:flex-row lg:justify-between lg:items-start">
+                    <div className="min-w-0">
                         <div className="flex items-center gap-2 mb-2">
                             <Activity className="w-5 h-5 text-emerald-400" />
                             <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">{tt("评测报告", "Evaluation Report")}</span>
                         </div>
-                        <h1 className="text-3xl font-bold mb-2 text-white">{report.model}</h1>
-                        <div className="text-white text-sm max-w-xl leading-relaxed">
+                        <h1 className="text-3xl font-bold mb-4 text-white break-words">{report.model}</h1>
+                        <div className="text-white text-sm max-w-2xl leading-relaxed">
                             <SimpleMarkdown content={report.llm_summary || tt("暂无摘要。", "No summary available.")} />
                         </div>
                     </div>
-                    
-                    <div className="text-right">
-                        <div className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1">{tt("综合得分", "Overall Score")}</div>
-                        <div className="text-5xl font-black font-mono text-emerald-400 tracking-tight">
-                            {report.overall.score.toFixed(4)}
+                    <div className="grid grid-cols-3 gap-3 min-w-[300px]">
+                        <div className="rounded-xl bg-white/10 p-4 ring-1 ring-white/10 col-span-3">
+                            <div className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-1">{tt("综合得分", "Overall Score")}</div>
+                            <div className="text-5xl font-black font-mono text-emerald-400 tracking-tight">{formatScore(report.overall.score)}</div>
                         </div>
-                        <div className="text-xs text-slate-400 mt-2">
-                            {tt("生成时间", "Generated at")} {new Date(report.generated_at * 1000).toLocaleDateString()}
+                        <div className="rounded-xl bg-white/10 p-3 ring-1 ring-white/10">
+                            <div className="text-[10px] text-slate-400 uppercase font-bold">{tt("基准", "Benches")}</div>
+                            <div className="text-lg font-black text-white">{report.overall.num_benches ?? benchProfiles.length}</div>
                         </div>
+                        <div className="rounded-xl bg-white/10 p-3 ring-1 ring-white/10">
+                            <div className="text-[10px] text-slate-400 uppercase font-bold">{tt("样本", "Samples")}</div>
+                            <div className="text-lg font-black text-white">{totalSamples || "-"}</div>
+                        </div>
+                        <div className="rounded-xl bg-white/10 p-3 ring-1 ring-white/10">
+                            <div className="text-[10px] text-slate-400 uppercase font-bold">{tt("领域", "Domains")}</div>
+                            <div className="text-lg font-black text-white">{domainRows.length || "-"}</div>
+                        </div>
+                        <div className="col-span-3 text-xs text-slate-400">{tt("生成时间", "Generated at")} {new Date(report.generated_at * 1000).toLocaleString()}</div>
                     </div>
                 </div>
             </div>
 
-            {/* Macro View Grid (保持不变) */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Radar Chart Card */}
                 <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
                     <div className="flex items-center gap-2 mb-6">
-                        <div className="p-2 bg-violet-100 text-violet-600 rounded-lg">
-                            <Activity className="w-5 h-5" />
-                        </div>
-                        <h3 className="font-bold text-slate-800">{tt("能力雷达图", "Capabilities Radar")}</h3>
-                    </div>
-                    <div className="flex justify-center">
-                        <RadarChart data={report.macro.radar} />
-                    </div>
-                </div>
-
-                {/* Benchmark Performance Card */}
-                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-                    <div className="flex items-center gap-2 mb-6">
-                        <div className="p-2 bg-blue-100 text-blue-600 rounded-lg">
-                            <BarChart2 className="w-5 h-5" />
-                        </div>
+                        <div className="p-2 bg-blue-100 text-blue-600 rounded-lg"><BarChart2 className="w-5 h-5" /></div>
                         <h3 className="font-bold text-slate-800">{tt("基准得分", "Benchmark Scores")}</h3>
                     </div>
                     <div className="max-h-[300px] overflow-y-auto pr-2 scrollbar-thin">
                         <BarChart 
-                            data={report.overall.bench_summaries.map(b => ({
+                            data={benchProfiles.map(b => ({
                                 label: b.bench,
-                                value: b.primary_score,
-                                color: b.primary_score >= 0.8 ? "bg-emerald-500" : b.primary_score >= 0.6 ? "bg-blue-500" : "bg-amber-500"
+                                value: b.primary_score ?? 0,
+                                subLabel: `${b.primary_metric || "accuracy"}${b.score_source ? ` · ${b.score_source}` : ""}`,
+                                color: (b.primary_score ?? 0) >= 0.8 ? "bg-emerald-500" : (b.primary_score ?? 0) >= 0.6 ? "bg-blue-500" : "bg-amber-500"
                             }))} 
                         />
                     </div>
                 </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+                    <div className="flex items-center gap-2 mb-6">
+                        <div className="p-2 bg-violet-100 text-violet-600 rounded-lg"><Activity className="w-5 h-5" /></div>
+                        <h3 className="font-bold text-slate-800">{tt("能力雷达图", "Capabilities Radar")}</h3>
+                    </div>
+                    <div className="flex justify-center"><RadarChart data={report.macro.radar} /></div>
+                </div>
             </div>
 
-            {/* Benchmark Info + Domain Analysis */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-                    <h3 className="font-bold text-slate-800 mb-4">{tt("Benchmark 信息", "Benchmark Profiles")}</h3>
-                    {benchProfiles.length > 0 ? (
-                        <div className="space-y-3 max-h-[320px] overflow-y-auto pr-2">
-                            {benchProfiles.slice(0, 12).map((b, i) => (
-                                <div key={`${b.bench}-${i}`} className="p-3 rounded-lg border border-slate-100 bg-slate-50">
-                                    <div className="flex justify-between gap-3">
-                                        <div className="text-sm font-semibold text-slate-800 truncate" title={b.bench}>{b.bench}</div>
-                                        <div className="text-xs font-mono text-emerald-600">{(b.primary_score ?? 0).toFixed(4)}</div>
-                                    </div>
-                                    <div className="mt-1 text-[11px] text-slate-600">
-                                        {tt("领域", "Domain")}: {b.domain || "general"} | {tt("任务", "Task")}: {Array.isArray(b.task_type) ? b.task_type.join(", ") : (b.task_type || "unknown")}
-                                    </div>
-                                    <div className="mt-1 text-[11px] text-slate-500">
-                                        {tt("样本数", "Samples")}: {b.num_samples ?? 0} | {tt("指标", "Metric")}: {b.primary_metric || "accuracy"}
-                                    </div>
-                                    {b.description ? (
-                                        <div className="mt-2 text-[11px] text-slate-500 line-clamp-2">{b.description}</div>
-                                    ) : null}
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="text-slate-400 italic text-sm">{tt("暂无 benchmark 信息", "No benchmark profile data")}</div>
-                    )}
-                </div>
-
                 <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
                     <h3 className="font-bold text-slate-800 mb-4">{tt("领域表现分析", "Domain Performance")}</h3>
                     {domainRows.length > 0 ? (
                         <div className="space-y-3">
                             {domainRows.slice(0, 8).map((d, i) => (
-                                <div key={`${d.domain}-${i}`} className="p-3 rounded-lg border border-slate-100 bg-slate-50">
-                                    <div className="flex justify-between items-center">
-                                        <div className="text-sm font-semibold text-slate-800 uppercase">{d.domain}</div>
-                                        <div className="text-xs font-mono text-blue-600">{d.avg_score.toFixed(4)}</div>
+                                <div key={`${d.domain}-${i}`} className="p-4 rounded-xl border border-slate-100 bg-slate-50">
+                                    <div className="flex justify-between items-center gap-3">
+                                        <div className="text-sm font-bold text-slate-800 uppercase">{d.domain}</div>
+                                        <div className="text-sm font-mono font-bold text-blue-600">{formatScore(d.avg_score)}</div>
                                     </div>
-                                    <div className="mt-1 text-[11px] text-slate-600">
+                                    <div className="mt-2 h-2 w-full rounded-full bg-white overflow-hidden border border-slate-100">
+                                        <div className="h-full rounded-full bg-blue-500" style={{ width: `${Math.max(0, Math.min(1, d.avg_score)) * 100}%` }} />
+                                    </div>
+                                    <div className="mt-2 text-[11px] text-slate-600">
                                         {tt("覆盖基准", "Benchmarks")}: {d.bench_count} | {tt("样本数", "Samples")}: {d.num_samples}
                                     </div>
                                     <div className="mt-1 text-[11px] text-slate-500">
                                         {tt("最佳", "Best")}: {d.best_bench || "-"} | {tt("较弱", "Weakest")}: {d.worst_bench || "-"}
                                     </div>
+                                    <div className="mt-2 text-[11px] text-slate-500 line-clamp-2">{d.benches?.join(", ")}</div>
                                 </div>
                             ))}
                         </div>
-                    ) : (
-                        <div className="text-slate-400 italic text-sm">{tt("暂无领域分析数据", "No domain analysis data")}</div>
-                    )}
+                    ) : <div className="text-slate-400 italic text-sm">{tt("暂无领域分析数据", "No domain analysis data")}</div>}
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+                    <h3 className="font-bold text-slate-800 mb-4">{tt("Benchmark 信息", "Benchmark Profiles")}</h3>
+                    {benchProfiles.length > 0 ? (
+                        <div className="space-y-3 max-h-[420px] overflow-y-auto pr-2">
+                            {benchProfiles.slice(0, 12).map((b, i) => (
+                                <div key={`${b.bench}-${i}`} className="p-4 rounded-xl border border-slate-100 bg-slate-50">
+                                    <div className="flex justify-between gap-3">
+                                        <div className="text-sm font-semibold text-slate-800 truncate" title={b.bench}>{b.bench}</div>
+                                        <div className="text-xs font-mono font-bold text-emerald-600">{formatScore(b.primary_score)}</div>
+                                    </div>
+                                    <Tags items={b.domains || b.domain_tags || (b.domain ? [b.domain] : [])} />
+                                    <div className="mt-2 text-[11px] text-slate-600">
+                                        {tt("任务", "Task")}: {Array.isArray(b.task_type) ? b.task_type.join(", ") : (b.task_type || b.eval_type || "unknown")}
+                                    </div>
+                                    <div className="mt-1 text-[11px] text-slate-500">
+                                        {tt("样本数", "Samples")}: {b.num_samples ?? 0} | {tt("指标", "Metric")}: {b.primary_metric || "accuracy"}
+                                    </div>
+                                    {b.score_source ? <div className="mt-1 text-[10px] text-slate-400">Score source: {b.score_source}</div> : null}
+                                    <Tags items={b.capabilities} />
+                                    {b.warnings?.length ? (
+                                        <div className="mt-2 flex items-start gap-1 rounded-lg border border-amber-100 bg-amber-50 p-2 text-[11px] text-amber-700">
+                                            <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                                            <span>{stringifyValue(b.warnings[0]?.reason || b.warnings[0])}</span>
+                                        </div>
+                                    ) : null}
+                                    {b.description ? <div className="mt-2 text-[11px] text-slate-500 line-clamp-2">{b.description}</div> : null}
+                                </div>
+                            ))}
+                        </div>
+                    ) : <div className="text-slate-400 italic text-sm">{tt("暂无 benchmark 信息", "No benchmark profile data")}</div>}
                 </div>
             </div>
 
-            {/* Diagnostic Section */}
             <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
                 <div className="flex items-center gap-2 mb-6">
-                    <div className="p-2 bg-amber-100 text-amber-600 rounded-lg">
-                        <PieChart className="w-5 h-5" />
-                    </div>
+                    <div className="p-2 bg-amber-100 text-amber-600 rounded-lg"><PieChart className="w-5 h-5" /></div>
                     <h3 className="font-bold text-slate-800">{tt("错误诊断", "Error Diagnostics")}</h3>
                 </div>
-                
-                {/* 中间 Grid：左边甜甜圈，右边直方图 */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
-                    {/* Left: Error Distribution */}
                     <div className="flex flex-col items-center">
                         <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">{tt("错误分布", "Error Distribution")}</h4>
-                        <DonutChart data={report.diagnostic.error_distribution} />
+                        <DonutChart data={report.diagnostic.error_distribution || []} />
                     </div>
-                    
-                    {/* Right: Length Histogram */}
                     <div className="flex flex-col w-full">
-                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">
-                             {tt("输出长度分布", "Output Length Distribution")}
-                        </h4>
+                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">{tt("输出长度分布", "Output Length Distribution")}</h4>
                         {report.diagnostic.length_histogram ? (
-                            <div className="h-48 w-full">
-                                <HistogramChart data={report.diagnostic.length_histogram} height={180} />
-                            </div>
+                            <div className="h-48 w-full"><HistogramChart data={report.diagnostic.length_histogram} height={180} /></div>
                         ) : (
                             <div className="h-48 flex items-center justify-center bg-slate-50 rounded-lg border border-dashed border-slate-200 text-slate-400 text-xs italic">
                                 {tt("暂无长度分布数据", "No length data available")}
@@ -491,19 +490,26 @@ export const ReportView = ({ report, lang }: { report: ReportData, lang: Lang })
                         )}
                     </div>
                 </div>
+            </div>
 
-                {/* 底部 Footer：Analyst Insights */}
-                <div className="mt-8 pt-8 border-t border-slate-100">
-                     <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">{tt("分析洞察", "Analyst Insights")}</h4>
-                     {/* 使用 Grid 布局让文字卡片并排显示，避免单列太长 */}
-                     <div className="space-y-4">
-                         {Object.entries(report.analyst.metric_summary).slice(0, 6).map(([bench, text], i) => (
-                             <div key={i} className="p-3 bg-slate-50 rounded-lg border border-slate-100 text-xs text-slate-600">
-                                <strong className="block text-slate-800 mb-1">{bench}</strong>
-                                <SimpleMarkdown content={text} />
-                            </div>
-                         ))}
-                     </div>
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+                <div className="flex items-center gap-2 mb-6">
+                    <div className="p-2 bg-blue-100 text-blue-600 rounded-lg"><Bot className="w-5 h-5" /></div>
+                    <h3 className="font-bold text-slate-800">{tt("分析洞察", "Analyst Insights")}</h3>
+                </div>
+                <div className="grid grid-cols-1 gap-6">
+                    <div className="lg:col-span-2">
+                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4">Metric Summary</h4>
+                        <div className="space-y-4">
+                            {Object.entries(report.analyst.metric_summary || {}).slice(0, 6).map(([bench, text], i) => (
+                                <div key={i} className="p-3 bg-slate-50 rounded-lg border border-slate-100 text-xs text-slate-600">
+                                    <strong className="block text-slate-800 mb-1">{bench}</strong>
+                                    <SimpleMarkdown content={text} />
+                                </div>
+                            ))}
+                            {!Object.keys(report.analyst.metric_summary || {}).length && <div className="text-slate-400 italic text-sm">No metric summaries.</div>}
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

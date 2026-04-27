@@ -219,6 +219,14 @@ class DataFlowEvalNode(BaseNode):
                     pred_key = final_key_mapping.get("input_text_key")
 
             # 3. 写入 Meta
+            question_key = final_key_mapping.get("input_question_key") or final_key_mapping.get("input_text_key")
+            context_key = final_key_mapping.get("input_context_key")
+            if question_key:
+                bench.meta["question_key"] = question_key
+                self.logger.info(f"[{bench.bench_name}] Set question_key='{question_key}'")
+            if context_key:
+                bench.meta["context_key"] = context_key
+
             if ref_key:
                 bench.meta["ref_key"] = ref_key
                 self.logger.info(f"[{bench.bench_name}] Set ref_key='{ref_key}' based on type '{eval_type}'")

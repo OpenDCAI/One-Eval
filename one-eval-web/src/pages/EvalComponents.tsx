@@ -1440,18 +1440,17 @@ export const SummaryPanel = ({ state, sidebarWidth, chatWidth, lang }: {
     const tt = (zh: string, en: string) => (lang === "zh" ? zh : en);
     const [isOpen, setIsOpen] = React.useState(true);
     const [viewMode, setViewMode] = React.useState<"benches" | "report">("benches");
+    const hasReport = !!(state?.reports && state.reports["default"]);
+
+    // Auto-switch once the final report is available so users do not miss it.
+    React.useEffect(() => {
+        if (hasReport) {
+            setViewMode("report");
+            setIsOpen(true);
+        }
+    }, [hasReport]);
 
     if (!state) return null;
-
-    const hasReport = state.reports && state.reports["default"];
-
-    // Auto-switch to report view when available and not manually switched
-    // useEffect(() => {
-    //     if (hasReport) {
-    //         setViewMode("report");
-    //         setIsOpen(true);
-    //     }
-    // }, [hasReport]);
 
     return (
         <motion.div 

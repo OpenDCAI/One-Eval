@@ -116,9 +116,10 @@ class ReportGenAgent(CustomAgent):
             return state
 
         bench_summaries = self._build_bench_summaries(benches, eval_results, metric_plan)
-        overall_score = self._compute_overall_score(bench_summaries)
         bench_profile = self._build_bench_profile_view(bench_summaries)
-        domain_performance = self._build_domain_performance_view(bench_summaries)
+        bench_rows = bench_profile.get("rows", [])
+        overall_score = self._compute_overall_score(bench_rows)
+        domain_performance = self._build_domain_performance_view(bench_rows)
 
         lang = self._get_lang(state)
         macro_view = self._build_macro_view(bench_summaries, eval_results, lang)
@@ -128,8 +129,8 @@ class ReportGenAgent(CustomAgent):
 
         summary_payload = {
             "overall_score": overall_score,
-            "benches": bench_summaries[:20],
-            "benchmark_profiles": bench_profile.get("rows", [])[:20],
+            "benches": bench_rows[:20],
+            "benchmark_profiles": bench_rows[:20],
             "domain_performance": domain_performance.get("rows", [])[:10],
             "error_distribution": diagnostic_view.get("error_distribution", []),
             "metric_summaries": analyst_compact.get("metric_summary", []),
@@ -138,13 +139,16 @@ class ReportGenAgent(CustomAgent):
         llm_summary = await self._generate_llm_summary(summary_payload, state)
 
         report = {
-            "version": "v1",
+            "version": "v1.1",
             "generated_at": time.time(),
             "model": self._get_model_name(state),
             "overall": {
                 "score": overall_score,
                 "bench_summaries": bench_summaries,
+                "num_benches": len(bench_rows),
+                "num_samples": sum(int(r.get("num_samples", 0) or 0) for r in bench_rows),
             },
+            "bench_results": {"rows": bench_rows},
             "benchmark_profiles": bench_profile,
             "domain_performance": domain_performance,
             "macro": macro_view,
@@ -193,47 +197,63 @@ class ReportGenAgent(CustomAgent):
             bench_result = eval_results.get(bench_name) or {}
             metrics = bench_result.get("metrics", {}) or {}
             bench_meta = bench.meta or {}
-            
-            # --- MODIFIED: Use 'accuracy' from meta.eval_result as primary score ---
-            raw_bench_score = ((bench.meta or {}).get("eval_result") or {}).get("accuracy")
-            if raw_bench_score is None:
-                # Fallback to 'score' if accuracy is missing
-                 raw_bench_score = ((bench.meta or {}).get("eval_result") or {}).get("score")
-
-            has_bench_score = raw_bench_score is not None
-            bench_score = self._safe_float(raw_bench_score)
-            
-            # Keep original primary name logic just for display name, but score comes from meta
             plan = metric_plan.get(bench_name, []) or []
-            primary_name = self._get_primary_metric_name(plan, metrics)
-            if not primary_name:
-                 primary_name = "accuracy" # Default name if nothing found
+            primary_name = self._get_primary_metric_name(plan, metrics) or "accuracy"
+            bench_score, score_source = self._resolve_report_score(bench, bench_result, primary_name)
 
-            num_samples = int(bench_result.get("num_samples", 0) or 0)
+            num_samples = int(
+                bench_result.get("num_samples")
+                or (bench_meta.get("eval_result") or {}).get("valid_samples")
+                or (bench_meta.get("eval_result") or {}).get("total_samples")
+                or 0
+            )
+            valid_samples = int((bench_meta.get("eval_result") or {}).get("valid_samples") or 0)
+            total_samples = int((bench_meta.get("eval_result") or {}).get("total_samples") or num_samples or 0)
 
-            # 优先从 meta 读取维度
-            meta_dims = bench_meta.get("radar_dimensions")
-            if not isinstance(meta_dims, list):
-                # 回退到名称映射或 metric 推断
+            meta_dims = bench_meta.get("capabilities") or bench_meta.get("capability_dims") or bench_meta.get("radar_dimensions")
+            if isinstance(meta_dims, str):
+                meta_dims = [meta_dims]
+            if not isinstance(meta_dims, list) or not meta_dims:
                 meta_dims = self._map_bench_to_dimensions(bench_name, list(metrics.keys()))
+            meta_dims = [str(d).strip() for d in meta_dims if isinstance(d, str) and str(d).strip()] or ["knowledge"]
+
             domain_tags = self._infer_domain_tags(bench_name, bench_meta, meta_dims)
             primary_domain = domain_tags[0] if domain_tags else "general"
             description = bench_meta.get("description_zh") or bench_meta.get("description") or ""
+            warnings = []
+            abnormality = bench_meta.get("eval_abnormality")
+            if isinstance(abnormality, dict) and abnormality.get("is_abnormal"):
+                warnings.append(abnormality)
 
             for dim in meta_dims:
                 summaries.append({
                     "bench": bench_name,
                     "eval_type": dim,
+                    "capability": dim,
                     "domain": primary_domain,
+                    "domains": domain_tags,
                     "domain_tags": domain_tags,
                     "task_type": bench_meta.get("task_type"),
+                    "eval_dataflow_type": getattr(bench, "bench_dataflow_eval_type", None),
                     "bench_category": bench_meta.get("category"),
                     "bench_description": description,
                     "num_samples": num_samples,
+                    "valid_samples": valid_samples,
+                    "total_samples": total_samples,
                     "primary_metric": primary_name,
-                    "primary_score": bench_score, # Force use meta score
+                    "primary_score": bench_score,
+                    "score_source": score_source,
+                    "warnings": warnings,
                 })
         return summaries
+
+    def _resolve_report_score(self, bench: BenchInfo, bench_result: Dict[str, Any], primary_name: Optional[str]) -> Tuple[float, str]:
+        # Report-level scores must reflect DataFlow Eval's general accuracy, not downstream metric scores.
+        meta_eval = ((bench.meta or {}).get("eval_result") or {})
+        for key in ["accuracy", "score"]:
+            if meta_eval.get(key) is not None:
+                return self._safe_float(meta_eval.get(key)), f"dataflow_eval:{key}"
+        return 0.0, "dataflow_eval:missing"
 
     def _build_bench_profile_view(self, summaries: List[Dict[str, Any]]) -> Dict[str, Any]:
         bench_index: Dict[str, Dict[str, Any]] = {}
@@ -248,23 +268,39 @@ class ReportGenAgent(CustomAgent):
                 bench_index[bench_name] = {
                     "bench": bench_name,
                     "domain": s.get("domain") or "general",
+                    "domains": s.get("domains") or s.get("domain_tags") or [],
                     "domain_tags": s.get("domain_tags") or [],
+                    "capabilities": [s.get("capability") or s.get("eval_type")],
                     "task_type": s.get("task_type"),
+                    "eval_type": s.get("eval_dataflow_type"),
                     "category": s.get("bench_category"),
                     "description": s.get("bench_description") or "",
                     "num_samples": sample,
+                    "valid_samples": int(s.get("valid_samples", 0) or 0),
+                    "total_samples": int(s.get("total_samples", 0) or 0),
                     "primary_metric": s.get("primary_metric") or "accuracy",
                     "primary_score": score,
+                    "score_source": s.get("score_source") or "unknown",
+                    "warnings": s.get("warnings") or [],
                 }
                 continue
 
             row = bench_index[bench_name]
             row["num_samples"] = max(int(row.get("num_samples", 0) or 0), sample)
+            row["valid_samples"] = max(int(row.get("valid_samples", 0) or 0), int(s.get("valid_samples", 0) or 0))
+            row["total_samples"] = max(int(row.get("total_samples", 0) or 0), int(s.get("total_samples", 0) or 0))
             if score > self._safe_float(row.get("primary_score")):
                 row["primary_score"] = score
                 row["primary_metric"] = s.get("primary_metric") or row.get("primary_metric")
+                row["score_source"] = s.get("score_source") or row.get("score_source")
             merged_tags = list(dict.fromkeys((row.get("domain_tags") or []) + (s.get("domain_tags") or [])))
             row["domain_tags"] = merged_tags
+            row["domains"] = list(dict.fromkeys((row.get("domains") or []) + (s.get("domains") or [])))
+            caps = [c for c in (row.get("capabilities") or []) if c]
+            cap = s.get("capability") or s.get("eval_type")
+            if cap:
+                caps.append(cap)
+            row["capabilities"] = list(dict.fromkeys(caps))
             if row.get("domain") == "general" and s.get("domain"):
                 row["domain"] = s.get("domain")
             if not row.get("description") and s.get("bench_description"):
@@ -277,24 +313,28 @@ class ReportGenAgent(CustomAgent):
         )
         return {"rows": rows}
 
-    def _build_domain_performance_view(self, summaries: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _build_domain_performance_view(self, bench_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         groups: Dict[str, Dict[str, Any]] = {}
-        for s in summaries:
-            domain = str(s.get("domain") or "general").strip().lower() or "general"
-            score = self._safe_float(s.get("primary_score"))
-            num = int(s.get("num_samples", 0) or 0)
-            bench_name = str(s.get("bench") or "")
-            if domain not in groups:
-                groups[domain] = {
-                    "score_sum": 0.0,
-                    "weight": 0,
-                    "benches": {},
-                }
+        for row in bench_rows:
+            domains = row.get("domains") or row.get("domain_tags") or [row.get("domain") or "general"]
+            if isinstance(domains, str):
+                domains = [domains]
+            domains = [str(d).strip().lower() for d in domains if str(d).strip()] or ["general"]
+            score = self._safe_float(row.get("primary_score"))
+            num = int(row.get("num_samples", 0) or 0)
+            bench_name = str(row.get("bench") or "")
             weight = num if num > 0 else 1
-            groups[domain]["score_sum"] += score * weight
-            groups[domain]["weight"] += weight
-            if bench_name:
-                groups[domain]["benches"][bench_name] = score
+            for domain in domains:
+                if domain not in groups:
+                    groups[domain] = {
+                        "score_sum": 0.0,
+                        "weight": 0,
+                        "benches": {},
+                    }
+                groups[domain]["score_sum"] += score * weight
+                groups[domain]["weight"] += weight
+                if bench_name:
+                    groups[domain]["benches"][bench_name] = score
 
         rows: List[Dict[str, Any]] = []
         for domain, item in groups.items():
@@ -310,6 +350,7 @@ class ReportGenAgent(CustomAgent):
             rows.append({
                 "domain": domain,
                 "avg_score": avg_score,
+                "score": avg_score,
                 "num_samples": int(item.get("weight", 0) or 0),
                 "bench_count": len(benches_sorted),
                 "benches": [b[0] for b in benches_sorted],
@@ -443,8 +484,6 @@ class ReportGenAgent(CustomAgent):
             plan = metric_plan.get(bench_name, []) or []
             primary_name = self._get_primary_metric_name(plan, metrics)
             primary_details = self._get_details(metrics, primary_name)
-            if not primary_details:
-                continue
 
             records_path = bench.meta.get("eval_step3_path") or bench.meta.get("eval_detail_path")
             records = self._load_records(records_path)
@@ -480,7 +519,7 @@ class ReportGenAgent(CustomAgent):
                 is_correct = score >= 0.5
                 pred = self._get_pred(rec, bench.meta.get("pred_key"))
                 ref = self._get_ref(rec, bench.meta.get("ref_key"))
-                question = self._get_question(rec)
+                question = self._get_question(rec, self._get_question_key_hint(bench.meta))
 
                 pred_len = len(str(pred)) if pred is not None else 0
                 if is_correct:
@@ -503,7 +542,7 @@ class ReportGenAgent(CustomAgent):
                 if format_value is None and format_details and idx < len(format_details):
                     format_value = format_details[idx]
 
-                error_type = self._classify_error(
+                error_info = self._classify_error(
                     is_correct,
                     self._safe_float(extraction_value) if extraction_value is not None else None,
                     self._safe_float(missing_value) if missing_value is not None else None,
@@ -512,14 +551,16 @@ class ReportGenAgent(CustomAgent):
                 )
 
                 if not is_correct:
-                    error_counter[error_type] += 1
+                    error_id = error_info.get("id", "incorrect")
+                    error_counter[error_id] += 1
                     if len(cases) < 5:
                         cases.append({
                             "bench": bench_name,
                             "question": question,
                             "model_output": pred,
                             "ground_truth": ref,
-                            "error_type": error_type,
+                            "error_type": error_info.get("label"),
+                            "error_id": error_id,
                             "score": score
                         })
 
@@ -527,7 +568,13 @@ class ReportGenAgent(CustomAgent):
         total_err = sum(error_counter.values())
         for k, v in error_counter.most_common():
             ratio = (v / total_err) if total_err > 0 else 0.0
-            error_distribution.append({"type": k, "count": v, "ratio": ratio})
+            error_distribution.append({
+                "id": k,
+                "type": self._error_label(k, lang),
+                "label": self._error_label(k, lang),
+                "count": v,
+                "ratio": ratio,
+            })
 
         length_histogram = self._build_length_hist(correct_lengths, incorrect_lengths)
 
@@ -548,12 +595,18 @@ class ReportGenAgent(CustomAgent):
             bench_name = bench.bench_name
             bench_result = eval_results.get(bench_name) or {}
             metrics = bench_result.get("metrics", {}) or {}
-            summary = metrics.get("metric_summary_analyst", {}).get("summary")
-            analysis = metrics.get("case_study_analyst", {}).get("analysis")
+            summary_metric = metrics.get("metric_summary_analyst", {}) or {}
+            case_metric = metrics.get("case_study_analyst", {}) or {}
+            summary = summary_metric.get("summary")
+            analysis = case_metric.get("analysis")
             if isinstance(summary, str) and summary.strip():
                 metric_summary[bench_name] = summary
+            elif isinstance(summary_metric.get("error"), str) and summary_metric.get("error"):
+                metric_summary[bench_name] = f"Metric summary unavailable: {summary_metric.get('error')}"
             if isinstance(analysis, str) and analysis.strip():
                 case_study[bench_name] = analysis
+            elif isinstance(case_metric.get("error"), str) and case_metric.get("error"):
+                case_study[bench_name] = f"Case study unavailable: {case_metric.get('error')}"
         return {
             "metric_summary": metric_summary,
             "case_study": case_study,
@@ -610,18 +663,30 @@ class ReportGenAgent(CustomAgent):
         missing_value: Optional[float],
         format_value: Optional[float],
         lang: str = "zh",
-    ) -> str:
-        is_en = str(lang).lower().startswith("en")
+    ) -> Dict[str, str]:
         if is_correct:
-            return "Correct" if is_en else "正确"
-        if extraction_value is not None and extraction_value <= 0:
-            return "Extraction Error" if is_en else "抽取错误"
-        if missing_value is not None and missing_value >= 1:
-            return "Refusal / Empty Response" if is_en else "拒答 / 空输出"
-        if format_value is not None and format_value < 0.5:
-            return "Format Error" if is_en else "格式错误"
+            error_id = "correct"
+        elif extraction_value is not None and extraction_value <= 0:
+            error_id = "extraction_error"
+        elif missing_value is not None and missing_value >= 1:
+            error_id = "refusal_empty"
+        elif format_value is not None and format_value < 0.5:
+            error_id = "format_error"
+        else:
+            error_id = "incorrect_reasoning"
+        return {"id": error_id, "label": self._error_label(error_id, lang)}
 
-        return "Incorrect Answer (Reasoning/Logic)" if is_en else "答案错误（推理/逻辑）"
+    def _error_label(self, error_id: str, lang: str = "zh") -> str:
+        is_en = str(lang).lower().startswith("en")
+        labels = {
+            "correct": ("正确", "Correct"),
+            "extraction_error": ("抽取错误", "Extraction Error"),
+            "refusal_empty": ("拒答 / 空输出", "Refusal / Empty Response"),
+            "format_error": ("格式错误", "Format Error"),
+            "incorrect_reasoning": ("答案错误（推理/逻辑）", "Incorrect Answer (Reasoning/Logic)"),
+        }
+        zh, en = labels.get(error_id, labels["incorrect_reasoning"])
+        return en if is_en else zh
 
     def _build_length_hist(self, correct: List[int], incorrect: List[int], bins: int = 10) -> Dict[str, Any]:
         max_len = max(correct + incorrect) if (correct or incorrect) else 0
@@ -655,12 +720,15 @@ class ReportGenAgent(CustomAgent):
         elif not isinstance(tags, list):
             tags = []
 
-        direct_domain = bench_meta.get("domain")
+        explicit_domains = bench_meta.get("domains") or bench_meta.get("domain")
+        explicit_domain_values: List[str] = []
         raw_candidates: List[str] = []
-        if isinstance(direct_domain, str):
-            raw_candidates.append(direct_domain)
-        elif isinstance(direct_domain, list):
-            raw_candidates.extend([d for d in direct_domain if isinstance(d, str)])
+        if isinstance(explicit_domains, str):
+            explicit_domain_values.append(explicit_domains)
+            raw_candidates.append(explicit_domains)
+        elif isinstance(explicit_domains, list):
+            explicit_domain_values.extend([d for d in explicit_domains if isinstance(d, str)])
+            raw_candidates.extend(explicit_domain_values)
 
         task_type = bench_meta.get("task_type")
         if isinstance(task_type, str):
@@ -681,6 +749,12 @@ class ReportGenAgent(CustomAgent):
 
         blob = " ".join(raw_candidates).lower()
         normalized: List[str] = []
+        known_domains = set(DOMAIN_KEYWORD_RULES.keys())
+        for d in explicit_domain_values:
+            dn = d.strip().lower()
+            if dn in known_domains:
+                normalized.append(dn)
+
         for domain, keywords in DOMAIN_KEYWORD_RULES.items():
             for kw in keywords:
                 if kw and kw in blob:
@@ -700,23 +774,62 @@ class ReportGenAgent(CustomAgent):
             normalized.append("general")
         return list(dict.fromkeys(normalized))
 
-    def _get_question(self, rec: Dict[str, Any]) -> Any:
-        for k in ["question", "query", "prompt", "instruction", "input", "text"]:
-            if k in rec:
+    def _get_question_key_hint(self, bench_meta: Dict[str, Any]) -> Optional[str]:
+        if not isinstance(bench_meta, dict):
+            return None
+        for key in ["question_key", "query_key", "prompt_key"]:
+            value = bench_meta.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+        key_mapping = bench_meta.get("key_mapping")
+        if isinstance(key_mapping, dict):
+            for key in ["input_question_key", "input_text_key", "input_context_key"]:
+                value = key_mapping.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value
+        return None
+
+    def _extract_path_value(self, obj: Any, path: Optional[str]) -> Any:
+        if not path or not isinstance(path, str):
+            return None
+        cur = obj
+        for part in path.split("."):
+            if isinstance(cur, dict):
+                if part not in cur:
+                    return None
+                cur = cur.get(part)
+                continue
+            if isinstance(cur, list) and part.isdigit():
+                idx = int(part)
+                if idx < 0 or idx >= len(cur):
+                    return None
+                cur = cur[idx]
+                continue
+            return None
+        return cur
+
+    def _get_question(self, rec: Dict[str, Any], key_hint: Optional[str] = None) -> Any:
+        hinted = self._extract_path_value(rec, key_hint)
+        if hinted is not None and str(hinted).strip():
+            return hinted
+        for k in ["question", "query", "prompt", "instruction", "input", "text", "context", "problem", "task"]:
+            if k in rec and str(rec[k]).strip():
                 return rec[k]
         return ""
 
     def _get_pred(self, rec: Dict[str, Any], key_hint: Optional[str] = None) -> Any:
-        if key_hint and key_hint in rec:
-            return rec[key_hint]
+        hinted = self._extract_path_value(rec, key_hint)
+        if hinted is not None:
+            return hinted
         for k in ["predict", "prediction", "output", "response", "pred", "generated_ans", "model_output", "completion", "generated_text", "eval_pred"]:
             if k in rec:
                 return rec[k]
         return None
 
     def _get_ref(self, rec: Dict[str, Any], key_hint: Optional[str] = None) -> Any:
-        if key_hint and key_hint in rec:
-            return rec[key_hint]
+        hinted = self._extract_path_value(rec, key_hint)
+        if hinted is not None:
+            return hinted
         for k in ["target", "reference", "ground_truth", "label", "labels", "targets", "answer", "solution", "correct_answer", "gold"]:
             if k in rec:
                 return rec[k]

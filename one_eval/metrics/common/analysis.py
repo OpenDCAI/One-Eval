@@ -10,6 +10,103 @@ from one_eval.serving.custom_llm_caller import CustomLLMCaller
 from langchain_core.messages import HumanMessage, SystemMessage
 log = get_logger(__name__)
 
+
+def _run_async_safely(coro_factory):
+    """Run an async LLM call from sync metric code, including under uvloop.
+
+    Metric functions are synchronous, but server workflows may already run inside
+    uvloop. Patching uvloop with nest_asyncio fails, so execute the coroutine in a
+    short-lived worker thread with its own event loop when a loop is active.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if not loop or not loop.is_running():
+        return asyncio.run(coro_factory())
+
+    import threading
+
+    box = {"value": None, "error": None}
+
+    def _runner():
+        try:
+            box["value"] = asyncio.run(coro_factory())
+        except Exception as exc:  # propagate to caller thread
+            box["error"] = exc
+
+    th = threading.Thread(target=_runner, daemon=True)
+    th.start()
+    th.join()
+    if box["error"] is not None:
+        raise box["error"]
+    return box["value"]
+
+
+def _format_score(value: Any) -> str:
+    if isinstance(value, (int, float)):
+        return f"{float(value):.4f}"
+    if value is None:
+        return "N/A"
+    return str(value)
+
+
+def _fallback_metric_summary(summary_data: Dict[str, Any], is_en: bool, reason: str = "") -> str:
+    items = []
+    for name, value in summary_data.items():
+        if isinstance(value, dict):
+            items.append((name, value.get("score"), value.get("priority", "secondary")))
+        else:
+            items.append((name, None, "error"))
+
+    primary = [x for x in items if x[2] == "primary"]
+    ordered = primary + [x for x in items if x[2] != "primary"]
+    if is_en:
+        lines = ["Metric summary fallback: LLM analysis was unavailable, so this summary is generated from metric scores."]
+        if reason:
+            lines.append(f"Unavailable reason: {reason}")
+        if ordered:
+            first = ordered[0]
+            lines.append(f"Primary signal: {first[0]} = {_format_score(first[1])}.")
+        if len(ordered) > 1:
+            rest = ", ".join([f"{n}={_format_score(s)}" for n, s, _ in ordered[1:5]])
+            lines.append(f"Other metrics: {rest}.")
+        lines.append("Recommendation: inspect representative failure cases and case-study diagnostics for concrete error patterns.")
+        return "\n".join(lines)
+
+    lines = ["指标汇总（规则兜底）：LLM 分析暂不可用，因此基于已计算指标生成摘要。"]
+    if reason:
+        lines.append(f"不可用原因：{reason}")
+    if ordered:
+        first = ordered[0]
+        lines.append(f"主指标：{first[0]} = {_format_score(first[1])}。")
+    if len(ordered) > 1:
+        rest = "，".join([f"{n}={_format_score(s)}" for n, s, _ in ordered[1:5]])
+        lines.append(f"其他指标：{rest}。")
+    lines.append("建议结合代表性错例和 Case Study 进一步定位具体错误模式。")
+    return "\n".join(lines)
+
+
+def _fallback_case_study(selected_indices: List[int], preds: List[Any], refs: List[Any], is_en: bool, reason: str = "") -> str:
+    sample_count = len(selected_indices)
+    if is_en:
+        lines = [f"Case study fallback: LLM analysis was unavailable. Reviewed {sample_count} sampled cases by rule."]
+        if reason:
+            lines.append(f"Unavailable reason: {reason}")
+        lines.append("The sampled cases compare model predictions with references; inspect Representative Failure Cases for full question-level evidence.")
+        for i, idx in enumerate(selected_indices[:3]):
+            lines.append(f"Case {i+1}: prediction={str(preds[idx])[:120]} | reference={str(refs[idx])[:120]}")
+        return "\n".join(lines)
+
+    lines = [f"Case Study（规则兜底）：LLM 分析暂不可用。本次基于 {sample_count} 条抽样样本做简要归纳。"]
+    if reason:
+        lines.append(f"不可用原因：{reason}")
+    lines.append("这些样本仅对比模型输出与参考答案；完整问题、错误类型和证据请查看代表性错例。")
+    for i, idx in enumerate(selected_indices[:3]):
+        lines.append(f"样本 {i+1}：模型输出={str(preds[idx])[:120]} | 参考答案={str(refs[idx])[:120]}")
+    return "\n".join(lines)
+
 # Mock State for CustomLLMCaller to satisfy initialization requirements
 class MockState:
     def __init__(self, model_name: str):
@@ -184,25 +281,7 @@ def compute_case_study_analyst(preds: List[Any], refs: List[Any], **kwargs) -> D
         return response.content
 
     try:
-        # Check for existing event loop
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-            
-        if loop and loop.is_running():
-            # If in a loop (e.g. Jupyter), try nest_asyncio
-            try:
-                import nest_asyncio
-                nest_asyncio.apply()
-                analysis_result = asyncio.run(_call_llm())
-            except ImportError:
-                # Fallback: Try to create a new loop in a separate thread if nest_asyncio is missing?
-                # Or just error out.
-                return {"score": 0.0, "error": "Running in async loop but nest_asyncio not installed."}
-        else:
-            # Standard synchronous context
-            analysis_result = asyncio.run(_call_llm())
+        analysis_result = _run_async_safely(_call_llm)
         
         return {
             "score": 1.0, 
@@ -219,7 +298,21 @@ def compute_case_study_analyst(preds: List[Any], refs: List[Any], **kwargs) -> D
         
     except Exception as e:
         log.error(f"CaseStudyAnalyst LLM call failed: {e}")
-        return {"score": 0.0, "error": str(e)}
+        fallback = _fallback_case_study(selected_indices, preds, refs, is_en, str(e))
+        return {
+            "score": 0.0,
+            "analysis": fallback,
+            "error": str(e),
+            "fallback": True,
+            "details": selected_indices,
+            "artifacts": {
+                "instruction": instruction,
+                "target_group": target_group,
+                "sample_count": len(selected_indices),
+                "pos_count": len(pos_indices),
+                "neg_count": len(neg_indices)
+            }
+        }
 
 @register_metric(
     name="metric_summary_analyst",
@@ -338,20 +431,7 @@ Do not output markdown horizontal rules like ---.
         return response.content
 
     try:
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-            
-        if loop and loop.is_running():
-            try:
-                import nest_asyncio
-                nest_asyncio.apply()
-                analysis_result = asyncio.run(_call_llm())
-            except ImportError:
-                return {"score": 0.0, "error": "Running in async loop but nest_asyncio not installed."}
-        else:
-            analysis_result = asyncio.run(_call_llm())
+        analysis_result = _run_async_safely(_call_llm)
         
         return {
             "score": 1.0, 
@@ -360,7 +440,10 @@ Do not output markdown horizontal rules like ---.
         
     except Exception as e:
         log.error(f"MetricSummaryAnalyst LLM call failed: {e}")
+        fallback = _fallback_metric_summary(summary_data, is_en, str(e))
         return {
-            "score": 0.0, 
-            "error": f"LLM analysis failed: {str(e)}"
+            "score": 0.0,
+            "summary": fallback,
+            "error": f"LLM analysis failed: {str(e)}",
+            "fallback": True,
         }
