@@ -30,6 +30,30 @@ interface ReportData {
     score: number;
     bench_summaries: any[];
   };
+  benchmark_profiles?: {
+    rows: Array<{
+      bench: string;
+      domain: string;
+      domain_tags?: string[];
+      task_type?: string | string[];
+      category?: string;
+      description?: string;
+      num_samples?: number;
+      primary_metric?: string;
+      primary_score?: number;
+    }>;
+  };
+  domain_performance?: {
+    rows: Array<{
+      domain: string;
+      avg_score: number;
+      num_samples: number;
+      bench_count: number;
+      benches: string[];
+      best_bench?: string;
+      worst_bench?: string;
+    }>;
+  };
   macro: {
     radar: RadarData;
     sunburst: any; // We might skip sunburst or simplify it
@@ -312,6 +336,8 @@ export const HistogramChart = ({ data, height = 200 }: { data: HistogramData; he
 export const ReportView = ({ report, lang }: { report: ReportData, lang: Lang }) => {
     if (!report) return null;
     const tt = (zh: string, en: string) => (lang === "zh" ? zh : en);
+    const benchProfiles = report.benchmark_profiles?.rows || [];
+    const domainRows = report.domain_performance?.rows || [];
 
     return (
         <div className="space-y-8 animate-in fade-in duration-500 pb-20">
@@ -375,6 +401,60 @@ export const ReportView = ({ report, lang }: { report: ReportData, lang: Lang })
                             }))} 
                         />
                     </div>
+                </div>
+            </div>
+
+            {/* Benchmark Info + Domain Analysis */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+                    <h3 className="font-bold text-slate-800 mb-4">{tt("Benchmark 信息", "Benchmark Profiles")}</h3>
+                    {benchProfiles.length > 0 ? (
+                        <div className="space-y-3 max-h-[320px] overflow-y-auto pr-2">
+                            {benchProfiles.slice(0, 12).map((b, i) => (
+                                <div key={`${b.bench}-${i}`} className="p-3 rounded-lg border border-slate-100 bg-slate-50">
+                                    <div className="flex justify-between gap-3">
+                                        <div className="text-sm font-semibold text-slate-800 truncate" title={b.bench}>{b.bench}</div>
+                                        <div className="text-xs font-mono text-emerald-600">{(b.primary_score ?? 0).toFixed(4)}</div>
+                                    </div>
+                                    <div className="mt-1 text-[11px] text-slate-600">
+                                        {tt("领域", "Domain")}: {b.domain || "general"} | {tt("任务", "Task")}: {Array.isArray(b.task_type) ? b.task_type.join(", ") : (b.task_type || "unknown")}
+                                    </div>
+                                    <div className="mt-1 text-[11px] text-slate-500">
+                                        {tt("样本数", "Samples")}: {b.num_samples ?? 0} | {tt("指标", "Metric")}: {b.primary_metric || "accuracy"}
+                                    </div>
+                                    {b.description ? (
+                                        <div className="mt-2 text-[11px] text-slate-500 line-clamp-2">{b.description}</div>
+                                    ) : null}
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="text-slate-400 italic text-sm">{tt("暂无 benchmark 信息", "No benchmark profile data")}</div>
+                    )}
+                </div>
+
+                <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+                    <h3 className="font-bold text-slate-800 mb-4">{tt("领域表现分析", "Domain Performance")}</h3>
+                    {domainRows.length > 0 ? (
+                        <div className="space-y-3">
+                            {domainRows.slice(0, 8).map((d, i) => (
+                                <div key={`${d.domain}-${i}`} className="p-3 rounded-lg border border-slate-100 bg-slate-50">
+                                    <div className="flex justify-between items-center">
+                                        <div className="text-sm font-semibold text-slate-800 uppercase">{d.domain}</div>
+                                        <div className="text-xs font-mono text-blue-600">{d.avg_score.toFixed(4)}</div>
+                                    </div>
+                                    <div className="mt-1 text-[11px] text-slate-600">
+                                        {tt("覆盖基准", "Benchmarks")}: {d.bench_count} | {tt("样本数", "Samples")}: {d.num_samples}
+                                    </div>
+                                    <div className="mt-1 text-[11px] text-slate-500">
+                                        {tt("最佳", "Best")}: {d.best_bench || "-"} | {tt("较弱", "Weakest")}: {d.worst_bench || "-"}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="text-slate-400 italic text-sm">{tt("暂无领域分析数据", "No domain analysis data")}</div>
+                    )}
                 </div>
             </div>
 

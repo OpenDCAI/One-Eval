@@ -160,7 +160,7 @@ export const Eval = () => {
   const [localCount, setLocalCount] = useState(3);
   const [hfCount, setHfCount] = useState(2);
 
-  const apiBaseUrl = useMemo(() => localStorage.getItem("oneEval.apiBaseUrl") || "http://localhost:8111", []);
+  const apiBaseUrl = useMemo(() => localStorage.getItem("oneEval.apiBaseUrl") || "http://localhost:8000", []);
   const draftKey = useMemo(() => "oneEval.evalDraft", []);
 
   useEffect(() => {
