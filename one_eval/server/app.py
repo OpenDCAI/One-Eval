@@ -1730,6 +1730,31 @@ class AddBenchRequest(BaseModel):
     dataset_url: Optional[str] = None
 
 
+def _map_bench_type_to_category(bench_type: str) -> str:
+    """
+    将前端新增表单里的 type 映射到 Gallery 支持的分类枚举。
+    兜底返回 Domain-Specific，避免前端因未知 category 白屏。
+    """
+    t = (bench_type or "").strip().lower()
+    mapping = {
+        "knowledge": "Knowledge & QA",
+        "language & reasoning": "Reasoning",
+        "math": "Math",
+        "coding": "Coding",
+        "information retrieval & rag": "Long Context & RAG",
+        "instruction-following": "Instruction & Chat",
+        "conversation & chatbots": "Instruction & Chat",
+        "agents & tools use": "Agents & Tools",
+        "safety": "Safety & Alignment",
+        "bias & ethics": "Safety & Alignment",
+        "domain-specific": "Domain-Specific",
+        "multilingual": "Domain-Specific",
+        "other": "Domain-Specific",
+        "general": "Domain-Specific",
+    }
+    return mapping.get(t, "Domain-Specific")
+
+
 @app.post("/api/benches/gallery")
 def add_bench_to_gallery(req: AddBenchRequest):
     """添加新的 benchmark 到 gallery"""
@@ -1745,7 +1770,7 @@ def add_bench_to_gallery(req: AddBenchRequest):
             "bench_name": req.bench_name,
             "source": "user_added",
             "aliases": [req.bench_name],
-            "category": "General",
+            "category": _map_bench_type_to_category(req.type),
             "tags": [req.type],
             "description": req.description,
             "hf_meta": {

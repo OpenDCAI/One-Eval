@@ -77,7 +77,7 @@ type BenchGalleryMeta = {
   bench_name: string;
   source: string;
   aliases: string[];
-  category: BenchCategory;
+  category: string;
   tags: string[];
   description: string;
   description_zh?: string;
@@ -161,6 +161,25 @@ function getBenchIcon(category: BenchCategory) {
   }
 }
 
+function normalizeBenchCategory(category: string | undefined | null): BenchCategory {
+  switch ((category || "").trim()) {
+    case "Math":
+    case "Reasoning":
+    case "Knowledge & QA":
+    case "Safety & Alignment":
+    case "Coding":
+    case "Agents & Tools":
+    case "Instruction & Chat":
+    case "Long Context & RAG":
+    case "Domain-Specific":
+      return category as BenchCategory;
+    case "General":
+      return "Domain-Specific";
+    default:
+      return "Domain-Specific";
+  }
+}
+
 /**
  * 将 bench_gallery.json 的数据转换为前端使用的 BenchItem 格式
  */
@@ -173,7 +192,7 @@ function transformBenchGalleryItem(item: BenchGalleryItem): BenchItem {
     id: item.bench_name,
     name: displayName,
     meta: {
-      category: meta.category || "Knowledge & QA",
+      category: normalizeBenchCategory(meta.category),
       tags: meta.tags || [],
       description: meta.description || "",
       description_zh: meta.description_zh || "",
@@ -228,7 +247,7 @@ const BENCH_TYPES = [
 export const Gallery = () => {
   const { lang } = useLang();
   const tt = (zh: string, en: string) => (lang === "zh" ? zh : en);
-  const categoryLabel = (id: BenchCategory | "All") => {
+  const categoryLabel = (id: BenchCategory | "All" | string) => {
     const map: Record<BenchCategory | "All", { zh: string; en: string }> = {
       All: { zh: "全部", en: "All" },
       "Knowledge & QA": { zh: "知识问答", en: "Knowledge & QA" },
@@ -241,7 +260,8 @@ export const Gallery = () => {
       "Safety & Alignment": { zh: "安全与对齐", en: "Safety & Alignment" },
       "Domain-Specific": { zh: "领域专项", en: "Domain-Specific" },
     };
-    return tt(map[id].zh, map[id].en);
+    const hit = map[id as BenchCategory | "All"];
+    return hit ? tt(hit.zh, hit.en) : tt("其他", "Other");
   };
   const benchTypeLabel = (value: string) => {
     const map: Record<string, { zh: string; en: string }> = {
