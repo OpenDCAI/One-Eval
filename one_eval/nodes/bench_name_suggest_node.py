@@ -352,10 +352,18 @@ class BenchmarkRetriever:
         log.info(f"追加了 {len(extra_meta) - sum(1 for m in extra_meta if m['name'].lower() in xlsx_names_lower)} 条 gallery-only bench 进入索引")
 
         if self.use_rag:
-            log.info("正在调用OpenAI兼容API生成embeddings...")
-            self.embeddings = self._get_embeddings_batch(texts)
-            norms = np.linalg.norm(self.embeddings, axis=1, keepdims=True)
-            self.embeddings = self.embeddings / norms
+            try:
+                log.info("正在调用OpenAI兼容API生成embeddings...")
+                self.embeddings = self._get_embeddings_batch(texts)
+                norms = np.linalg.norm(self.embeddings, axis=1, keepdims=True)
+                self.embeddings = self.embeddings / norms
+            except Exception as e:
+                # Some OpenAI-compatible providers (or accounts) may not expose embeddings.
+                # Fallback to TF-IDF to keep workflow available.
+                log.warning(f"RAG embedding 生成失败，自动降级到 TF-IDF。error={e}")
+                self.use_rag = False
+                self.embeddings = None
+                self._build_tfidf_index(texts)
         else:
             log.info("正在构建TF-IDF索引...")
             self._build_tfidf_index(texts)

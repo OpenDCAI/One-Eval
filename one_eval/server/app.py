@@ -240,19 +240,19 @@ def apply_hf_env_from_config(cfg: Dict[str, Any]) -> None:
         os.environ["HUGGINGFACEHUB_API_TOKEN"] = token.strip()
 
 def _normalize_openai_base_url(url: str) -> str:
-    u = (url or "").strip()
+    # Normalize superficial differences (trailing slash, full endpoint input)
+    # so the caller can always append "/chat/completions" safely.
+    u = (url or "").strip().rstrip("/")
     if not u:
         return u
     if u.endswith("/v1/chat/completions"):
         u = u[: -len("/v1/chat/completions")] + "/v1"
     if u.endswith("/chat/completions"):
         u = u[: -len("/chat/completions")]
-    if u.endswith("/v1/"):
-        u = u[:-1]
     return u
 
 def _normalize_chat_completions_url(url: str, provider: str = "openai_compatible") -> str:
-    raw = (url or "").strip()
+    raw = (url or "").strip().rstrip("/")
     provider_name = str(provider or "openai_compatible").strip().lower()
     if not raw:
         if provider_name == "deepseek":

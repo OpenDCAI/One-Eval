@@ -141,16 +141,45 @@ class CustomLLMCaller(BaseLLMCaller):
         last_err = None
         for attempt in range(3):
             try:
+                log.info(
+                    "[CustomLLMCaller] POST %s attempt=%s model=%s msg_count=%s",
+                    api_url,
+                    attempt + 1,
+                    self.model_name,
+                    len(formatted_messages),
+                )
                 r = await self._client.post(api_url, json=payload)
                 if r.status_code in retry_statuses and attempt < 2:
+                    log.warning(
+                        "[CustomLLMCaller] Retryable status=%s attempt=%s url=%s body=%s",
+                        r.status_code,
+                        attempt + 1,
+                        api_url,
+                        (r.text or "")[:500],
+                    )
                     await asyncio.sleep(0.6 * (attempt + 1))
                     continue
+                if r.status_code >= 400:
+                    log.error(
+                        "[CustomLLMCaller] Request failed status=%s url=%s model=%s body=%s",
+                        r.status_code,
+                        api_url,
+                        self.model_name,
+                        (r.text or "")[:1000],
+                    )
                 r.raise_for_status()
                 data = r.json()
                 content = data["choices"][0]["message"].get("content", "")
                 return AIMessage(content=content)
             except Exception as e:
                 last_err = e
+                log.exception(
+                    "[CustomLLMCaller] Exception on attempt=%s url=%s model=%s err=%s",
+                    attempt + 1,
+                    api_url,
+                    self.model_name,
+                    e,
+                )
                 if attempt < 2:
                     await asyncio.sleep(0.6 * (attempt + 1))
                     continue
