@@ -148,10 +148,12 @@ class CustomAgent(BaseAgent):
         return "task_prompt_default"
 
     def create_llm(self, state):
+        # Prefer runtime env from Settings (OE/DF_MODEL_NAME),
+        # then fallback to per-node default / hardcoded model_name.
         resolved_model = (
-            self.model_name
-            or os.getenv("DF_MODEL_NAME")
+            os.getenv("DF_MODEL_NAME")
             or os.getenv("OE_MODEL_NAME")
+            or self.model_name
             or "gpt-4o"
         )
         return CustomLLMCaller(

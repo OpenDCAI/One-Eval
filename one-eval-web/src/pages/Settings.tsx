@@ -544,17 +544,11 @@ export const Settings = () => {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>{tt("模型", "Model")}</Label>
-                <select
+                <Input
                   value={agentModel}
                   onChange={(e) => setAgentModel(e.target.value)}
-                  className="w-full h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
-                >
-                  <option value="gpt-4o">gpt-4o</option>
-                  <option value="gpt-5.1">gpt-5.1</option>
-                  <option value="gpt-5.2">gpt-5.2</option>
-                  <option value="deepseek-v3">deepseek-v3</option>
-                  <option value="deepseek-r1">deepseek-r1</option>
-                </select>
+                  placeholder={tt("例如：gpt-4o / deepseek-chat / qwen-plus", "e.g. gpt-4o / deepseek-chat / qwen-plus")}
+                />
               </div>
               <div className="space-y-2">
                 <Label>{tt("超时（秒）", "Timeout (s)")}</Label>
