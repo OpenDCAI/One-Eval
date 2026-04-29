@@ -240,19 +240,19 @@ def apply_hf_env_from_config(cfg: Dict[str, Any]) -> None:
         os.environ["HUGGINGFACEHUB_API_TOKEN"] = token.strip()
 
 def _normalize_openai_base_url(url: str) -> str:
-    u = (url or "").strip()
+    # Normalize superficial differences (trailing slash, full endpoint input)
+    # so the caller can always append "/chat/completions" safely.
+    u = (url or "").strip().rstrip("/")
     if not u:
         return u
     if u.endswith("/v1/chat/completions"):
         u = u[: -len("/v1/chat/completions")] + "/v1"
     if u.endswith("/chat/completions"):
         u = u[: -len("/chat/completions")]
-    if u.endswith("/v1/"):
-        u = u[:-1]
     return u
 
 def _normalize_chat_completions_url(url: str, provider: str = "openai_compatible") -> str:
-    raw = (url or "").strip()
+    raw = (url or "").strip().rstrip("/")
     provider_name = str(provider or "openai_compatible").strip().lower()
     if not raw:
         if provider_name == "deepseek":
@@ -1730,6 +1730,31 @@ class AddBenchRequest(BaseModel):
     dataset_url: Optional[str] = None
 
 
+def _map_bench_type_to_category(bench_type: str) -> str:
+    """
+    将前端新增表单里的 type 映射到 Gallery 支持的分类枚举。
+    兜底返回 Domain-Specific，避免前端因未知 category 白屏。
+    """
+    t = (bench_type or "").strip().lower()
+    mapping = {
+        "knowledge": "Knowledge & QA",
+        "language & reasoning": "Reasoning",
+        "math": "Math",
+        "coding": "Coding",
+        "information retrieval & rag": "Long Context & RAG",
+        "instruction-following": "Instruction & Chat",
+        "conversation & chatbots": "Instruction & Chat",
+        "agents & tools use": "Agents & Tools",
+        "safety": "Safety & Alignment",
+        "bias & ethics": "Safety & Alignment",
+        "domain-specific": "Domain-Specific",
+        "multilingual": "Domain-Specific",
+        "other": "Domain-Specific",
+        "general": "Domain-Specific",
+    }
+    return mapping.get(t, "Domain-Specific")
+
+
 @app.post("/api/benches/gallery")
 def add_bench_to_gallery(req: AddBenchRequest):
     """添加新的 benchmark 到 gallery"""
@@ -1745,7 +1770,7 @@ def add_bench_to_gallery(req: AddBenchRequest):
             "bench_name": req.bench_name,
             "source": "user_added",
             "aliases": [req.bench_name],
-            "category": "General",
+            "category": _map_bench_type_to_category(req.type),
             "tags": [req.type],
             "description": req.description,
             "hf_meta": {

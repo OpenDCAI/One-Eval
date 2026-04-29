@@ -50,7 +50,8 @@ class CustomLLMCaller(BaseLLMCaller):
         model_name: Optional[str],
         base_url: str,
         api_key: str,
-        temperature: float = 0.0
+        temperature: float = 0.0,
+        timeout_s: Optional[int] = None,
     ):
         super().__init__(
             state=state,
@@ -62,13 +63,20 @@ class CustomLLMCaller(BaseLLMCaller):
         self.agent_role = agent_role   # 保存 agent 的真实角色名
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
-        timeout_s = int(os.getenv("OE_TIMEOUT_S") or os.getenv("DF_TIMEOUT_S") or 60)
-        if timeout_s <= 0:
-            timeout_s = 60
+        resolved_timeout = timeout_s
+        if not isinstance(resolved_timeout, int) or resolved_timeout <= 0:
+            resolved_timeout = int(os.getenv("OE_TIMEOUT_S") or os.getenv("DF_TIMEOUT_S") or 60)
+        if resolved_timeout <= 0:
+            resolved_timeout = 60
         if not self.model_name:
-            self.model_name = os.getenv("DF_MODEL_NAME") or os.getenv("OE_MODEL_NAME") or "gpt-4o"
+            self.model_name = os.getenv("DF_MODEL_NAME") or os.getenv("OE_MODEL_NAME")
+        if not self.model_name:
+            raise ValueError(
+                "CustomLLMCaller missing model_name. Please configure Agent model "
+                "(DF_MODEL_NAME/OE_MODEL_NAME) or pass model_name explicitly."
+            )
         self._client = httpx.AsyncClient(
-            timeout=timeout_s,
+            timeout=resolved_timeout,
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
@@ -141,16 +149,46 @@ class CustomLLMCaller(BaseLLMCaller):
         last_err = None
         for attempt in range(3):
             try:
+                log.info(
+                    "[CustomLLMCaller] POST %s attempt=%s model=%s msg_count=%s",
+                    api_url,
+                    attempt + 1,
+                    self.model_name,
+                    len(formatted_messages),
+                )
                 r = await self._client.post(api_url, json=payload)
                 if r.status_code in retry_statuses and attempt < 2:
+                    log.warning(
+                        "[CustomLLMCaller] Retryable status=%s attempt=%s url=%s body=%s",
+                        r.status_code,
+                        attempt + 1,
+                        api_url,
+                        (r.text or "")[:500],
+                    )
                     await asyncio.sleep(0.6 * (attempt + 1))
                     continue
+                if r.status_code >= 400:
+                    log.error(
+                        "[CustomLLMCaller] Request failed status=%s url=%s model=%s body=%s",
+                        r.status_code,
+                        api_url,
+                        self.model_name,
+                        (r.text or "")[:1000],
+                    )
                 r.raise_for_status()
                 data = r.json()
                 content = data["choices"][0]["message"].get("content", "")
                 return AIMessage(content=content)
             except Exception as e:
                 last_err = e
+                log.exception(
+                    "[CustomLLMCaller] Exception on attempt=%s url=%s model=%s err_type=%s err_repr=%r",
+                    attempt + 1,
+                    api_url,
+                    self.model_name,
+                    type(e).__name__,
+                    e,
+                )
                 if attempt < 2:
                     await asyncio.sleep(0.6 * (attempt + 1))
                     continue
