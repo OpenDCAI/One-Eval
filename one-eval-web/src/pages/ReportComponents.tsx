@@ -81,6 +81,31 @@ interface ReportData {
       worst_bench?: string;
     }>;
   };
+  domain_analysis_v2?: {
+    rows: Array<{
+      domain: string;
+      avg_score: number;
+      score?: number;
+      num_samples: number;
+      bench_count: number;
+      benches: string[];
+      best_bench?: string;
+      worst_bench?: string;
+      best_score?: number;
+      worst_score?: number;
+      bench_coverage_ratio?: number;
+      sample_coverage_ratio?: number;
+      score_spread?: number;
+      strongest_benches?: string[];
+      weakest_benches?: string[];
+      strength_signal?: string;
+      weakness_signal?: string;
+    }>;
+    meta?: {
+      total_benches?: number;
+      total_samples?: number;
+    };
+  };
   macro: {
     radar: RadarData;
     sunburst: any;
@@ -341,7 +366,7 @@ export const ReportView = ({ report, lang }: { report: ReportData, lang: Lang })
     if (!report) return null;
     const tt = (zh: string, en: string) => (lang === "zh" ? zh : en);
     const benchProfiles = report.bench_results?.rows || report.benchmark_profiles?.rows || [];
-    const domainRows = report.domain_performance?.rows || [];
+    const domainRows = report.domain_analysis_v2?.rows || report.domain_performance?.rows || [];
     // Representative failure cases are intentionally hidden because extraction-based errors can be noisy.
     const totalSamples = report.overall.num_samples ?? benchProfiles.reduce((sum, b) => sum + Number(b.num_samples || 0), 0);
 
@@ -429,6 +454,21 @@ export const ReportView = ({ report, lang }: { report: ReportData, lang: Lang })
                                     <div className="mt-1 text-[11px] text-slate-500">
                                         {tt("最佳", "Best")}: {d.best_bench || "-"} | {tt("较弱", "Weakest")}: {d.worst_bench || "-"}
                                     </div>
+                                    {(typeof d.bench_coverage_ratio === "number" || typeof d.sample_coverage_ratio === "number") ? (
+                                        <div className="mt-1 text-[11px] text-slate-500">
+                                            {tt("基准覆盖", "Bench Coverage")}: {Math.round((d.bench_coverage_ratio || 0) * 100)}% | {tt("样本覆盖", "Sample Coverage")}: {Math.round((d.sample_coverage_ratio || 0) * 100)}%
+                                        </div>
+                                    ) : null}
+                                    {typeof d.score_spread === "number" ? (
+                                        <div className="mt-1 text-[11px] text-slate-500">
+                                            {tt("域内离散度", "Domain Spread")}: {formatScore(d.score_spread)}
+                                        </div>
+                                    ) : null}
+                                    {(d.strongest_benches?.length || d.weakest_benches?.length) ? (
+                                        <div className="mt-1 text-[11px] text-slate-500">
+                                            {tt("强项", "Strengths")}: {(d.strongest_benches || []).slice(0, 2).join(", ") || "-"} | {tt("短板", "Weaknesses")}: {(d.weakest_benches || []).slice(0, 2).join(", ") || "-"}
+                                        </div>
+                                    ) : null}
                                     <div className="mt-2 text-[11px] text-slate-500 line-clamp-2">{d.benches?.join(", ")}</div>
                                 </div>
                             ))}

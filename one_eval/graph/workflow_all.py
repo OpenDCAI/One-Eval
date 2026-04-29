@@ -122,7 +122,7 @@ def build_complete_workflow(checkpointer=None):
         success_node="ScoreCalcNode",
         failure_node=END,
         rewind_nodes=["MetricRecommendNode"],
-        model_name="gpt-4o",
+        model_name=None,
         node_docs=node_docs,
     )
     builder.add_node(name=node_metric_review.name, func=node_metric_review.run)

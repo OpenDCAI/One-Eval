@@ -149,13 +149,17 @@ class CustomAgent(BaseAgent):
 
     def create_llm(self, state):
         # Prefer runtime env from Settings (OE/DF_MODEL_NAME),
-        # then fallback to per-node default / hardcoded model_name.
+        # then fallback to per-node provided model_name.
         resolved_model = (
             os.getenv("DF_MODEL_NAME")
             or os.getenv("OE_MODEL_NAME")
             or self.model_name
-            or "gpt-4o"
         )
+        if not resolved_model:
+            raise ValueError(
+                "LLM model is not configured. Please set Agent model in Settings "
+                "or provide model_name for the current node/agent."
+            )
         return CustomLLMCaller(
             state=state,
             tool_manager=self.tool_manager,
@@ -163,6 +167,7 @@ class CustomAgent(BaseAgent):
             base_url=self.api_url,
             api_key=self.api_key,
             agent_role=self.role_name,
+            timeout_s=getattr(self, "llm_timeout_s", None),
         )
 
     def get_prompt(self, name: str, **kwargs) -> str:

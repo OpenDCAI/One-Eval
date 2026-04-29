@@ -22,7 +22,7 @@ class InterruptNode(BaseNode):
         success_node: str,
         failure_node: str = "__end__",
         rewind_nodes: Optional[List[str]] = None,
-        model_name: str = "gpt-4o",
+        model_name: Optional[str] = None,
         node_docs: Optional[Dict[str, str]] = None,
     ):
         super().__init__(name=name, tools=None)

@@ -50,7 +50,8 @@ class CustomLLMCaller(BaseLLMCaller):
         model_name: Optional[str],
         base_url: str,
         api_key: str,
-        temperature: float = 0.0
+        temperature: float = 0.0,
+        timeout_s: Optional[int] = None,
     ):
         super().__init__(
             state=state,
@@ -62,13 +63,20 @@ class CustomLLMCaller(BaseLLMCaller):
         self.agent_role = agent_role   # 保存 agent 的真实角色名
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
-        timeout_s = int(os.getenv("OE_TIMEOUT_S") or os.getenv("DF_TIMEOUT_S") or 60)
-        if timeout_s <= 0:
-            timeout_s = 60
+        resolved_timeout = timeout_s
+        if not isinstance(resolved_timeout, int) or resolved_timeout <= 0:
+            resolved_timeout = int(os.getenv("OE_TIMEOUT_S") or os.getenv("DF_TIMEOUT_S") or 60)
+        if resolved_timeout <= 0:
+            resolved_timeout = 60
         if not self.model_name:
-            self.model_name = os.getenv("DF_MODEL_NAME") or os.getenv("OE_MODEL_NAME") or "gpt-4o"
+            self.model_name = os.getenv("DF_MODEL_NAME") or os.getenv("OE_MODEL_NAME")
+        if not self.model_name:
+            raise ValueError(
+                "CustomLLMCaller missing model_name. Please configure Agent model "
+                "(DF_MODEL_NAME/OE_MODEL_NAME) or pass model_name explicitly."
+            )
         self._client = httpx.AsyncClient(
-            timeout=timeout_s,
+            timeout=resolved_timeout,
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
@@ -174,10 +182,11 @@ class CustomLLMCaller(BaseLLMCaller):
             except Exception as e:
                 last_err = e
                 log.exception(
-                    "[CustomLLMCaller] Exception on attempt=%s url=%s model=%s err=%s",
+                    "[CustomLLMCaller] Exception on attempt=%s url=%s model=%s err_type=%s err_repr=%r",
                     attempt + 1,
                     api_url,
                     self.model_name,
+                    type(e).__name__,
                     e,
                 )
                 if attempt < 2:

@@ -27,7 +27,9 @@ class MetricRecommendNode(BaseNode):
         # 这里可以根据 state.task_domain 动态调整 model_name，或者使用默认
         agent = MetricRecommendAgent(
             tool_manager=tm,
-            model_name="gpt-4o", # 推荐 Metric 需要较强的逻辑推理能力
+            # Use runtime Agent model from Settings (DF_MODEL_NAME/OE_MODEL_NAME).
+            # Do not hardcode model here.
+            model_name=None,
             temperature=0.1      # 降低随机性，保证 Metric 的准确性
         )
 

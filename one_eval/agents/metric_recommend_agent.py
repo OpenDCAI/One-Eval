@@ -32,6 +32,12 @@ class MetricRecommendAgent(CustomAgent):
     def task_prompt_template_name(self) -> str:
         return "metric_recommend.task"
 
+    @property
+    def llm_timeout_s(self) -> int:
+        # MetricRecommend may include long context (bench preview + metric docs),
+        # so we allow a longer per-agent timeout than global default.
+        return 180
+
     def _check_registry(self, bench: BenchInfo) -> Optional[List[Dict[str, Any]]]:
         """
         检查注册表是否有预定义的 Metric。
@@ -309,8 +315,8 @@ class MetricRecommendAgent(CustomAgent):
                         if validated:
                             # 强制追加 Analyst Metrics
                             analyst_metrics = [
-                                {"name": "metric_summary_analyst", "priority": "diagnostic"},
-                                {"name": "case_study_analyst", "priority": "diagnostic"}
+                                {"name": "metric_summary_analyst", "priority": "diagnostic", "args": {"timeout_s": 180}},
+                                {"name": "case_study_analyst", "priority": "diagnostic", "args": {"timeout_s": 180}}
                             ]
                             # 避免重复
                             existing_names = {m["name"] for m in validated}
@@ -344,8 +350,8 @@ class MetricRecommendAgent(CustomAgent):
             
                 # 强制追加 Analyst Metrics (在 Fallback 情况下也追加)
                 analyst_metrics = [
-                    {"name": "metric_summary_analyst", "priority": "diagnostic"},
-                    {"name": "case_study_analyst", "priority": "diagnostic"}
+                    {"name": "metric_summary_analyst", "priority": "diagnostic", "args": {"timeout_s": 180}},
+                    {"name": "case_study_analyst", "priority": "diagnostic", "args": {"timeout_s": 180}}
                 ]
                 existing_names = {m["name"] for m in fallback}
                 for am in analyst_metrics:

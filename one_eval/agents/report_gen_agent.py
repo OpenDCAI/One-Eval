@@ -120,6 +120,7 @@ class ReportGenAgent(CustomAgent):
         bench_rows = bench_profile.get("rows", [])
         overall_score = self._compute_overall_score(bench_rows)
         domain_performance = self._build_domain_performance_view(bench_rows)
+        domain_analysis_v2 = self._build_domain_analysis_view(domain_performance, bench_rows)
 
         lang = self._get_lang(state)
         macro_view = self._build_macro_view(bench_summaries, eval_results, lang)
@@ -132,6 +133,8 @@ class ReportGenAgent(CustomAgent):
             "benches": bench_rows[:20],
             "benchmark_profiles": bench_rows[:20],
             "domain_performance": domain_performance.get("rows", [])[:10],
+            "domain_insights": domain_analysis_v2.get("rows", [])[:10],
+            "domain_meta": domain_analysis_v2.get("meta", {}),
             "error_distribution": diagnostic_view.get("error_distribution", []),
             "metric_summaries": analyst_compact.get("metric_summary", []),
             "case_studies": analyst_compact.get("case_study", []),
@@ -151,6 +154,7 @@ class ReportGenAgent(CustomAgent):
             "bench_results": {"rows": bench_rows},
             "benchmark_profiles": bench_profile,
             "domain_performance": domain_performance,
+            "domain_analysis_v2": domain_analysis_v2,
             "macro": macro_view,
             "diagnostic": {
                 "error_distribution": diagnostic_view.get("error_distribution", []),
@@ -330,11 +334,13 @@ class ReportGenAgent(CustomAgent):
                         "score_sum": 0.0,
                         "weight": 0,
                         "benches": {},
+                        "bench_samples": {},
                     }
                 groups[domain]["score_sum"] += score * weight
                 groups[domain]["weight"] += weight
                 if bench_name:
                     groups[domain]["benches"][bench_name] = score
+                    groups[domain]["bench_samples"][bench_name] = num
 
         rows: List[Dict[str, Any]] = []
         for domain, item in groups.items():
@@ -356,6 +362,8 @@ class ReportGenAgent(CustomAgent):
                 "benches": [b[0] for b in benches_sorted],
                 "best_bench": best_bench,
                 "worst_bench": worst_bench,
+                "best_score": self._safe_float(benches_sorted[0][1]) if benches_sorted else 0.0,
+                "worst_score": self._safe_float(benches_sorted[-1][1]) if benches_sorted else 0.0,
             })
 
         rows = sorted(
@@ -364,6 +372,66 @@ class ReportGenAgent(CustomAgent):
             reverse=True,
         )
         return {"rows": rows}
+
+    def _build_domain_analysis_view(self, domain_performance: Dict[str, Any], bench_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+        rows = domain_performance.get("rows", []) or []
+        if not rows:
+            return {"rows": [], "meta": {"total_benches": 0, "total_samples": 0}}
+
+        bench_score_map: Dict[str, float] = {}
+        bench_sample_map: Dict[str, int] = {}
+        for row in bench_rows:
+            bench_name = str(row.get("bench") or "")
+            if not bench_name:
+                continue
+            bench_score_map[bench_name] = self._safe_float(row.get("primary_score"))
+            bench_sample_map[bench_name] = int(row.get("num_samples", 0) or 0)
+
+        total_benches = len(bench_score_map)
+        total_samples = sum(max(v, 0) for v in bench_sample_map.values())
+
+        analysis_rows: List[Dict[str, Any]] = []
+        for row in rows:
+            benches = [str(b) for b in (row.get("benches") or []) if isinstance(b, str) and b]
+            scores = [bench_score_map[b] for b in benches if b in bench_score_map]
+            samples = [bench_sample_map.get(b, 0) for b in benches]
+
+            bench_coverage_ratio = (len(benches) / total_benches) if total_benches > 0 else 0.0
+            sample_coverage_ratio = (sum(max(s, 0) for s in samples) / total_samples) if total_samples > 0 else 0.0
+            spread = self._score_spread(scores)
+
+            strongest = benches[:3]
+            weakest = list(reversed(benches[-3:])) if benches else []
+            strength = strongest[0] if strongest else None
+            weakness = weakest[0] if weakest else None
+
+            analysis_rows.append({
+                **row,
+                "bench_coverage_ratio": bench_coverage_ratio,
+                "sample_coverage_ratio": sample_coverage_ratio,
+                "score_spread": spread,
+                "strongest_benches": strongest,
+                "weakest_benches": weakest,
+                "strength_signal": strength,
+                "weakness_signal": weakness,
+            })
+
+        return {
+            "rows": analysis_rows,
+            "meta": {
+                "total_benches": total_benches,
+                "total_samples": total_samples,
+            }
+        }
+
+    def _score_spread(self, scores: List[float]) -> float:
+        if not scores:
+            return 0.0
+        if len(scores) == 1:
+            return 0.0
+        mean = sum(scores) / len(scores)
+        var = sum((s - mean) ** 2 for s in scores) / len(scores)
+        return math.sqrt(max(var, 0.0))
 
     def _map_bench_to_dimensions(self, bench_name: str, metric_names: List[str]) -> List[str]:
         # 1. 关键词规则匹配（名称中包含关键词即可）

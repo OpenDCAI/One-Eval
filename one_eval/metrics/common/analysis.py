@@ -1,4 +1,4 @@
-from typing import List, Any, Dict, Optional
+from typing import List, Any, Dict
 import random
 import os
 import logging
@@ -107,6 +107,26 @@ def _fallback_case_study(selected_indices: List[int], preds: List[Any], refs: Li
         lines.append(f"样本 {i+1}：模型输出={str(preds[idx])[:120]} | 参考答案={str(refs[idx])[:120]}")
     return "\n".join(lines)
 
+
+def _resolve_analyst_timeout(kwargs: Dict[str, Any], default_timeout: int = 180) -> int:
+    # Priority: metric args > dedicated env > global env > default
+    raw = (
+        kwargs.get("timeout_s")
+        or kwargs.get("analyst_timeout_s")
+        or os.getenv("OE_ANALYST_TIMEOUT_S")
+        or os.getenv("DF_ANALYST_TIMEOUT_S")
+        or os.getenv("OE_TIMEOUT_S")
+        or os.getenv("DF_TIMEOUT_S")
+        or default_timeout
+    )
+    try:
+        timeout_s = int(raw)
+    except Exception:
+        timeout_s = default_timeout
+    if timeout_s <= 0:
+        timeout_s = default_timeout
+    return timeout_s
+
 # Mock State for CustomLLMCaller to satisfy initialization requirements
 class MockState:
     def __init__(self, model_name: str):
@@ -131,7 +151,7 @@ def compute_case_study_analyst(preds: List[Any], refs: List[Any], **kwargs) -> D
             target_group (str): 'positive' | 'negative' | 'mixed'，默认 'negative'
             instruction (str): 分析指令
             auto_prompt (bool): 是否启用自动 Prompt 优化
-            model_name (str): LLM 模型名称，默认 "gpt-4o"
+            model_name (str): LLM 模型名称（未提供时从环境变量读取）
             api_key (str): OpenAI API Key
             base_url (str): OpenAI Base URL
     """
@@ -142,9 +162,10 @@ def compute_case_study_analyst(preds: List[Any], refs: List[Any], **kwargs) -> D
     auto_prompt = kwargs.get("auto_prompt", False)
     lang = str(kwargs.get("language", "zh") or "zh").lower()
     is_en = lang.startswith("en")
+    analyst_timeout_s = _resolve_analyst_timeout(kwargs, default_timeout=180)
     
     # LLM Config
-    model_name = kwargs.get("model_name", "gpt-4o")
+    model_name = kwargs.get("model_name") or os.environ.get("DF_MODEL_NAME") or os.environ.get("OE_MODEL_NAME")
     api_key = kwargs.get("api_key") or os.environ.get("OE_API_KEY")
     base_url = kwargs.get("base_url") or os.environ.get("OE_API_BASE")
     
@@ -153,6 +174,8 @@ def compute_case_study_analyst(preds: List[Any], refs: List[Any], **kwargs) -> D
     
     if not api_key:
         return {"score": 0.0, "error": ("Missing API Key for CaseStudyAnalyst." if is_en else "CaseStudyAnalyst 缺少 API Key。")}
+    if not model_name:
+        return {"score": 0.0, "error": ("Missing model_name for CaseStudyAnalyst." if is_en else "CaseStudyAnalyst 缺少 model_name。")}
 
     # 2. 区分正负例
     pos_indices = []
@@ -267,7 +290,8 @@ def compute_case_study_analyst(preds: List[Any], refs: List[Any], **kwargs) -> D
             model_name=model_name,
             base_url=base_url or "http://123.129.219.111:3000/v1", # fallback
             api_key=api_key,
-            temperature=0.7
+            temperature=0.7,
+            timeout_s=analyst_timeout_s,
         )
         
         messages = [
@@ -335,6 +359,7 @@ def compute_metric_summary_analyst(preds: List[Any], refs: List[Any], **kwargs) 
     """
     lang = str(kwargs.get("language", "zh") or "zh").lower()
     is_en = lang.startswith("en")
+    analyst_timeout_s = _resolve_analyst_timeout(kwargs, default_timeout=180)
 
     # 1. 获取上下文中的 Metric 结果
     all_results = kwargs.get("all_metric_results", {})
@@ -349,7 +374,7 @@ def compute_metric_summary_analyst(preds: List[Any], refs: List[Any], **kwargs) 
         }
         
     # 2. 准备 LLM 调用
-    model_name = kwargs.get("model_name", "gpt-4o")
+    model_name = kwargs.get("model_name") or os.environ.get("DF_MODEL_NAME") or os.environ.get("OE_MODEL_NAME")
     api_key = kwargs.get("api_key") or os.environ.get("OE_API_KEY", "sk-xxx")
     base_url = kwargs.get("base_url") or os.environ.get("OE_API_BASE", "http://123.129.219.111:3000/v1")
     
@@ -358,6 +383,8 @@ def compute_metric_summary_analyst(preds: List[Any], refs: List[Any], **kwargs) 
 
     if not api_key:
         return {"score": 0.0, "error": "Missing API Key for MetricSummaryAnalyst."}
+    if not model_name:
+        return {"score": 0.0, "error": "Missing model_name for MetricSummaryAnalyst."}
 
     # 3. 格式化数据
     # 过滤掉 error 的 metric，提取 score 和 details 摘要
@@ -417,7 +444,8 @@ Do not output markdown horizontal rules like ---.
             agent_role="MetricSummaryAnalyst",
             model_name=model_name,
             base_url=base_url,
-            api_key=api_key
+            api_key=api_key,
+            timeout_s=analyst_timeout_s,
         )
         
         messages = [
