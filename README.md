@@ -77,7 +77,7 @@ One-Eval adopts a separation of frontend and backend architecture. Please start 
 #### ① Start Backend (FastAPI)
 
 ```bash
-uvicorn one_eval.server.app:app --host 0.0.0.0 --port 8000
+uvicorn one_eval.server.app:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 #### ② Start Frontend (Vite + React)
