@@ -156,7 +156,7 @@ class CustomLLMCaller(BaseLLMCaller):
                     self.model_name,
                     len(formatted_messages),
                 )
-                r = await self._client.post(api_url, json=payload)
+                r = await self._client.post(api_url, json=payload, timeout=600)
                 if r.status_code in retry_statuses and attempt < 2:
                     log.warning(
                         "[CustomLLMCaller] Retryable status=%s attempt=%s url=%s body=%s",

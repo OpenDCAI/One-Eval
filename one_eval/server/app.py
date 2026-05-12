@@ -38,6 +38,7 @@ ENV_FILE = REPO_ROOT / "env.sh"
 # We keep it there or move it? 
 # If previous code used parents[2], we should respect it to find existing DB.
 DB_PATH = (SERVER_DIR.parents[2] / "checkpoints" / "eval.db").resolve()
+print(f"DB_PATH={DB_PATH}")
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 # 内存缓存：记录每个 thread 是否处于 interrupted 状态

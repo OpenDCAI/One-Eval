@@ -79,6 +79,11 @@ interface ReportData {
       benches: string[];
       best_bench?: string;
       worst_bench?: string;
+      bench_coverage_ratio?: number;
+      sample_coverage_ratio?: number;
+      score_spread?:number;
+      strongest_benches?: string[];
+      weakest_benches?: string[];
     }>;
   };
   domain_analysis_v2?: {
