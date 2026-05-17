@@ -925,7 +925,7 @@ export const Eval = () => {
   // Helper to determine block status
   const getBlockStatus = (block: 'search' | 'prep' | 'exec') => {
       if (status === 'idle') return 'idle';
-      if (status === 'stopped') return 'interrupted';
+      if (status === 'stopped') return 'idle';
       
       const nodes = currentNode ? [currentNode] : [];
       const isSearchActive = ["QueryUnderstandNode", "BenchSearchNode", "HumanReviewNode"].some(n => nodes.some(cn => cn.includes(n)));
