@@ -87,6 +87,13 @@ def _write_json_file(path: Path, data: Any) -> None:
     except Exception:
         log.error(f"Error writing {path}: ", exc_info=True)
 
+def _write_json_file_strict(path: Path, data: Any) -> None:
+    try:
+        path.write_text(json.dumps(data, indent=2, ensure_ascii=False))
+    except Exception as e:
+        log.error(f"Error writing {path}: ", exc_info=True)
+        raise RuntimeError(f"failed to write {path}") from e
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -114,6 +121,23 @@ def _touch_thread_updated_at(thread_id: str, updated_at: Optional[str] = None) -
     if "created_at" not in item or not item.get("created_at"):
         item["created_at"] = updated_at or _now_iso()
     item["updated_at"] = updated_at or _now_iso()
+    meta[thread_id] = item
+    _write_json_file(THREAD_META_FILE, meta)
+
+def _set_thread_stopped(thread_id: str, stopped: bool, stopped_at: Optional[str] = None) -> None:
+    meta = _load_thread_meta()
+    item = meta.get(thread_id)
+    if not isinstance(item, dict):
+        item = {}
+    if "created_at" not in item or not item.get("created_at"):
+        item["created_at"] = _now_iso()
+    item["updated_at"] = _now_iso()
+    if stopped:
+        item["stopped"] = True
+        item["stopped_at"] = stopped_at or _now_iso()
+    else:
+        item.pop("stopped", None)
+        item.pop("stopped_at", None)
     meta[thread_id] = item
     _write_json_file(THREAD_META_FILE, meta)
 
@@ -228,6 +252,9 @@ def load_server_config() -> Dict[str, Any]:
 
 def save_server_config(cfg: Dict[str, Any]) -> None:
     _write_json_file(CONFIG_FILE, cfg)
+
+def save_server_config_strict(cfg: Dict[str, Any]) -> None:
+    _write_json_file_strict(CONFIG_FILE, cfg)
 
 def apply_hf_env_from_config(cfg: Dict[str, Any]) -> None:
     hf = cfg.get("hf") or {}
@@ -488,7 +515,10 @@ def update_hf_config(req: HFConfigUpdateRequest):
             token = tk
 
     cfg["hf"] = {"endpoint": endpoint, "token": token}
-    save_server_config(cfg)
+    try:
+        save_server_config_strict(cfg)
+    except Exception:
+        raise HTTPException(status_code=500, detail="failed to persist hf config")
     apply_hf_env_from_config(cfg)
     return {"endpoint": endpoint, "token_set": isinstance(token, str) and bool(token.strip())}
 
@@ -545,7 +575,10 @@ def update_agent_config(req: AgentConfigUpdateRequest):
         "api_key": api_key,
         "timeout_s": timeout_s,
     }
-    save_server_config(cfg)
+    try:
+        save_server_config_strict(cfg)
+    except Exception:
+        raise HTTPException(status_code=500, detail="failed to persist agent config")
     apply_agent_env_from_config(cfg)
     return {
         "provider": provider,
@@ -655,7 +688,10 @@ def update_judge_model_config(req: JudgeModelConfigUpdateRequest):
         next_cfg["gpu_memory_utilization"] = float(req.gpu_memory_utilization)
 
     cfg["judge_model"] = next_cfg
-    save_server_config(cfg)
+    try:
+        save_server_config_strict(cfg)
+    except Exception:
+        raise HTTPException(status_code=500, detail="failed to persist judge_model config")
     return get_judge_model_config()
 
 class AgentTestRequest(BaseModel):
@@ -870,6 +906,7 @@ async def run_graph_background(thread_id: str, input_state: Any, resume_command:
         config = {"configurable": {"thread_id": thread_id}}
         
         try:
+            _set_thread_stopped(thread_id, False)
             _touch_thread_updated_at(thread_id)
             log.info(f"Invoking graph for {thread_id}")
             if resume_command:
@@ -919,14 +956,19 @@ def _launch_graph_task(thread_id: str, input_state: Any = None, resume_command: 
 
 @app.post("/api/workflow/stop/{thread_id}")
 async def stop_workflow(thread_id: str):
+    tid = str(thread_id or "").strip()
+    if not tid:
+        raise HTTPException(status_code=400, detail="thread_id is required")
+    _set_thread_stopped(tid, True)
+    _thread_interrupt_cache.pop(tid, None)
     task = RUNNING_WORKFLOW_TASKS.get(thread_id)
     if not task:
         log.info(f"Stop request for {thread_id}, but no running task found.")
-        return {"thread_id": thread_id, "status": "idle", "detail": "no running workflow"}
+        return {"thread_id": thread_id, "status": "stopped", "detail": "no running workflow"}
     if task.done():
         RUNNING_WORKFLOW_TASKS.pop(thread_id, None)
         log.info(f"Stop request for {thread_id}, task already finished.")
-        return {"thread_id": thread_id, "status": "idle", "detail": "workflow already finished"}
+        return {"thread_id": thread_id, "status": "stopped", "detail": "workflow already finished"}
     
     log.warning(f"Stop request received for {thread_id}. Cancelling task...")
     task.cancel()
@@ -942,6 +984,32 @@ async def get_status(thread_id: str):
     可能是 interrupt() 正在执行中，需要短暂等待并重试。
     """
     import asyncio
+    tid = str(thread_id or "").strip()
+    if not tid:
+        raise HTTPException(status_code=400, detail="thread_id is required")
+    thread_meta = _load_thread_meta()
+    meta_item = thread_meta.get(tid) if isinstance(thread_meta.get(tid), dict) else {}
+    if meta_item.get("stopped"):
+        task = RUNNING_WORKFLOW_TASKS.get(tid)
+        if task is None or task.done():
+            async with get_checkpointer(DB_PATH, mode="run") as checkpointer:
+                graph = build_complete_workflow(checkpointer=checkpointer)
+                config = {"configurable": {"thread_id": tid}}
+                try:
+                    snap = await graph.aget_state(config)
+                except Exception as e:
+                    log.error(f"Failed to get state for {tid}: {e}")
+                    return {"thread_id": tid, "status": "not_found"}
+                next_nodes = snap.next if snap else None
+                current_values = snap.values if snap else None
+                return {
+                    "thread_id": tid,
+                    "status": "stopped",
+                    "next_node": next_nodes,
+                    "state_values": current_values,
+                    "interrupts": [{"value": i.value} for i in snap.interrupts] if snap and snap.interrupts else [],
+                    "eval_progress": get_progress(tid),
+                }
 
     async with get_checkpointer(DB_PATH, mode="run") as checkpointer:
         graph = build_complete_workflow(checkpointer=checkpointer)
@@ -1014,6 +1082,7 @@ async def get_status(thread_id: str):
 @app.post("/api/workflow/resume/{thread_id}")
 async def resume_workflow(thread_id: str, req: ResumeWorkflowRequest):
     req.thread_id = thread_id
+    _set_thread_stopped(req.thread_id, False)
     # Apply state updates if provided
     if req.state_updates:
         if "target_model" in req.state_updates and isinstance(req.state_updates["target_model"], dict):
@@ -1104,6 +1173,7 @@ async def resume_workflow(thread_id: str, req: ResumeWorkflowRequest):
 
 @app.post("/api/workflow/rerun_execution/{thread_id}")
 async def rerun_execution(thread_id: str, req: RerunExecutionRequest):
+    _set_thread_stopped(thread_id, False)
     async with get_checkpointer(DB_PATH, mode="run") as checkpointer:
         graph = build_complete_workflow(checkpointer=checkpointer)
         config = {"configurable": {"thread_id": thread_id}}
@@ -1546,13 +1616,15 @@ async def get_history():
                     if snap and snap.values:
                         q = snap.values.get("user_query", "Unknown Query")
                         # Determine status
+                        meta_item = thread_meta.get(tid) if isinstance(thread_meta.get(tid), dict) else {}
                         status = "completed"
                         if snap.next:
                             status = "interrupted" if ("HumanReviewNode" in snap.next or "PreEvalReviewNode" in snap.next or "MetricReviewNode" in snap.next) else "running"
+                        if meta_item.get("stopped"):
+                            status = "stopped"
                         # If no next and no error -> completed
                         
                         ts = snap.metadata.get("created_at") if snap.metadata else None
-                        meta_item = thread_meta.get(tid) if isinstance(thread_meta.get(tid), dict) else {}
                         created_ts = meta_item.get("created_at")
                         if not created_ts and isinstance(ts, str) and ts.strip():
                             created_ts = ts.strip()
@@ -1681,7 +1753,10 @@ def add_model(model: Dict[str, Any]):
         item["api_connect_timeout"] = float(item.get("api_connect_timeout", 10.0) or 10.0)
         item["api_read_timeout"] = float(item.get("api_read_timeout", 120.0) or 120.0)
     models.append(item)
-    _write_json_file(MODELS_FILE, models)
+    try:
+        _write_json_file_strict(MODELS_FILE, models)
+    except Exception:
+        raise HTTPException(status_code=500, detail="failed to persist models registry")
     return {"status": "success"}
 
 class ModelLoadTestRequest(BaseModel):

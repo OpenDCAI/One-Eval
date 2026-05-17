@@ -104,6 +104,11 @@ export const Settings = () => {
   const [newModel, setNewModel] = useState<ModelConfig>({ name: "", path: "", is_api: false, api_url: "", api_key: "", api_provider: "openai_compatible", api_extra_body: "", api_max_workers: 16, api_connect_timeout: 10, api_read_timeout: 120 });
   const [loading, setLoading] = useState(false);
   const [apiBaseUrl] = useState(() => localStorage.getItem("oneEval.apiBaseUrl") || "http://localhost:8000");
+  const [backendReachable, setBackendReachable] = useState<boolean | null>(null);
+  const [modelsLoadError, setModelsLoadError] = useState<string | null>(null);
+  const [hfLoadError, setHfLoadError] = useState<string | null>(null);
+  const [agentLoadError, setAgentLoadError] = useState<string | null>(null);
+  const [judgeLoadError, setJudgeLoadError] = useState<string | null>(null);
   const [hfEndpoint, setHfEndpoint] = useState("https://hf-mirror.com");
   const [hfToken, setHfToken] = useState("");
   const [hfTokenSet, setHfTokenSet] = useState(false);
@@ -163,6 +168,10 @@ export const Settings = () => {
 
   useEffect(() => {
     if (!isValidHttpUrl(apiBaseUrl)) return;
+    axios
+      .get(`${apiBaseUrl}/health`)
+      .then(() => setBackendReachable(true))
+      .catch(() => setBackendReachable(false));
     fetchModels();
     fetchHfConfig();
     fetchAgentConfig();
@@ -173,8 +182,10 @@ export const Settings = () => {
     try {
       const res = await axios.get(`${apiBaseUrl}/api/models`);
       setModels(res.data);
+      setModelsLoadError(null);
     } catch (e) {
       console.error("Failed to fetch models", e);
+      setModelsLoadError(tt("读取失败：无法连接后端或后端异常。", "Load failed: backend unreachable or error."));
     }
   };
 
@@ -200,6 +211,8 @@ export const Settings = () => {
       setNewModel({ name: "", path: "", is_api: false, api_url: "", api_key: "", api_provider: "openai_compatible", api_extra_body: "", api_max_workers: 16, api_connect_timeout: 10, api_read_timeout: 120 });
     } catch (e) {
       console.error(e);
+      const detail = axios.isAxiosError(e) ? (e.response?.data?.detail || e.message) : tt("请求异常", "request error");
+      setModelsLoadError(`${tt("保存失败", "Save failed")}: ${detail}`);
     }
     setLoading(false);
   };
@@ -209,9 +222,9 @@ export const Settings = () => {
       const res = await axios.get(`${apiBaseUrl}/api/config/hf`);
       setHfEndpoint(res.data.endpoint || "https://hf-mirror.com");
       setHfTokenSet(Boolean(res.data.token_set));
+      setHfLoadError(null);
     } catch (e) {
-      setHfEndpoint("https://hf-mirror.com");
-      setHfTokenSet(false);
+      setHfLoadError(tt("读取失败：无法连接后端或后端异常。", "Load failed: backend unreachable or error."));
     }
   };
 
@@ -226,6 +239,8 @@ export const Settings = () => {
       setHfToken("");
     } catch (e) {
       console.error(e);
+      const detail = axios.isAxiosError(e) ? (e.response?.data?.detail || e.message) : tt("请求异常", "request error");
+      setHfLoadError(`${tt("保存失败", "Save failed")}: ${detail}`);
     }
     setSavingHf(false);
   };
@@ -239,6 +254,8 @@ export const Settings = () => {
       setHfToken("");
     } catch (e) {
       console.error(e);
+      const detail = axios.isAxiosError(e) ? (e.response?.data?.detail || e.message) : tt("请求异常", "request error");
+      setHfLoadError(`${tt("清除失败", "Clear failed")}: ${detail}`);
     }
     setSavingHf(false);
   };
@@ -251,12 +268,9 @@ export const Settings = () => {
       setAgentApiKeySet(Boolean(res.data.api_key_set));
       setAgentTimeoutS(Number(res.data.timeout_s || 15));
       setAgentApiKeyInput("");
+      setAgentLoadError(null);
     } catch (e) {
-      setAgentBaseUrl("http://123.129.219.111:3000/v1");
-      setAgentModel("gpt-4o");
-      setAgentApiKeySet(false);
-      setAgentTimeoutS(15);
-      setAgentApiKeyInput("");
+      setAgentLoadError(tt("读取失败：无法连接后端或后端异常。", "Load failed: backend unreachable or error."));
     }
   };
 
@@ -281,6 +295,8 @@ export const Settings = () => {
       setTimeout(() => setShowAgentSuccess(false), 3000);
     } catch (e) {
       console.error(e);
+      const detail = axios.isAxiosError(e) ? (e.response?.data?.detail || e.message) : tt("请求异常", "request error");
+      setAgentTestResult(`${tt("保存失败", "Save failed")}: ${detail}`);
     }
     setSavingAgent(false);
   };
@@ -294,6 +310,8 @@ export const Settings = () => {
       setAgentTestResult(null);
     } catch (e) {
       console.error(e);
+      const detail = axios.isAxiosError(e) ? (e.response?.data?.detail || e.message) : tt("请求异常", "request error");
+      setAgentTestResult(`${tt("清除失败", "Clear failed")}: ${detail}`);
     }
     setSavingAgent(false);
   };
@@ -314,8 +332,10 @@ export const Settings = () => {
         api_key: "",
       });
       setJudgeApiKeySet(Boolean(res.data.api_key_set));
+      setJudgeLoadError(null);
     } catch (e) {
       console.error("Failed to fetch judge config", e);
+      setJudgeLoadError(tt("读取失败：无法连接后端或后端异常。", "Load failed: backend unreachable or error."));
     }
   };
 
@@ -354,6 +374,8 @@ export const Settings = () => {
       }));
     } catch (e) {
       console.error(e);
+      const detail = axios.isAxiosError(e) ? (e.response?.data?.detail || e.message) : tt("请求异常", "request error");
+      setJudgeTestResult(`${tt("保存失败", "Save failed")}: ${detail}`);
     }
     setSavingJudge(false);
   };
@@ -366,6 +388,8 @@ export const Settings = () => {
       setJudgeModel(prev => ({ ...prev, api_key: "" }));
     } catch (e) {
       console.error(e);
+      const detail = axios.isAxiosError(e) ? (e.response?.data?.detail || e.message) : tt("请求异常", "request error");
+      setJudgeTestResult(`${tt("清除失败", "Clear failed")}: ${detail}`);
     }
     setSavingJudge(false);
   };
@@ -502,6 +526,19 @@ export const Settings = () => {
       <div className="space-y-2 mb-8">
         <h1 className="text-3xl font-bold tracking-tight text-slate-900">{tt("设置", "Settings")}</h1>
         <p className="text-slate-500 text-lg">{tt("配置评测环境与模型注册表。", "Configure your evaluation environment and model registry.")}</p>
+        <div className="flex flex-wrap items-center gap-3 text-xs">
+          <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 font-mono">{apiBaseUrl}</span>
+          {backendReachable === true && (
+            <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+              {tt("后端可达", "Backend reachable")}
+            </span>
+          )}
+          {backendReachable === false && (
+            <span className="px-2.5 py-1 rounded-full bg-red-50 text-red-700 border border-red-200">
+              {tt("后端不可达", "Backend unreachable")}
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
@@ -516,6 +553,11 @@ export const Settings = () => {
           defaultOpen={true}
         >
           <div className="space-y-6">
+            {agentLoadError && (
+              <div className="text-xs px-3 py-2 rounded-md bg-red-50 text-red-700 border border-red-200">
+                {agentLoadError}
+              </div>
+            )}
             <div className="space-y-2">
               <Label>{tt("服务地址", "Provider URL")}</Label>
               <div className="grid grid-cols-1 gap-2">
@@ -620,6 +662,11 @@ export const Settings = () => {
           defaultOpen={false}
         >
           <div className="space-y-6">
+            {hfLoadError && (
+              <div className="text-xs px-3 py-2 rounded-md bg-red-50 text-red-700 border border-red-200">
+                {hfLoadError}
+              </div>
+            )}
             <div className="space-y-2">
               <Label>{tt("HF 镜像地址", "HF Mirror Endpoint")}</Label>
               <Input
@@ -676,6 +723,11 @@ export const Settings = () => {
           defaultOpen={true}
         >
           <div className="space-y-6">
+            {modelsLoadError && (
+              <div className="text-xs px-3 py-2 rounded-md bg-red-50 text-red-700 border border-red-200">
+                {modelsLoadError}
+              </div>
+            )}
             {/* Add New */}
             <div className="p-5 border border-slate-200 rounded-xl bg-slate-50/50 space-y-4">
               <h4 className="text-sm font-semibold flex items-center gap-2 text-slate-800">
@@ -897,6 +949,11 @@ export const Settings = () => {
           defaultOpen={true}
         >
           <div className="space-y-6">
+            {judgeLoadError && (
+              <div className="text-xs px-3 py-2 rounded-md bg-red-50 text-red-700 border border-red-200">
+                {judgeLoadError}
+              </div>
+            )}
             <div className="flex items-center justify-between rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3">
               <div>
                 <div className="text-sm font-semibold text-slate-900">{tt("启用 llm as judge", "Enable llm-as-judge")}</div>
