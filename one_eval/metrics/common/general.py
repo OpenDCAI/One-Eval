@@ -1,115 +1,84 @@
-# one_eval/metrics/lib/core.py
+"""
+general.py —— 通用维度指标:正确性(correctness) + 格式遵循(format)。
+
+设计原则:每个指标只服务一个清晰的质量维度,不做参数变体的重复注册。
+- correctness:exact_match / numerical_match / choice_accuracy / multilabel_f1
+- format    :extraction_rate(可抽取性) / format_compliance(答案分隔规范度)
+- diagnostic:missing_answer_rate(弃答率,= 1 - 抽取率,供归因)
+"""
 from typing import List, Dict, Any, Optional, Set, Tuple
+import re
 from one_eval.utils.extractor import (
-    normalize_text, 
-    extract_first_number, 
-    extract_choice, 
+    normalize_text,
+    extract_first_number,
+    extract_choice,
     extract_multi_choice,
     AnswerExtractor,
-    safe_float
 )
-from one_eval.core.metric_registry import register_metric, MetricCategory
+from one_eval.core.metric_registry import register_metric, MetricCategory, MetricDimension
+
+
+# ============================ 正确性维度 ============================
 
 @register_metric(
     name="exact_match",
-    desc="抽取式答案完全匹配 (EM)",
-    usage="短答案/抽取式 QA",
+    desc="答案完全匹配 (EM)，支持归一化/包含/严格三种模式",
+    usage="短答案、抽取式 QA。strict=True 走大小写敏感的原样匹配；use_containment=True 允许参考答案被预测包含即算对",
     categories=[MetricCategory.QA_SINGLE, MetricCategory.QA_MULTI],
-    aliases=["em"]
+    aliases=["em"],
+    dimension=MetricDimension.CORRECTNESS,
 )
 def compute_exact_match(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
+    """归一化完全匹配，多参考答案命中其一即算对。
+
+    kwargs:
+        strict: True 则大小写敏感、不归一化 (默认 False)
+        use_containment: True 则参考答案被预测文本包含也算对 (默认 False)
+    """
     strict = kwargs.get("strict", False)
-    use_containment = kwargs.get("use_containment", False) # 新增参数
+    use_containment = kwargs.get("use_containment", False)
     scores = []
-    
+
     for p, r in zip(preds, refs):
-        # 处理 Multi-reference (r 可能是 list)
         r_list = r if isinstance(r, list) else [r]
-        
         p_norm = str(p) if strict else normalize_text(p).lower()
-        
+
         match = 0.0
         for gold in r_list:
             g_norm = str(gold) if strict else normalize_text(gold).lower()
-            # 1. Exact Match (原有逻辑)
             if p_norm == g_norm:
                 match = 1.0
                 break
-            
-            # 2. Containment Match (新增: DataFlow 风格的模糊匹配)
-            if use_containment and not strict:
-                if AnswerExtractor.text_contains_match(p, gold):
-                    match = 1.0
-                    break
-                    
+            if use_containment and not strict and AnswerExtractor.text_contains_match(p, gold):
+                match = 1.0
+                break
         scores.append(match)
 
-    return {
-        "score": sum(scores) / len(scores) if scores else 0.0,
-        "details": scores
-    }
+    return {"score": sum(scores) / len(scores) if scores else 0.0, "details": scores}
 
-@register_metric(
-    name="containment_match",
-    desc="文本包含匹配 (DataFlow style)",
-    usage="QA/Reasoning where answer is short and contained in pred",
-    categories=[MetricCategory.QA_SINGLE]
-)
-def compute_containment_match(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
-    """
-    检查参考答案是否包含在预测结果中 (Fuzzy Match).
-    使用 DataFlow 的 AnswerExtractor.text_contains_match 逻辑.
-    """
-    return compute_exact_match(preds, refs, strict=False, use_containment=True, **kwargs)
-
-
-@register_metric(
-    name="strict_match",
-    desc="原始字符串严格匹配",
-    usage="格式严格的任务",
-    categories=[MetricCategory.QA_SINGLE]
-)
-def compute_strict_match(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
-    """严格匹配 (Case-sensitive, no normalization)"""
-    return compute_exact_match(preds, refs, strict=True, **kwargs)
-
-
-# --- From numerical.py ---
 
 @register_metric(
     name="numerical_match",
-    desc="数值软匹配(1.0 == 1，容忍浮点误差)",
-    usage="算术题/数值填空",
-    categories=[MetricCategory.QA_SINGLE]
+    desc="数值软匹配 (1.0 == 1，容忍浮点误差)",
+    usage="算术题/数值填空。先抽取答案再按 atol 比较数值",
+    categories=[MetricCategory.QA_SINGLE],
+    dimension=MetricDimension.CORRECTNESS,
 )
 def compute_numerical_match(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
     atol = float(kwargs.get("atol", 1e-6))
-    scores = []
-    pred_vals = []
-    ref_vals = []
-    
-    # 使用增强版提取器 (支持 CoT/Last Number Extraction)
+    scores, pred_vals, ref_vals = [], [], []
     extractor = AnswerExtractor()
+    from one_eval.utils.extractor import safe_float
 
     for p, r in zip(preds, refs):
-        # 1. 尝试使用 AnswerExtractor 提取 (默认策略: 优先 Boxed, 否则 Last Number)
-        # AnswerExtractor 返回的是清洗后的字符串
-        pv_str = extractor.extract_answer(p, use_last_number=True)
-        rv_str = extractor.extract_answer(r, use_last_number=True)
-        
-        # 2. 转为 float
-        pv = safe_float(pv_str)
-        rv = safe_float(rv_str)
-        
-        # Fallback: 如果新提取器没提取到，尝试旧的 extract_first_number (仅作保险，通常不需要)
+        pv = safe_float(extractor.extract_answer(p, use_last_number=True))
+        rv = safe_float(extractor.extract_answer(r, use_last_number=True))
         if pv is None:
             pv = extract_first_number(p)
         if rv is None:
             rv = extract_first_number(r)
-        
         pred_vals.append(pv)
         ref_vals.append(rv)
-
         if pv is None or rv is None:
             scores.append(0.0)
         else:
@@ -118,226 +87,52 @@ def compute_numerical_match(preds: List[Any], refs: List[Any], **kwargs) -> Dict
     return {
         "score": sum(scores) / len(scores) if scores else 0.0,
         "details": scores,
-        "artifacts": {"pred_vals": pred_vals, "ref_vals": ref_vals}
+        "artifacts": {"pred_vals": pred_vals, "ref_vals": ref_vals},
     }
 
-
-# --- From choice.py ---
 
 @register_metric(
     name="choice_accuracy",
-    desc="选项字母或离散标签准确率",
-    usage="选择题 (A/B/C/D)",
-    categories=[MetricCategory.CHOICE_SINGLE, MetricCategory.CHOICE_MULTI]
+    desc="选择题选项准确率 (自动抽取 A/B/C/D)",
+    usage="单选/多解选择题。自动从预测里抽出选项字母再比对",
+    categories=[MetricCategory.CHOICE_SINGLE, MetricCategory.CHOICE_MULTI],
+    aliases=["acc", "accuracy"],
+    dimension=MetricDimension.CORRECTNESS,
 )
 def compute_choice_accuracy(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
-    """
-    计算选项准确率 (Choice Accuracy)
-    Args:
-        preds: 预测结果列表 (Raw strings)
-        refs: 参考答案列表 (Raw strings or List of strings)
-    """
     scores: List[float] = []
     pred_choices: List[Optional[str]] = []
-    ref_choices: List[Any] = [] # 用于 artifact 展示，可能是 str 或 list
+    ref_choices: List[Any] = []
 
     for p, r in zip(preds, refs):
-        # 1. 提取预测结果的选项 (A/B/C/D)
         pc = extract_choice(p)
         pred_choices.append(pc)
-
-        # 2. 如果没提取出来，直接判错
         if pc is None:
             scores.append(0.0)
-            ref_choices.append(str(r)) # 记录一下原始 ref 方便 debug
+            ref_choices.append(str(r))
             continue
 
-        # 3. 处理参考答案 (支持多选/多解)
         is_match = False
-        
         if isinstance(r, list):
-            # 如果 ref 是列表，说明有多个正确答案，命中任何一个都算对
-            golds = []
-            for item in r:
-                g = extract_choice(item)
-                if g: golds.append(g)
-            
-            if pc in golds:
-                is_match = True
+            golds = [g for g in (extract_choice(x) for x in r) if g]
+            is_match = pc in golds
             ref_choices.append(golds)
-            
         else:
-            # 单个 ref
             gc = extract_choice(r)
-            if gc is not None and pc == gc:
-                is_match = True
+            is_match = gc is not None and pc == gc
             ref_choices.append(gc)
-
         scores.append(1.0 if is_match else 0.0)
-
-    score = sum(scores) / len(scores) if scores else 0.0
-    
-    return {
-        "score": score,
-        "details": scores,
-        "artifacts": {
-            "pred_choices": pred_choices,
-            "ref_choices": ref_choices
-        }
-    }
-
-
-# --- From diagnostic.py ---
-
-@register_metric(
-    name="extraction_rate",
-    desc="正则提取成功率 (强烈建议)",
-    usage="所有需要从长输出提取答案的任务",
-    categories=[
-        MetricCategory.QA_SINGLE, 
-        MetricCategory.QA_MULTI,
-        MetricCategory.CHOICE_SINGLE,
-        MetricCategory.CHOICE_MULTI
-    ]
-)
-def compute_extraction_rate(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
-    """
-    计算提取率：有多少样本能成功提取出有效格式（数字/选项）。
-    Args:
-        extractor: "number" (默认) | "choice" | "generic"
-    """
-    extractor_type = str(kwargs.get("extractor", "number"))
-    
-    valid_count = 0
-    extracted_values = []
-    details = []
-
-    # Helper for generic extraction
-    answer_extractor = AnswerExtractor() if extractor_type == "generic" else None
-
-    for p in preds:
-        val = None
-        if extractor_type == "choice":
-            val = extract_choice(p)
-        elif extractor_type == "generic":
-            # Use AnswerExtractor to try to get *something*
-            val = answer_extractor.extract_answer(p, use_last_number=False)
-            if not val: # Empty string means failure
-                val = None
-        else:
-            val = extract_first_number(p)
-            
-        extracted_values.append(val)
-        
-        if val is not None:
-            valid_count += 1
-            details.append(1.0)
-        else:
-            details.append(0.0)
-
-    score = valid_count / len(preds) if preds else 0.0
-
-    return {
-        "score": score,
-        "details": details,
-        "artifacts": {
-            "extracted_values": extracted_values,
-            "extractor_used": extractor_type
-        }
-    }
-
-@register_metric(
-    name="missing_answer_rate",
-    desc="未输出有效选项/标签的比例 (诊断用)",
-    usage="监控模型拒答率",
-    categories=[MetricCategory.CHOICE_SINGLE, MetricCategory.CHOICE_MULTI]
-)
-def compute_missing_answer_rate(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
-    """
-    计算丢失率 (1 - Extraction Rate)
-    """
-    result = compute_extraction_rate(preds, refs, **kwargs)
-    return {
-        "score": 1.0 - result["score"],
-        "details": [1.0 - d for d in result["details"]],
-        "artifacts": result["artifacts"]
-    }
-
-@register_metric(
-    name="format_compliance_score",
-    desc="格式遵循度评分 (有效内容占比)",
-    usage="评估模型是否输出冗余废话",
-    categories=[
-        MetricCategory.QA_SINGLE, 
-        MetricCategory.QA_MULTI,
-        MetricCategory.CHOICE_SINGLE
-    ]
-)
-def compute_format_compliance_score(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
-    """
-    计算格式遵循度。
-    主要指标：
-    1. Conciseness: len(extracted) / len(total)
-    2. Cleanliness: 是否包含 ```json 等标记 (如果要求纯文本)
-    
-    Args:
-        extractor: "number" | "choice" | "none" (default: auto detect or none)
-    """
-    extractor_type = str(kwargs.get("extractor", "none"))
-    scores = []
-    artifacts = []
-
-    for p in preds:
-        pred_str = str(p).strip()
-        if not pred_str:
-            scores.append(0.0)
-            artifacts.append({"ratio": 0.0, "issue": "empty"})
-            continue
-
-        # 1. Determine extracted content
-        extracted = None
-        if extractor_type == "choice":
-            extracted = extract_choice(pred_str)
-        elif extractor_type == "number":
-            extracted = extract_first_number(pred_str)
-            if extracted is not None: extracted = str(extracted)
-        else:
-            # If no extractor specified, assume the whole string should be the answer
-            # In this case, we check for markdown artifacts
-            pass
-
-        # 2. Calculate Ratio
-        if extracted:
-            ratio = len(str(extracted)) / len(pred_str)
-        else:
-            # 如果没提取出来，或者没指定 extractor
-            # 我们检查是否有 markdown code block
-            if "```" in pred_str:
-                # 包含了 markdown block，扣分
-                # 假设有效内容是去掉 ``` 后的长度
-                clean_len = len(pred_str.replace("```", "").replace("json", "").replace("python", ""))
-                ratio = clean_len / len(pred_str) * 0.8 # Penalty
-            else:
-                ratio = 1.0 # Assume perfect if no artifacts found
-        
-        # Clamp
-        ratio = min(1.0, max(0.0, ratio))
-        scores.append(ratio)
-        artifacts.append({"ratio": ratio, "extracted": extracted})
 
     return {
         "score": sum(scores) / len(scores) if scores else 0.0,
         "details": scores,
-        "artifacts": artifacts
+        "artifacts": {"pred_choices": pred_choices, "ref_choices": ref_choices},
     }
 
 
-
-# --- From multilabel.py ---
-
 def _get_sets(p: Any, r: Any) -> Tuple[Set[str], Set[str]]:
     p_set = extract_multi_choice(p)
-    r_set = set()
+    r_set: Set[str] = set()
     if isinstance(r, list):
         for item in r:
             r_set.update(extract_multi_choice(item))
@@ -345,16 +140,18 @@ def _get_sets(p: Any, r: Any) -> Tuple[Set[str], Set[str]]:
         r_set = extract_multi_choice(r)
     return p_set, r_set
 
+
 @register_metric(
     name="multilabel_f1",
-    desc="多标签分类 F1",
-    usage="多标签分类任务"
+    desc="多标签/多选集合 F1",
+    usage="多选题、多标签分类。预测与参考都解析成选项集合后算 F1",
+    categories=[MetricCategory.CHOICE_MULTI, MetricCategory.QA_MULTI],
+    dimension=MetricDimension.CORRECTNESS,
 )
 def compute_multilabel_f1(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
     scores = []
     for p, r in zip(preds, refs):
         p_set, r_set = _get_sets(p, r)
-        
         if not p_set and not r_set:
             f1 = 1.0
         elif not p_set or not r_set:
@@ -367,27 +164,116 @@ def compute_multilabel_f1(preds: List[Any], refs: List[Any], **kwargs) -> Dict[s
             rec = tp / (tp + fn) if (tp + fn) > 0 else 0.0
             f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
         scores.append(f1)
-        
+    return {"score": sum(scores) / len(scores) if scores else 0.0, "details": scores}
+
+# __APPEND_FORMAT_DIMENSION__
+
+
+# ============================ 格式遵循维度 ============================
+
+def _extract_by_type(p: Any, extractor_type: str, answer_extractor=None) -> Optional[Any]:
+    """按指定方式从预测里抽取“有效答案”，抽不到返回 None。"""
+    if extractor_type == "choice":
+        return extract_choice(p)
+    if extractor_type == "generic":
+        val = answer_extractor.extract_answer(p, use_last_number=False)
+        return val or None
+    return extract_first_number(p)
+
+
+@register_metric(
+    name="extraction_rate",
+    desc="可抽取率:有多少样本能解析出有效答案 (数字/选项)",
+    usage="所有需从长输出里提取答案的任务。低分说明模型没按格式输出，会拖累正确性",
+    categories=[
+        MetricCategory.QA_SINGLE, MetricCategory.QA_MULTI,
+        MetricCategory.CHOICE_SINGLE, MetricCategory.CHOICE_MULTI,
+    ],
+    dimension=MetricDimension.FORMAT,
+)
+def compute_extraction_rate(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
+    """kwargs.extractor: "number"(默认) | "choice" | "generic"。"""
+    extractor_type = str(kwargs.get("extractor", "number"))
+    answer_extractor = AnswerExtractor() if extractor_type == "generic" else None
+
+    details, extracted_values = [], []
+    for p in preds:
+        val = _extract_by_type(p, extractor_type, answer_extractor)
+        extracted_values.append(val)
+        details.append(1.0 if val is not None else 0.0)
+
     return {
-        "score": sum(scores) / len(scores) if scores else 0.0,
-        "details": scores
+        "score": sum(details) / len(details) if details else 0.0,
+        "details": details,
+        "artifacts": {"extracted_values": extracted_values, "extractor_used": extractor_type},
     }
 
-def compute_jaccard_index(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
-    scores = []
-    for p, r in zip(preds, refs):
-        p_set, r_set = _get_sets(p, r)
-        
-        union = len(p_set | r_set)
-        inter = len(p_set & r_set)
-        
-        if union == 0:
-            score = 1.0 # Both empty
+
+@register_metric(
+    name="missing_answer_rate",
+    desc="弃答率:未能解析出有效答案的比例 (= 1 - 可抽取率)",
+    usage="诊断模型拒答/跑题。配合 extraction_rate 做正确性归因",
+    categories=[
+        MetricCategory.QA_SINGLE, MetricCategory.CHOICE_SINGLE, MetricCategory.CHOICE_MULTI,
+    ],
+    dimension=MetricDimension.DIAGNOSTIC,
+)
+def compute_missing_answer_rate(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
+    result = compute_extraction_rate(preds, refs, **kwargs)
+    return {
+        "score": 1.0 - result["score"],
+        "details": [1.0 - d for d in result["details"]],
+        "artifacts": result["artifacts"],
+    }
+
+
+_CODE_FENCE_RE = re.compile(r"```[a-zA-Z]*")
+
+
+@register_metric(
+    name="format_compliance_score",
+    desc="格式规范度:答案是否被清晰分隔出来 (含 boxed/####/答案标记，且无多余代码块)",
+    usage="评估模型输出是否干净、答案是否容易定位。低分=答案淹没在啰嗦文本里",
+    categories=[MetricCategory.QA_SINGLE, MetricCategory.CHOICE_SINGLE],
+    dimension=MetricDimension.FORMAT,
+)
+def compute_format_compliance_score(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
+    """规则化打分，逐项加减，结果 clamp 到 [0,1]。不依赖 magic ratio。
+
+    评分项:
+      +0.5 基础分(非空)
+      +0.3 含明确答案分隔标记(\\boxed{}, ####, "答案:"/"answer:" 等)
+      +0.2 输出未被无关代码块污染(无裸 ``` fence)
+      -0.2 含代码块但任务非代码(出现 ``` 视为污染)
+    """
+    markers = [r"\boxed", "####", "answer:", "答案", "the answer is", "final answer"]
+    scores, arts = [], []
+
+    for p in preds:
+        s = str(p).strip()
+        if not s:
+            scores.append(0.0)
+            arts.append({"issue": "empty"})
+            continue
+
+        score = 0.5
+        low = s.lower()
+        has_marker = any(m in low for m in markers)
+        if has_marker:
+            score += 0.3
+        has_fence = bool(_CODE_FENCE_RE.search(s))
+        if not has_fence:
+            score += 0.2
         else:
-            score = inter / union
+            score -= 0.2
+
+        score = min(1.0, max(0.0, score))
         scores.append(score)
-        
+        arts.append({"has_marker": has_marker, "has_code_fence": has_fence})
+
     return {
         "score": sum(scores) / len(scores) if scores else 0.0,
-        "details": scores
+        "details": scores,
+        "artifacts": arts,
     }
+

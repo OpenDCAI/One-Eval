@@ -14,15 +14,32 @@ class MetricMeta:
     usage: str
     categories: List[str] = field(default_factory=list)
     aliases: List[str] = field(default_factory=list)
+    dimension: str = "correctness"  # 质量维度，见 MetricDimension
 
 class MetricCategory:
-    """Metric Categories Constants (Eval Types)"""
+    """Metric Categories Constants (Eval Types) —— 指标“适用于哪种题型”。"""
     TEXT_SCORE = "key1_text_score"
-    QA_SINGLE = "key2_qa" 
+    QA_SINGLE = "key2_qa"
     QA_MULTI = "key2_q_ma"
     CHOICE_SINGLE = "key3_q_choices_a"
     CHOICE_MULTI = "key3_q_choices_as"
     PAIRWISE = "key3_q_a_rejected"
+
+class MetricDimension:
+    """Metric Quality Dimensions —— 指标“衡量哪个质量维度”。
+
+    与 MetricCategory 正交：categories 管“能用在哪种题型”，
+    dimension 管“反映模型的哪一面能力/行为”。报告与 --list 按此分组，
+    让一堆零散指标呈现出“维度感”。
+    """
+    CORRECTNESS = "correctness"      # 答案对不对（主结果维度）
+    SIMILARITY = "similarity"        # 与参考文本的相似/重叠程度（生成类）
+    COVERAGE = "coverage"            # 内容覆盖/召回（说没说到点子上）
+    FORMAT = "format"                # 格式遵循/可抽取性（能不能解析出答案）
+    EFFICIENCY = "efficiency"        # 简洁性/推理效率（啰不啰嗦）
+    CALIBRATION = "calibration"      # 相关性/校准/区分度（统计相关类）
+    ROBUSTNESS = "robustness"        # 能力均衡性/稳定性（跨类别波动）
+    DIAGNOSTIC = "diagnostic"        # 纯诊断信号（不直接代表好坏，用于归因）
 
 # 全局注册表缓存
 # key: metric_name, value: MetricMeta
@@ -33,21 +50,23 @@ _REGISTRY_CACHE: Dict[str, MetricMeta] = {}
 _ALIAS_MAP: Dict[str, str] = {}
 
 def register_metric(
-    name: Optional[str] = None, 
-    desc: str = "", 
-    usage: str = "", 
+    name: Optional[str] = None,
+    desc: str = "",
+    usage: str = "",
     categories: Optional[List[str]] = None,
-    aliases: Optional[List[str]] = None
+    aliases: Optional[List[str]] = None,
+    dimension: str = "correctness"
 ):
     """
     装饰器：注册 Metric 实现及其元数据。
-    
+
     Args:
         name: 指标名称
         desc: 描述 (用于 Agent 理解)
         usage: 适用场景 (用于 Agent 推荐)
-        categories: 归属的大类列表 (使用 MetricCategory 常量)
+        categories: 适用的 eval_type 列表 (使用 MetricCategory 常量)
         aliases: 别名列表 (如 'em', 'acc')
+        dimension: 质量维度 (使用 MetricDimension 常量)，决定报告/--list 的分组归属
     """
     def decorator(func):
         nonlocal name
@@ -58,14 +77,15 @@ def register_metric(
                 name = fn_name[8:]
             else:
                 name = fn_name
-        
+
         meta = MetricMeta(
             name=name,
             func=func,
             desc=desc,
             usage=usage,
             categories=categories or [],
-            aliases=aliases or []
+            aliases=aliases or [],
+            dimension=dimension
         )
         
         # 注册主名称

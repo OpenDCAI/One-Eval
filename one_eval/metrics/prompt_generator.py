@@ -19,7 +19,7 @@ class MetricPromptGenerator:
         {
             "condition": "文本打分 (key1_text_score): keys=[text]",
             "rules": [
-                "若评测是对输出文本本身打分/检测 -> 使用 `llm_judge_score` / `toxicity_max` / `truth_score` 这类 score 型指标。"
+                "若评测是对输出文本本身打分/检测 -> 内核无确定性指标，交由调用方(外部 agent)按 rubric 打分；可选 `format_compliance_score` 作辅助诊断。"
             ],
         },
         {

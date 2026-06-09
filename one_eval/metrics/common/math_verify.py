@@ -1,5 +1,5 @@
 from typing import List, Any, Dict, Optional
-from one_eval.core.metric_registry import register_metric, MetricCategory
+from one_eval.core.metric_registry import register_metric, MetricCategory, MetricDimension
 from one_eval.utils.extractor import AnswerExtractor
 
 try:
@@ -29,7 +29,8 @@ def _try_math_verify_compare(answer: Any, ground_truth: Any) -> Optional[bool]:
     name="math_verify",
     desc="数学等价性校验 (Hybrid: Text Match + Math Verify)",
     usage="数学问题/QA (GSM8K, MATH)",
-    categories=[MetricCategory.QA_SINGLE]
+    categories=[MetricCategory.QA_SINGLE],
+    dimension=MetricDimension.CORRECTNESS
 )
 def compute_math_verify(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
     """

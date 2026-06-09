@@ -3,18 +3,20 @@ from typing import Dict, List
 
 # --- Reusable Metric Suites (Names Only) ---
 
+# 仅引用确定性内核里真实注册的指标名。LLM-judge 类数据集没有确定性指标，
+# 由调用方(外部 agent)接管打分；此处给出可跑的确定性兜底(文本相似/覆盖)。
 _SUITE_NUMERICAL = ["numerical_match", "extraction_rate"]
 _SUITE_SYMBOLIC = ["math_verify", "extraction_rate"]
 _SUITE_CHOICE = ["choice_accuracy", "extraction_rate"]
-_SUITE_CODE = ["pass_at_k", "code_similarity", "soft_code_execution"]
+_SUITE_CODE = ["soft_code_execution"]
 _SUITE_GEN_BLEU = ["bleu", "chrf"]
 _SUITE_GEN_ROUGE = ["rouge_l"]
 _SUITE_QA_EXTRACTIVE = ["exact_match", "token_f1", "extraction_rate"]
 _SUITE_QA_LONG = ["token_f1", "exact_match"]
-_SUITE_RETRIEVAL = ["retrieval_recall", "retrieval_ndcg"]
-_SUITE_JUDGE = ["llm_judge_score"]
-_SUITE_WIN_RATE = ["win_rate_against_baseline"]
-_SUITE_AUC_ROC = ["auc_roc", "accuracy"]
+_SUITE_RETRIEVAL = ["token_f1", "exact_match"]
+_SUITE_JUDGE = ["rouge_l", "keyword_recall"]
+_SUITE_WIN_RATE = ["rouge_l", "keyword_recall"]
+_SUITE_AUC_ROC = ["auc_roc", "choice_accuracy"]
 
 # --- Dataset Metric Configuration ---
 # Direct mapping: Dataset Name -> List of Metric Names

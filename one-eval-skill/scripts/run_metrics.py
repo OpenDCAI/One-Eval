@@ -35,8 +35,9 @@ import _common as common  # noqa: E402
 
 
 def _list_metrics() -> int:
-    """打印注册表里所有 metric 的元数据，供 agent / 用户选择。"""
+    """打印注册表里所有 metric 的元数据（按维度分组），供 agent / 用户选择。"""
     try:
+        custom = common.ensure_metrics_loaded()
         from one_eval.core.metric_registry import get_registered_metrics_meta
     except Exception as e:
         print(f"✗ 无法导入 metric 注册表（评测引擎未装好）: {e}", file=sys.stderr)
@@ -46,15 +47,24 @@ def _list_metrics() -> int:
     if not metas:
         print("（注册表为空）")
         return 0
-    print(f"可用 metric（共 {len(metas)} 个）：\n")
+    if custom:
+        print(f"（已加载自定义 metric 模块: {', '.join(custom)}）\n")
+
+    by_dim: dict = {}
     for m in metas:
-        aliases = f"  别名: {', '.join(m.aliases)}" if m.aliases else ""
-        cats = f"  类别: {', '.join(m.categories)}" if m.categories else ""
-        print(f"  • {m.name}{aliases}{cats}")
-        if m.desc:
-            print(f"      {m.desc}")
-        if m.usage:
-            print(f"      适用: {m.usage}")
+        by_dim.setdefault(getattr(m, "dimension", "correctness"), []).append(m)
+
+    print(f"可用 metric（共 {len(metas)} 个，按维度分组）：")
+    for dim in sorted(by_dim):
+        print(f"\n=== 维度: {dim} ===")
+        for m in by_dim[dim]:
+            aliases = f"  别名: {', '.join(m.aliases)}" if m.aliases else ""
+            cats = f"  类别: {', '.join(m.categories)}" if m.categories else ""
+            print(f"  • {m.name}{aliases}{cats}")
+            if m.desc:
+                print(f"      {m.desc}")
+            if m.usage:
+                print(f"      适用: {m.usage}")
     return 0
 
 
@@ -99,6 +109,7 @@ def _build_bench_for_metrics(bench_result: dict):
 
 def run_metrics(results_path: str, metrics_cfg: list) -> dict:
     """对 eval_results.json 里每个 bench 补充 metric 打分，返回汇总 dict。"""
+    common.ensure_metrics_loaded()
     from one_eval.metrics.runner import MetricRunner
 
     data = json.loads(Path(results_path).read_text(encoding="utf-8"))

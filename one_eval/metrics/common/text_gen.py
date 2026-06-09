@@ -1,14 +1,15 @@
 from typing import List, Any, Dict
 from one_eval.utils.extractor import normalize_text, AnswerExtractor
-from rouge_score import rouge_scorer  
+from rouge_score import rouge_scorer
 import sacrebleu
-from one_eval.core.metric_registry import register_metric, MetricCategory
+from one_eval.core.metric_registry import register_metric, MetricCategory, MetricDimension
 
 @register_metric(
     name="bleu",
     desc="sacreBLEU 主指标",
     usage="翻译/生成",
-    categories=[MetricCategory.QA_SINGLE, MetricCategory.QA_MULTI]
+    categories=[MetricCategory.QA_SINGLE, MetricCategory.QA_MULTI],
+    dimension=MetricDimension.SIMILARITY
 )
 def compute_bleu(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
     """
@@ -80,7 +81,8 @@ def compute_bleu(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
     name="ter",
     desc="Translation Edit Rate",
     usage="翻译/生成",
-    categories=[MetricCategory.QA_SINGLE, MetricCategory.QA_MULTI]
+    categories=[MetricCategory.QA_SINGLE, MetricCategory.QA_MULTI],
+    dimension=MetricDimension.SIMILARITY
 )
 def compute_ter(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
     """
@@ -123,7 +125,8 @@ def compute_ter(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
     desc="ROUGE-L F1",
     usage="摘要/生成",
     categories=[MetricCategory.QA_SINGLE, MetricCategory.QA_MULTI],
-    aliases=["rouge"]
+    aliases=["rouge"],
+    dimension=MetricDimension.SIMILARITY
 )
 def compute_rouge(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
     """
@@ -164,7 +167,8 @@ def compute_rouge(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]
     name="chrf",
     desc="CHRF Score",
     usage="翻译/生成",
-    categories=[MetricCategory.QA_SINGLE, MetricCategory.QA_MULTI]
+    categories=[MetricCategory.QA_SINGLE, MetricCategory.QA_MULTI],
+    dimension=MetricDimension.SIMILARITY
 )
 def compute_chrf(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
     """
@@ -207,6 +211,7 @@ def compute_chrf(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
     desc="token 级 F1 (匹配程度)",
     usage="长答案/部分匹配",
     categories=[MetricCategory.QA_SINGLE, MetricCategory.QA_MULTI],
+    dimension=MetricDimension.SIMILARITY,
     aliases=["f1"]
 )
 def compute_token_f1(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
@@ -260,7 +265,8 @@ def collections_Counter(tokens):
     name="reasoning_efficiency",
     desc="CoT 效率评估 (Ref长度/Pred长度)",
     usage="评估 CoT 的冗余程度 (正例越高越好，负例越低越啰嗦)",
-    categories=[MetricCategory.TEXT_SCORE, MetricCategory.QA_SINGLE]
+    categories=[MetricCategory.TEXT_SCORE, MetricCategory.QA_SINGLE],
+    dimension=MetricDimension.EFFICIENCY
 )
 def compute_reasoning_efficiency(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
     """
@@ -361,7 +367,8 @@ STOPWORDS = {
     name="keyword_recall",
     desc="关键词召回率 (Ref关键词在Pred中的占比)",
     usage="评估内容覆盖度 (负例中低分=知识盲区, 高分=逻辑错误)",
-    categories=[MetricCategory.TEXT_SCORE, MetricCategory.QA_SINGLE]
+    categories=[MetricCategory.TEXT_SCORE, MetricCategory.QA_SINGLE],
+    dimension=MetricDimension.COVERAGE
 )
 def compute_keyword_recall(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
     """

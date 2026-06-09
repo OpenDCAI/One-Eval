@@ -297,11 +297,12 @@ prompt_registry.register(
     {{"name": "extraction_rate", "priority": "diagnostic", "desc": "答案提取率"}}
   ],
   "humaneval": [
-    {{"name": "pass_at_k", "priority": "primary", "args": {{"k": 1}}, "desc": "Pass@1"}},
-    {{"name": "pass_at_k", "priority": "secondary", "args": {{"k": 10}}, "desc": "Pass@10"}}
+    {{"name": "soft_code_execution", "priority": "primary", "desc": "静态代码分析(语法+结构)"}},
+    {{"name": "extraction_rate", "priority": "diagnostic", "desc": "答案提取率"}}
   ],
-  "my_retrieval_task": [
-    {{"name": "retrieval_accuracy", "priority": "primary", "desc": "检索准确率"}}
+  "my_extractive_qa": [
+    {{"name": "exact_match", "priority": "primary", "desc": "完全匹配"}},
+    {{"name": "token_f1", "priority": "secondary", "desc": "Token 级 F1"}}
   ]
 }}
 """

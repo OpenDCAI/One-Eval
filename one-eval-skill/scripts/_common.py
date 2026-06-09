@@ -143,3 +143,44 @@ def load_evalspec(path: str) -> Dict[str, Any]:
         raise ValueError(f"evalspec 解析结果不是 dict: {path}")
     return spec
 
+
+# --- metric 注册表加载：内置 + 用户自定义 ---
+_METRICS_LOADED = False
+
+
+def ensure_metrics_loaded() -> List[str]:
+    """加载内置 metric，并动态 import custom_metrics/*.py 触发其 @register_metric。
+
+    内核的 load_metric_implementations() 只扫描 one_eval.metrics.common，不会扫到
+    skill 的 custom_metrics/。这里补上：把 custom_metrics/ 加进 sys.path 后逐个
+    import，使自定义 metric 用注册名即可被引擎/CLI 引用。幂等。
+
+    返回成功加载的自定义模块名列表（供调用方打印/调试）。
+    """
+    global _METRICS_LOADED
+    loaded_custom: List[str] = []
+
+    from one_eval.core.metric_registry import load_metric_implementations
+    if not _METRICS_LOADED:
+        load_metric_implementations()
+
+    if CUSTOM_METRICS_DIR.is_dir():
+        import importlib
+        if str(CUSTOM_METRICS_DIR) not in sys.path:
+            sys.path.insert(0, str(CUSTOM_METRICS_DIR))
+        for py in sorted(CUSTOM_METRICS_DIR.glob("*.py")):
+            if py.name.startswith("_"):
+                continue
+            mod_name = py.stem
+            try:
+                if mod_name in sys.modules:
+                    importlib.reload(sys.modules[mod_name])
+                else:
+                    importlib.import_module(mod_name)
+                loaded_custom.append(mod_name)
+            except Exception as e:
+                print(f"⚠ 加载自定义 metric {py.name} 失败: {e}", file=sys.stderr)
+
+    _METRICS_LOADED = True
+    return loaded_custom
+

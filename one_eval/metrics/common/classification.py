@@ -2,14 +2,15 @@ from typing import List, Any, Dict, Union, Optional
 from sklearn.metrics import roc_auc_score, accuracy_score, matthews_corrcoef
 from scipy.stats import pearsonr, spearmanr
 import numpy as np
-from one_eval.utils.extractor import safe_float, AnswerExtractor, extract_choice
-from one_eval.core.metric_registry import register_metric, MetricCategory
+from one_eval.utils.extractor import safe_float, AnswerExtractor
+from one_eval.core.metric_registry import register_metric, MetricCategory, MetricDimension
 
 @register_metric(
     name="gini_index",
     desc="能力协调性 (Gini Index)",
     usage="分类别正确率的基尼系数 (要求 refs 包含类别信息，如 {'answer': ..., 'category': ...})",
-    categories=[MetricCategory.CHOICE_SINGLE, MetricCategory.QA_MULTI]
+    categories=[MetricCategory.CHOICE_SINGLE, MetricCategory.QA_MULTI],
+    dimension=MetricDimension.ROBUSTNESS
 )
 def compute_gini_index(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
     """
@@ -111,7 +112,8 @@ def compute_gini_index(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str,
     name="mcc",
     desc="Matthews Correlation Coefficient",
     usage="二分类/相关性任务 (GLUE)",
-    categories=[MetricCategory.CHOICE_SINGLE]
+    categories=[MetricCategory.CHOICE_SINGLE],
+    dimension=MetricDimension.CALIBRATION
 )
 def compute_mcc(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
     """
@@ -132,7 +134,8 @@ def compute_mcc(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
     name="pearson",
     desc="Pearson Correlation",
     usage="语义相似度/回归",
-    categories=[MetricCategory.TEXT_SCORE]
+    categories=[MetricCategory.TEXT_SCORE],
+    dimension=MetricDimension.CALIBRATION
 )
 def compute_pearson(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
     """
@@ -154,7 +157,8 @@ def compute_pearson(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, An
     name="spearman",
     desc="Spearman Correlation",
     usage="语义相似度/排序",
-    categories=[MetricCategory.TEXT_SCORE]
+    categories=[MetricCategory.TEXT_SCORE],
+    dimension=MetricDimension.CALIBRATION
 )
 def compute_spearman(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
     """
@@ -174,7 +178,8 @@ def compute_spearman(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, A
     name="auc_roc",
     desc="AUC-ROC ×100",
     usage="二分类/多分类任务",
-    categories=[MetricCategory.CHOICE_SINGLE]
+    categories=[MetricCategory.CHOICE_SINGLE],
+    dimension=MetricDimension.CALIBRATION
 )
 def compute_auc_roc(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
     """
@@ -239,58 +244,11 @@ def compute_auc_roc(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, An
         return {"score": 0.0, "error": f"AUC calculation failed: {str(e)}"}
 
 @register_metric(
-    name="accuracy",
-    desc="通用 accuracy (增强版: 支持自动选项匹配)",
-    usage="分类任务辅助指标",
-    categories=[MetricCategory.CHOICE_SINGLE],
-    aliases=["acc", "acc_norm"]
-)
-def compute_accuracy(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
-    """
-    通用 Accuracy (基于完全匹配)。
-    不同于 choice_accuracy (会自动提取 A/B/C/D)，这个函数做简单的相等性检查。
-    
-    Update: 增加了对 choices 格式的自动兼容 (int -> 'A', '(A)' -> 'A')
-    """
-    scores = []
-    for p, r in zip(preds, refs):
-        # Handle multi-ref
-        r_list = r if isinstance(r, list) else [r]
-        
-        is_match = False
-        p_str = str(p).strip()
-        
-        # 1. 尝试直接字符串匹配 (Exact Match)
-        for gold in r_list:
-            if p_str == str(gold).strip():
-                is_match = True
-                break
-        
-        # 2. 如果直接匹配失败，尝试作为选项进行匹配 (Fallback)
-        if not is_match:
-            # 尝试提取 Pred 的选项
-            p_choice = extract_choice(p)
-            
-            if p_choice:
-                for gold in r_list:
-                    # 尝试提取 Ref 的选项
-                    gold_choice = extract_choice(gold)
-                    if gold_choice and p_choice == gold_choice:
-                        is_match = True
-                        break
-        
-        scores.append(1.0 if is_match else 0.0)
-        
-    return {
-        "score": sum(scores) / len(scores) if scores else 0.0,
-        "details": scores
-    }
-
-@register_metric(
     name="micro_f1",
     desc="多选集合 Micro-F1",
     usage="多选题/多标签分类",
-    categories=[MetricCategory.CHOICE_MULTI]
+    categories=[MetricCategory.CHOICE_MULTI],
+    dimension=MetricDimension.CORRECTNESS
 )
 def compute_micro_f1(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
     """
