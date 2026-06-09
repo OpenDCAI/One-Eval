@@ -1,0 +1,11 @@
+# 评测运行时产物（不入库）
+eval_outputs/
+cache/
+.local_state.json
+
+# 用户自定义 metric（本地资产，不入库）
+custom_metrics/*.py
+
+# 临时
+*.pyc
+__pycache__/
