@@ -14,9 +14,12 @@ _SUITE_GEN_ROUGE = ["rouge_l"]
 _SUITE_QA_EXTRACTIVE = ["exact_match", "token_f1", "extraction_rate"]
 _SUITE_QA_LONG = ["token_f1", "exact_match"]
 _SUITE_RETRIEVAL = ["token_f1", "exact_match"]
-_SUITE_JUDGE = ["rouge_l", "keyword_recall"]
-_SUITE_WIN_RATE = ["rouge_l", "keyword_recall"]
-_SUITE_AUC_ROC = ["auc_roc", "choice_accuracy"]
+_SUITE_JUDGE = ["rouge_l", "token_f1"]
+# pairwise(better/rejected)与纯文本打分一样,没有确定性指标:
+# runner 只把 better 当 ref 传进来,rejected 取不到,真偏好判断须由调用方(agent)裁判。
+# 这里只给“与更优答案的词面接近度”作可跑的弱代理(诊断用,别当主分)。
+_SUITE_WIN_RATE = ["token_f1", "rouge_l"]
+_SUITE_CLASSIFY = ["choice_accuracy", "extraction_rate"]
 
 # --- Dataset Metric Configuration ---
 # Direct mapping: Dataset Name -> List of Metric Names
@@ -83,5 +86,5 @@ DATASET_METRICS: Dict[str, List[str]] = {
     "leval": _SUITE_WIN_RATE,
     
     # --- Other ---
-    "llm_compression": _SUITE_AUC_ROC,
+    "llm_compression": _SUITE_CLASSIFY,
 }

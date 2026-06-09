@@ -10,14 +10,15 @@ from one_eval.core.metric_registry import register_metric, MetricCategory, Metri
 
 
 @register_metric(
-    name="soft_code_execution",
-    desc="静态代码分析 (语法可解析性 + 是否定义函数/类)",
-    usage="代码生成,无需沙箱。语法通过得 0.5,定义了函数/类再加 0.5",
+    name="code_validity",
+    desc="代码合法性 (AST 可解析 + 是否定义函数/类)",
+    usage="代码生成,无沙箱。注意:只验“能不能解析/有没有结构”,不代表逻辑正确。要真 Pass@k 请在受控环境自写 custom metric",
     categories=[MetricCategory.QA_SINGLE],
-    dimension=MetricDimension.CORRECTNESS
+    aliases=["soft_code_execution"],
+    dimension=MetricDimension.VALIDITY
 )
-def compute_soft_code_execution(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
-    """语法检查(AST 可解析) + 结构启发式打分。"""
+def compute_code_validity(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
+    """语法检查(AST 可解析) + 结构启发式打分。衡量“产物是否是合法可用的代码”,非正确性。"""
     import ast
 
     scores, details_list = [], []

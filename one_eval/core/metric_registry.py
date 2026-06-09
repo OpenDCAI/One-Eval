@@ -29,16 +29,18 @@ class MetricDimension:
     """Metric Quality Dimensions —— 指标“衡量哪个质量维度”。
 
     与 MetricCategory 正交：categories 管“能用在哪种题型”，
-    dimension 管“反映模型的哪一面能力/行为”。报告与 --list 按此分组，
-    让一堆零散指标呈现出“维度感”。
+    dimension 管“反映模型的哪一面能力/行为”。报告与 --list 按此分组。
+
+    只保留“真能从 (pred文本, ref文本) 这个契约里算出、且确实反映模型某方面表现”
+    的维度。需要概率/logits/跨类别标注的统计指标(AUC/相关系数/基尼)已剔除，
+    因为本框架的推理产物只有文本，那类指标拿不到输入、只会恒返 0 或报错。
     """
     CORRECTNESS = "correctness"      # 答案对不对（主结果维度）
-    SIMILARITY = "similarity"        # 与参考文本的相似/重叠程度（生成类）
-    COVERAGE = "coverage"            # 内容覆盖/召回（说没说到点子上）
+    SIMILARITY = "similarity"        # 与参考文本的词面相似/重叠（翻译/摘要/长答案）
+    PREFERENCE = "preference"        # 偏好对比里是否选/贴近更优答案（pairwise）
+    VALIDITY = "validity"            # 产物本身是否合法可用（如代码能否解析）
+    FLUENCY = "fluency"              # 生成健康度（退化重复/复读等失败模式）
     FORMAT = "format"                # 格式遵循/可抽取性（能不能解析出答案）
-    EFFICIENCY = "efficiency"        # 简洁性/推理效率（啰不啰嗦）
-    CALIBRATION = "calibration"      # 相关性/校准/区分度（统计相关类）
-    ROBUSTNESS = "robustness"        # 能力均衡性/稳定性（跨类别波动）
     DIAGNOSTIC = "diagnostic"        # 纯诊断信号（不直接代表好坏，用于归因）
 
 # 全局注册表缓存

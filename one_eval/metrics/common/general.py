@@ -7,7 +7,6 @@ general.py —— 通用维度指标:正确性(correctness) + 格式遵循(forma
 - diagnostic:missing_answer_rate(弃答率,= 1 - 抽取率,供归因)
 """
 from typing import List, Dict, Any, Optional, Set, Tuple
-import re
 from one_eval.utils.extractor import (
     normalize_text,
     extract_first_number,
@@ -227,24 +226,20 @@ def compute_missing_answer_rate(preds: List[Any], refs: List[Any], **kwargs) -> 
     }
 
 
-_CODE_FENCE_RE = re.compile(r"```[a-zA-Z]*")
-
-
 @register_metric(
     name="format_compliance_score",
-    desc="格式规范度:答案是否被清晰分隔出来 (含 boxed/####/答案标记，且无多余代码块)",
-    usage="评估模型输出是否干净、答案是否容易定位。低分=答案淹没在啰嗦文本里",
+    desc="格式规范度:答案是否被清晰分隔出来 (含 boxed/####/答案标记)",
+    usage="评估输出是否把答案显式标出、便于定位。低分=答案淹没在啰嗦文本里",
     categories=[MetricCategory.QA_SINGLE, MetricCategory.CHOICE_SINGLE],
     dimension=MetricDimension.FORMAT,
 )
 def compute_format_compliance_score(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
-    """规则化打分，逐项加减，结果 clamp 到 [0,1]。不依赖 magic ratio。
+    """规则化打分,结果在 [0,1]。只看“答案是否被显式标记出来”这一可遵循的格式信号。
 
     评分项:
       +0.5 基础分(非空)
-      +0.3 含明确答案分隔标记(\\boxed{}, ####, "答案:"/"answer:" 等)
-      +0.2 输出未被无关代码块污染(无裸 ``` fence)
-      -0.2 含代码块但任务非代码(出现 ``` 视为污染)
+      +0.5 含明确答案分隔标记(\\boxed{}, ####, "答案:"/"answer:"/"final answer" 等)
+    不再对代码块扣分:任务可能本来就要输出代码,代码块不是格式污染。
     """
     markers = [r"\boxed", "####", "answer:", "答案", "the answer is", "final answer"]
     scores, arts = [], []
@@ -256,20 +251,49 @@ def compute_format_compliance_score(preds: List[Any], refs: List[Any], **kwargs)
             arts.append({"issue": "empty"})
             continue
 
-        score = 0.5
         low = s.lower()
         has_marker = any(m in low for m in markers)
-        if has_marker:
-            score += 0.3
-        has_fence = bool(_CODE_FENCE_RE.search(s))
-        if not has_fence:
-            score += 0.2
-        else:
-            score -= 0.2
-
-        score = min(1.0, max(0.0, score))
+        score = 0.5 + (0.5 if has_marker else 0.0)
         scores.append(score)
-        arts.append({"has_marker": has_marker, "has_code_fence": has_fence})
+        arts.append({"has_marker": has_marker})
+
+    return {
+        "score": sum(scores) / len(scores) if scores else 0.0,
+        "details": scores,
+        "artifacts": arts,
+    }
+
+
+# ============================ 流畅度维度 ============================
+
+@register_metric(
+    name="repetition_rate",
+    desc="退化重复率:输出里 n-gram 复读的严重程度 (0=无重复, 越高越退化)",
+    usage="生成健康度,无需 ref。抓“复读机/卡循环”这类失败模式。建议作诊断,分越低越好",
+    categories=[MetricCategory.QA_SINGLE, MetricCategory.QA_MULTI, MetricCategory.TEXT_SCORE],
+    dimension=MetricDimension.FLUENCY,
+)
+def compute_repetition_rate(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
+    """逐条算 1 - distinct_n,即重复 n-gram 占比。只看预测本身,与参考无关。
+
+    kwargs.n: n-gram 阶数 (默认 3)。文本太短(token 数 < n)记 0(无从判断重复)。
+    distinct_n = 去重 n-gram 数 / 总 n-gram 数;复读越多 distinct 越低,重复率越高。
+    """
+    n = int(kwargs.get("n", 3))
+    scores, arts = [], []
+
+    for p in preds:
+        tokens = normalize_text(p).split()
+        if len(tokens) < n + 1:
+            scores.append(0.0)
+            arts.append({"rep": 0.0, "tokens": len(tokens), "note": "too_short"})
+            continue
+        grams = [tuple(tokens[i:i + n]) for i in range(len(tokens) - n + 1)]
+        total = len(grams)
+        distinct = len(set(grams))
+        rep = 1.0 - (distinct / total) if total > 0 else 0.0
+        scores.append(rep)
+        arts.append({"rep": rep, "distinct": distinct, "total": total})
 
     return {
         "score": sum(scores) / len(scores) if scores else 0.0,
