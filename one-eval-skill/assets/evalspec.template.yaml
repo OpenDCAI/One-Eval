@@ -1,0 +1,72 @@
+# ===========================================================================
+# evalspec.yaml — One-Eval Skill 的单次评测配置（agent 与用户对齐后填写）
+# ---------------------------------------------------------------------------
+# 这份文件是「确定性执行内核」(scripts/run_eval.py) 的唯一输入。
+# agent 负责：与用户交互 → 选模型 → 选 bench → 选 metric → 生成本文件 → 调脚本。
+# 脚本不做任何 LLM 编排，只按本文件执行。
+# ===========================================================================
+
+# --- 待评测模型（接入前务必先用 check_model.py 测连通性）-------------------
+model:
+  model_name_or_path: "gpt-4o-mini"     # API 模型名 或 本地模型路径
+  is_api: true                          # true=API 模型；false=本地 vLLM
+
+  # ---- API 模型字段（is_api: true 时生效）----
+  api_url: "http://HOST:3000/v1/chat/completions"
+  api_key: "sk-xxxx"                    # 也可留空改用环境变量 DF_API_KEY
+  api_provider: "openai_compatible"     # openai_compatible | deepseek
+  api_max_workers: 8                    # 并发请求数
+  api_connect_timeout: 10.0
+  api_read_timeout: 60.0
+
+  # ---- 本地 vLLM 字段（is_api: false 时生效；本机 Mac 不验证，GPU 机使用）----
+  # tensor_parallel_size: 1
+  # gpu_memory_utilization: 0.9
+  # max_model_len: 4096
+
+  # ---- 采样参数（两种模型通用）----
+  temperature: 0.0
+  top_p: 1.0
+  max_tokens: 2048
+  seed: 42
+
+# --- 待评测的 benchmark 列表 ------------------------------------------------
+# 每个 bench 必须属于 6 种 eval_type 之一，且按类型填全 key_mapping 必填字段。
+# eval_type 与 key_mapping 的对应见 references/eval_types.md。
+benchmarks:
+  - bench_name: "MATH-500"
+    bench_dataflow_eval_type: "key2_qa"          # 6 选 1
+    bench_source_url: "https://huggingface.co/datasets/HuggingFaceH4/MATH-500"
+    download_config:
+      config: null                               # 子配置名，无则 null
+      split: "test"
+    key_mapping:                                 # 按 eval_type 填必填字段
+      input_question_key: "problem"
+      input_target_key: "answer"
+
+  # 示例：选择题类型（key3_q_choices_a）
+  # - bench_name: "MMLU/abstract_algebra"
+  #   bench_dataflow_eval_type: "key3_q_choices_a"
+  #   bench_source_url: "https://huggingface.co/datasets/cais/mmlu"
+  #   download_config:
+  #     config: "abstract_algebra"
+  #     split: "test"
+  #   key_mapping:
+  #     input_question_key: "question"
+  #     input_choices_key: "choices"
+  #     input_label_key: "answer"
+
+# --- 额外多维度 metric（dataflow 主分数之外，可选）-------------------------
+# 用 run_metrics.py 计算；用 `run_metrics.py --list` 查看注册表所有可用 metric。
+# 留空则只用 dataflow 主分数。
+metrics:
+  - name: "exact_match"
+    priority: "primary"        # primary 进主表 / secondary 进附表
+  # - name: "bleu"
+  #   priority: "secondary"
+
+# --- 运行时 -----------------------------------------------------------------
+runtime:
+  output_dir: null             # null=skill 默认 eval_outputs/
+  cache_dir: null              # null=skill 默认 cache/
+  max_samples: null            # null=全量；填数字=每 bench 截断到该条数
