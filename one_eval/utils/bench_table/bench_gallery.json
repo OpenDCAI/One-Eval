@@ -11377,6 +11377,486 @@
           "reasoning"
         ]
       }
+    },
+    {
+      "bench_name": "mmlu-redux",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/edinburgh-dawg/mmlu-redux-2.0",
+      "bench_dataflow_eval_type": "key3_q_choices_a",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "question",
+        "choices",
+        "answer",
+        "error_type",
+        "source"
+      ],
+      "meta": {
+        "bench_name": "mmlu-redux",
+        "source": "qwen_report",
+        "aliases": [
+          "mmlu-redux",
+          "MMLU-Redux",
+          "mmlu_redux_2.0"
+        ],
+        "category": "Knowledge & QA",
+        "tags": [
+          "knowledge"
+        ],
+        "description": "Manually re-annotated, error-corrected subset of MMLU (2.0, 57 subjects). Used by Qwen3 for general knowledge.",
+        "description_zh": "人工纠错重标注的 MMLU 子集（2.0 版，57 学科）。Qwen3 用作通用知识评测。",
+        "hf_meta": {
+          "hf_repo": "edinburgh-dawg/mmlu-redux-2.0",
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "edinburgh-dawg/mmlu-redux-2.0",
+          "ok": true,
+          "subsets": [
+            {
+              "subset": "abstract_algebra",
+              "splits": [
+                {
+                  "name": "test"
+                }
+              ]
+            }
+          ],
+          "note": "57 个学科 config，均仅 test split"
+        },
+        "download_config": {
+          "config": "abstract_algebra",
+          "split": "test",
+          "reason": "57 学科只有 test split。选 abstract_algebra 作代表子集；全量对齐时遍历全部 config 取均值。"
+        },
+        "key_mapping": {
+          "input_question_key": "question",
+          "input_choices_key": "choices",
+          "input_label_key": "answer"
+        },
+        "key_mapping_reason": "choices 是选项列表，answer 是整数索引(0-3)，归一化器按 index 处理。",
+        "radar_dimensions": [
+          "knowledge",
+          "reasoning"
+        ]
+      }
+    },
+    {
+      "bench_name": "supergpqa",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/m-a-p/SuperGPQA",
+      "bench_dataflow_eval_type": "key3_q_choices_a",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "uuid",
+        "question",
+        "options",
+        "answer",
+        "answer_letter",
+        "discipline",
+        "field",
+        "subfield",
+        "difficulty"
+      ],
+      "meta": {
+        "bench_name": "supergpqa",
+        "source": "qwen_report",
+        "aliases": [
+          "supergpqa",
+          "SuperGPQA"
+        ],
+        "category": "Knowledge & QA",
+        "tags": [
+          "knowledge",
+          "reasoning"
+        ],
+        "description": "26,529 graduate-level questions across 285 disciplines (ByteDance Seed + M-A-P). Used by Qwen3.",
+        "description_zh": "覆盖 285 个学科的 26529 道研究生级难题。Qwen3 用作高难知识/推理评测。",
+        "hf_meta": {
+          "hf_repo": "m-a-p/SuperGPQA",
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "m-a-p/SuperGPQA",
+          "ok": true,
+          "subsets": [
+            {
+              "subset": "default",
+              "splits": [
+                {
+                  "name": "train",
+                  "num_examples": 26529
+                }
+              ]
+            }
+          ],
+          "note": "尽管叫 train，是唯一的评测 split"
+        },
+        "download_config": {
+          "config": "default",
+          "split": "train",
+          "reason": "数据集只有 default/train 一个 split（eval-only，名为 train）。"
+        },
+        "key_mapping": {
+          "input_question_key": "question",
+          "input_choices_key": "options",
+          "input_label_key": "answer_letter"
+        },
+        "key_mapping_reason": "options 是选项列表；answer_letter 是正确选项字母(如 'I')，比 answer(全文)更适合做 label，归一化器按 letter→index。",
+        "radar_dimensions": [
+          "knowledge",
+          "reasoning"
+        ]
+      }
+    },
+    {
+      "bench_name": "mgsm",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/juletxara/mgsm",
+      "bench_dataflow_eval_type": "key2_qa",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "question",
+        "answer",
+        "answer_number",
+        "equation_solution"
+      ],
+      "meta": {
+        "bench_name": "mgsm",
+        "source": "qwen_report",
+        "aliases": [
+          "mgsm",
+          "MGSM"
+        ],
+        "category": "Math",
+        "tags": [
+          "math",
+          "multilingual"
+        ],
+        "description": "Multilingual Grade School Math (250 GSM8K problems x 11 languages). Used by Qwen3 for multilingual math.",
+        "description_zh": "多语小学数学（250 道 GSM8K 题 x 11 种语言）。Qwen3 用作多语数学评测。",
+        "hf_meta": {
+          "hf_repo": "juletxara/mgsm",
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "juletxara/mgsm",
+          "ok": true,
+          "subsets": [
+            {
+              "subset": "en",
+              "splits": [
+                {
+                  "name": "test",
+                  "num_examples": 250
+                },
+                {
+                  "name": "train"
+                }
+              ]
+            }
+          ],
+          "note": "11 个语言 config，各有 train(few-shot)/test"
+        },
+        "download_config": {
+          "config": "en",
+          "split": "test",
+          "reason": "11 个语言子集；选 en/test 作代表，多语对齐时遍历各语言。"
+        },
+        "key_mapping": {
+          "input_question_key": "question",
+          "input_target_key": "answer_number"
+        },
+        "key_mapping_reason": "answer 是 CoT 文本(常为 None)，answer_number 才是数值答案，配 numerical_match。",
+        "radar_dimensions": [
+          "mathematics",
+          "multilingual"
+        ]
+      }
+    },
+    {
+      "bench_name": "mmmlu",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/openai/MMMLU",
+      "bench_dataflow_eval_type": "key3_q_choices_a",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "Question",
+        "A",
+        "B",
+        "C",
+        "D",
+        "Answer",
+        "Subject"
+      ],
+      "meta": {
+        "bench_name": "mmmlu",
+        "source": "qwen_report",
+        "aliases": [
+          "mmmlu",
+          "MMMLU"
+        ],
+        "category": "Knowledge & QA",
+        "tags": [
+          "knowledge",
+          "multilingual"
+        ],
+        "description": "OpenAI's human-translated multilingual MMLU (14 locales). Used by Qwen3 for multilingual knowledge.",
+        "description_zh": "OpenAI 人工翻译的多语 MMLU（14 种语言）。Qwen3 用作多语知识评测。",
+        "hf_meta": {
+          "hf_repo": "openai/MMMLU",
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "openai/MMMLU",
+          "ok": true,
+          "subsets": [
+            {
+              "subset": "FR_FR",
+              "splits": [
+                {
+                  "name": "test"
+                }
+              ]
+            }
+          ],
+          "note": "15 个 locale config(含 default)，均 test split"
+        },
+        "download_config": {
+          "config": "FR_FR",
+          "split": "test",
+          "reason": "14 个语言 locale；选 FR_FR/test 作代表，多语对齐时遍历各 locale。"
+        },
+        "key_mapping": {
+          "input_question_key": "Question",
+          "input_choices_key": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ],
+          "input_label_key": "Answer"
+        },
+        "key_mapping_reason": "选项是 A/B/C/D 四列，自动合并；Answer 是正确字母。",
+        "radar_dimensions": [
+          "knowledge",
+          "multilingual"
+        ]
+      }
+    },
+    {
+      "bench_name": "c-eval",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/ceval/ceval-exam",
+      "bench_dataflow_eval_type": "key3_q_choices_a",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "id",
+        "question",
+        "A",
+        "B",
+        "C",
+        "D",
+        "answer",
+        "explanation"
+      ],
+      "meta": {
+        "bench_name": "c-eval",
+        "source": "qwen_report",
+        "aliases": [
+          "c-eval",
+          "ceval",
+          "C-Eval",
+          "ceval-exam"
+        ],
+        "category": "Knowledge & QA",
+        "tags": [
+          "knowledge",
+          "chinese"
+        ],
+        "description": "Chinese multi-discipline exam benchmark (52 subjects). Used by Qwen for Chinese knowledge.",
+        "description_zh": "中文多学科考试基准（52 学科）。Qwen 用作中文知识评测。",
+        "hf_meta": {
+          "hf_repo": "ceval/ceval-exam",
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "ceval/ceval-exam",
+          "ok": true,
+          "subsets": [
+            {
+              "subset": "accountant",
+              "splits": [
+                {
+                  "name": "dev"
+                },
+                {
+                  "name": "val"
+                },
+                {
+                  "name": "test"
+                }
+              ]
+            }
+          ],
+          "note": "52 学科 config；test 不含答案(官网评分)，用 val"
+        },
+        "download_config": {
+          "config": "accountant",
+          "split": "val",
+          "reason": "test split 不公开答案；用 val(答案公开)。选 accountant 作代表子集。"
+        },
+        "key_mapping": {
+          "input_question_key": "question",
+          "input_choices_key": [
+            "A",
+            "B",
+            "C",
+            "D"
+          ],
+          "input_label_key": "answer"
+        },
+        "key_mapping_reason": "选项是 A/B/C/D 四列，自动合并；answer 是正确字母。",
+        "radar_dimensions": [
+          "knowledge",
+          "chinese"
+        ]
+      }
+    },
+    {
+      "bench_name": "olympiadbench",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/Hothan/OlympiadBench",
+      "bench_dataflow_eval_type": "key2_qa",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "id",
+        "question",
+        "solution",
+        "final_answer",
+        "answer_type",
+        "subject",
+        "language"
+      ],
+      "meta": {
+        "bench_name": "olympiadbench",
+        "source": "qwen_report",
+        "aliases": [
+          "olympiadbench",
+          "OlympiadBench"
+        ],
+        "category": "Math",
+        "tags": [
+          "math",
+          "reasoning"
+        ],
+        "description": "Olympiad-level math & physics problems (OpenBMB, ACL 2024). Used by Qwen2.5-Math.",
+        "description_zh": "奥赛级数学与物理题（OpenBMB, ACL 2024）。Qwen2.5-Math 使用。",
+        "hf_meta": {
+          "hf_repo": "Hothan/OlympiadBench",
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "Hothan/OlympiadBench",
+          "ok": true,
+          "subsets": [
+            {
+              "subset": "OE_TO_maths_en_COMP",
+              "splits": [
+                {
+                  "name": "train"
+                }
+              ]
+            }
+          ],
+          "note": "18 个 config(题型x学科x语言x赛制)，均 train split"
+        },
+        "download_config": {
+          "config": "OE_TO_maths_en_COMP",
+          "split": "train",
+          "reason": "选纯文本(TO)/数学/英文/竞赛 子集，规避多模态 image 字段；唯一 split 名为 train。"
+        },
+        "key_mapping": {
+          "input_question_key": "question",
+          "input_target_key": "final_answer"
+        },
+        "key_mapping_reason": "final_answer 是答案列表(如 ['2'])，配 math_verify；solution 是完整解题过程不作 ref。",
+        "radar_dimensions": [
+          "mathematics",
+          "reasoning"
+        ]
+      }
+    },
+    {
+      "bench_name": "polymath",
+      "bench_table_exist": true,
+      "bench_source_url": "https://huggingface.co/datasets/Qwen/PolyMath",
+      "bench_dataflow_eval_type": "key2_qa",
+      "bench_prompt_template": null,
+      "bench_keys": [
+        "id",
+        "question",
+        "answer"
+      ],
+      "meta": {
+        "bench_name": "polymath",
+        "source": "qwen_report",
+        "aliases": [
+          "polymath",
+          "PolyMath"
+        ],
+        "category": "Math",
+        "tags": [
+          "math",
+          "multilingual",
+          "reasoning"
+        ],
+        "description": "Qwen's multilingual mathematical reasoning benchmark (18 langs x 4 difficulty tiers). NeurIPS 2025 D&B.",
+        "description_zh": "Qwen 多语数学推理基准（18 语言 x 4 难度档）。NeurIPS 2025 D&B。",
+        "hf_meta": {
+          "hf_repo": "Qwen/PolyMath",
+          "exists_on_hf": true
+        },
+        "structure": {
+          "repo_id": "Qwen/PolyMath",
+          "ok": true,
+          "subsets": [
+            {
+              "subset": "en",
+              "splits": [
+                {
+                  "name": "low"
+                },
+                {
+                  "name": "medium"
+                },
+                {
+                  "name": "high"
+                },
+                {
+                  "name": "top"
+                }
+              ]
+            }
+          ],
+          "note": "18 语言 config；split 名是难度档 low/medium/high/top(非 train/test)"
+        },
+        "download_config": {
+          "config": "en",
+          "split": "high",
+          "reason": "split 是难度档；选 en/high 作代表，全量对齐时遍历语言x难度。"
+        },
+        "key_mapping": {
+          "input_question_key": "question",
+          "input_target_key": "answer"
+        },
+        "key_mapping_reason": "question/answer 直白对应，配 math_verify。",
+        "radar_dimensions": [
+          "mathematics",
+          "multilingual",
+          "reasoning"
+        ]
+      }
     }
   ]
 }
