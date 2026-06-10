@@ -827,6 +827,14 @@ class DataFlowEvalTool:
         judge_config = bench.meta.get("judge_config", {}) if isinstance(bench.meta, dict) else {}
         use_llm_as_judge = bool(judge_config.get("enabled") or judge_config.get("use_llm_as_judge"))
 
+        # API 目标模型对 key3_q_choices_a 拿不到 loglikelihood，必须走 parse-based 打分，
+        # 而 parse 依赖 generated_ans。此处与下方 metric_type=parse_choice_acc 的判定保持一致，
+        # 否则生成器会跳过 key3_q_choices_a 的生成，导致 evaluator parse_failed、valid=0。
+        api_parse_choice = (
+            bool(getattr(model_config, "is_api", False))
+            and bench.bench_dataflow_eval_type == "key3_q_choices_a"
+        )
+
         # 5. Step 1: Generator
         # 对于不需要生成的任务（如 text_score, choices_a_ll），Generator 可能只是透传或计算
         # BenchAnswerGenerator 内部会根据 eval_type 判断是否需要 generate
@@ -841,7 +849,7 @@ class DataFlowEvalTool:
             eval_type=bench.bench_dataflow_eval_type,
             prompt_template=prompt_tmpl,
             allow_overwrite=False,
-            force_generate=use_llm_as_judge, # judge 依赖 generated_ans，必须先生成
+            force_generate=use_llm_as_judge or api_parse_choice, # judge / API 选择题解析都依赖 generated_ans
         )
 
         log.info(f"[{bench.bench_name}] Running Step 1: Generator ({bench.bench_dataflow_eval_type})")
