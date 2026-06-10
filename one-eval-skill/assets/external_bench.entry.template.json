@@ -1,0 +1,62 @@
+{
+  "__doc__": "external_repo bench 条目模板。复制本对象、按 references/external_bench.md 的契约填全，再追加进 bench_gallery.json 的 benches[]。带 __ 前缀的键是注释，入库前删除。禁止把真实 api_key 写进本文件。",
+
+  "bench_name": "<唯一名，如 livecodebench>",
+  "bench_kind": "external_repo",
+  "bench_table_exist": true,
+  "bench_dataflow_eval_type": null,
+  "bench_source_url": "<数据/榜单主页，人看的入口>",
+  "bench_prompt_template": null,
+  "bench_keys": [],
+
+  "meta": {
+    "bench_name": "<同上>",
+    "source": "<来源标注，如 qwen_report / user>",
+    "category": "<分类，如 Code / Tool-Use>",
+    "tags": ["<标签>"],
+    "description": "<英文一句话简介>",
+    "description_zh": "<中文一句话简介>",
+
+    "repo_eval": {
+      "repo_url": "<git 仓库 https 地址>",
+      "ref": "<固定 commit SHA 或 tag，保证可复现，勿用浮动 main>",
+      "license": "<repo license，注意可商用性/再分发限制>",
+
+      "env_requires": {
+        "python": "<如 >=3.10>",
+        "gpu": false,
+        "sandbox": "<none / docker / firejail，代码执行类必须沙箱>",
+        "system_deps": ["<关键系统依赖，如 docker>"]
+      },
+
+      "setup": [
+        "<安装步骤 1，如 git clone 后 pip install -e .>",
+        "<安装步骤 2>"
+      ],
+
+      "model_interface": {
+        "type": "<api | local_vllm | custom>",
+        "how": "<这个 harness 怎么接被测模型：读哪些 env / config 字段>"
+      },
+
+      "run": {
+        "work_dir": "{{work_dir}}",
+        "command": [
+          "<跑评测命令，用 {{model_name}} {{api_base_url}} {{api_key}} {{output_dir}} {{max_samples}} 占位>"
+        ]
+      },
+
+      "result": {
+        "path": "<相对 output_dir 的结果文件，支持 glob>",
+        "format": "<json | jsonl | csv>",
+        "score_path": "<主分数点路径，如 pass@1 或 overall.accuracy>",
+        "scale": "<ratio(0-1) | percent(0-100)>",
+        "metric_name": "<指标名，如 pass@1 / acc>"
+      },
+
+      "data_alignment": "<用该 repo 的哪个数据版本/release/子集，对应要对齐的 tech report 里哪个设置>",
+
+      "notes": "<坑点、限速、已知 flaky 等，可选>"
+    }
+  }
+}

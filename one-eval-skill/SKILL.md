@@ -28,6 +28,10 @@ python scripts/check_model.py --api --model <名> --api-url <url> --api-key <key
   否则从**候选区**（96 个未验证 bench）选，接入前需走 smoke 验证。
 - 用户要评测 gallery 之外的新数据集 → 用 `scripts/prepare_bench.py` 下载并**预览嵌套结构**，
   再按 `references/eval_types.md` 判断 eval_type、规划 key_mapping（嵌套字段须先拍平）。
+- **自带仓库 / 需特殊环境的 bench**（LiveCodeBench、BFCL、EvalPlus 等需沙箱执行的）→
+  走 `references/external_bench.md` 的 `bench_kind=external_repo` 机制：在 gallery 登记
+  仓库地址 + 安装/运行/取分说明。`run_eval.py` 会对这类 bench 优雅短路（返回
+  `external_repo_pending` + `repo_eval`），由你据此在外部执行后回填分数（本版未内置执行器）。
 
 ### 3. 选 metric（可选，多维度打分）
 - dataflow 主分数是每个 eval_type 的默认指标；额外维度从注册表挑。
@@ -69,12 +73,13 @@ python scripts/make_plots.py --results eval_outputs/eval_results.json \
 
 ## 文件地图
 - `references/eval_types.md` — 6 种 eval_type 与 key_mapping 硬契约（**接入 bench 必读**）
-- `references/bench_gallery.md` — READY 区 + 候选区 bench 清单
+- `references/bench_gallery.md` — READY 区 + 候选区 + 外部仓库 bench 区
+- `references/external_bench.md` — 自带仓库 / 需特殊环境 bench 的 schema 与接入机制
 - `references/metric_registry.md` — metric 注册表说明 + 自定义指引
 - `references/model_setup.md` — API / vLLM 模型接入与凭证、HF 下载配置
 - `references/report_template.md` — 报告结构模板
 - `scripts/` — check_model / prepare_bench / run_eval / run_metrics / make_plots
-- `assets/` — evalspec.template.yaml / custom_metric.template.py
+- `assets/` — evalspec.template.yaml / custom_metric.template.py / external_bench.entry.template.json
 
 ## 安全 & 边界
 - API key 等凭证只写进本地 `evalspec.yaml`（已 gitignore），不要回显到对话或入库。

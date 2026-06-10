@@ -60,14 +60,42 @@ def _guess_keys_hint(bench: dict) -> str:
     return ", ".join(str(k) for k in keys) if keys else "—"
 
 
+def _external_section(externals: list) -> str:
+    """external_repo bench 单列一区：展示 repo_url + 环境前提，不混进候选区表格。"""
+    if not externals:
+        return ""
+    parts = ["\n---\n\n## 外部仓库 bench（external_repo，需特殊环境）\n"]
+    parts.append("> 这类 bench 自带评测仓库/沙箱，不走确定性内核。`run_eval.py` 遇到它们会优雅短路，")
+    parts.append("> 返回 `external_repo_pending` + `meta.repo_eval`，由调用方按 `external_bench.md` 在外部执行后回填分数。\n")
+    parts.append("| bench_name | repo_url | ref | 环境前提 | 数据对齐 |")
+    parts.append("|---|---|---|---|---|")
+    for b in sorted(externals, key=lambda x: x.get("bench_name", "")):
+        name = b.get("bench_name", "?")
+        re = (b.get("meta") or {}).get("repo_eval") or {}
+        repo = re.get("repo_url") or "—"
+        ref = re.get("ref") or "—"
+        env = re.get("env_requires") or {}
+        env_hint = ", ".join(
+            f"{k}={v}" for k, v in env.items() if v not in (None, "", [], False)
+        ) or "—"
+        align = re.get("data_alignment") or "—"
+        parts.append(f"| {name} | {repo} | `{ref}` | {env_hint} | {align} |")
+    parts.append("")
+    return "\n".join(parts)
+
+
 def build_md(data: dict) -> str:
     benches = data.get("benches", []) or []
+    externals = [b for b in benches if b.get("bench_kind") == "external_repo"]
+    dataflow_benches = [b for b in benches if b.get("bench_kind") != "external_repo"]
+
     by_cat = defaultdict(list)
-    for b in benches:
+    for b in dataflow_benches:
         cat = (b.get("meta") or {}).get("category") or "Uncategorized"
         by_cat[cat].append(b)
 
     parts = [HEADER.format(n=len(benches)), READY_SECTION]
+    parts.append(_external_section(externals))
     parts.append("\n---\n\n## 候选区（未验证，按分类）\n")
 
     for cat in sorted(by_cat):

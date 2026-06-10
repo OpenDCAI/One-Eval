@@ -102,10 +102,34 @@ def _extract_score(stats: dict) -> dict:
     }
 
 
+def _external_repo_result(bench_dict: dict) -> dict:
+    """external_repo bench 的优雅短路。
+
+    不下载、不调内核、不报错：把 meta.repo_eval 原样带出，交给调用方 agent 按
+    references/external_bench.md 在外部执行评测、再回填分数。当前版本不内置执行器。
+    """
+    meta = bench_dict.get("meta") or {}
+    return {
+        "bench_name": bench_dict.get("bench_name"),
+        "bench_kind": common.BENCH_KIND_EXTERNAL,
+        "bench_dataflow_eval_type": bench_dict.get("bench_dataflow_eval_type"),
+        "mode": "external_repo_pending",
+        "dataflow_score": {"score": None, "total_samples": None, "valid_samples": None,
+                           "metric": None},
+        "repo_eval": meta.get("repo_eval", {}),
+        "note": "external_repo bench：需在外部仓库/沙箱执行评测后回填分数，详见 references/external_bench.md",
+        "ok": True,  # 不算失败：只是待外部执行，不应让整批退出码非 0
+    }
+
+
 def run_one_bench(bench_dict: dict, model_dict: dict, cache_dir: Path,
                   output_dir: Path, smoke: bool, max_samples) -> dict:
     """评测单个 benchmark，返回结果 dict。"""
     from one_eval.toolkits.dataflow_eval_tool import DataFlowEvalTool
+
+    # external_repo：不走确定性内核，优雅短路（不下载/不调内核/不报错）。
+    if common.get_bench_kind(bench_dict) == common.BENCH_KIND_EXTERNAL:
+        return _external_repo_result(bench_dict)
 
     bench_name = bench_dict["bench_name"]
     eval_type = bench_dict.get("bench_dataflow_eval_type")
@@ -196,11 +220,15 @@ def main(argv=None):
             res = run_one_bench(bench_dict, model_dict, cache_dir, output_dir,
                                 smoke=args.smoke, max_samples=max_samples)
             all_results.append(res)
-            s = res["dataflow_score"]
-            flag = "✓" if res["ok"] else "✗"
-            print(f"  {flag} {res['mode']} | score={s.get('score')} "
-                  f"| valid={s.get('valid_samples')}/{s.get('total_samples')} "
-                  f"| {res['elapsed_sec']}s", flush=True)
+            if res.get("mode") == "external_repo_pending":
+                print(f"  ⊙ external_repo | 待外部执行回填（见 references/external_bench.md）",
+                      flush=True)
+            else:
+                s = res["dataflow_score"]
+                flag = "✓" if res["ok"] else "✗"
+                print(f"  {flag} {res['mode']} | score={s.get('score')} "
+                      f"| valid={s.get('valid_samples')}/{s.get('total_samples')} "
+                      f"| {res.get('elapsed_sec')}s", flush=True)
             if not res["ok"]:
                 n_fail += 1
         except Exception as e:

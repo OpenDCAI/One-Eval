@@ -29,6 +29,24 @@ DEFAULT_CACHE_DIR = SKILL_DIR / "cache"                 # 数据集下载缓存
 LOCAL_STATE_PATH = SKILL_DIR / ".local_state.json"      # 已测通 bench 的 READY 记录
 CUSTOM_METRICS_DIR = SKILL_DIR / "custom_metrics"       # 用户自定义 metric 落地处
 
+# bench 种类：dataflow（默认，走确定性内核）/ external_repo（自带仓库、需特殊环境，
+# 不走内核，按 meta.repo_eval 在外部执行后回填分数）。详见 references/external_bench.md。
+BENCH_KIND_DATAFLOW = "dataflow"
+BENCH_KIND_EXTERNAL = "external_repo"
+VALID_BENCH_KINDS = {BENCH_KIND_DATAFLOW, BENCH_KIND_EXTERNAL}
+
+
+def get_bench_kind(bench_dict: Dict[str, Any]) -> str:
+    """读 bench 的 kind，缺省为 dataflow（现有条目不带该字段，行为不变）。"""
+    kind = (bench_dict.get("bench_kind") or BENCH_KIND_DATAFLOW)
+    if kind not in VALID_BENCH_KINDS:
+        raise ValueError(
+            f"bench {bench_dict.get('bench_name')!r} 的 bench_kind 非法: {kind!r}，"
+            f"只能是 {sorted(VALID_BENCH_KINDS)}"
+        )
+    return kind
+
+
 # 6 种合法 eval 类型（硬契约，与 one_eval/nodes/dataflow_eval_node.py 一致）
 VALID_EVAL_TYPES = {
     "key1_text_score",
@@ -72,6 +90,20 @@ def build_bench_info(bench_dict: Dict[str, Any], dataset_cache: Optional[str] = 
     key_mapping / download_config 放进 meta，供 DataFlowEvalTool.run_eval 读取。
     """
     from one_eval.core.state import BenchInfo
+
+    # external_repo bench 不走内核，eval_type/key_mapping 不适用：直接带出 repo_eval 信息。
+    # 正常情况下 run_eval.py 会在更上层就短路，这里是防御性兜底（避免误调时崩在硬校验上）。
+    if get_bench_kind(bench_dict) == BENCH_KIND_EXTERNAL:
+        bench = BenchInfo(
+            bench_name=bench_dict.get("bench_name"),
+            bench_source_url=bench_dict.get("bench_source_url"),
+            bench_dataflow_eval_type=bench_dict.get("bench_dataflow_eval_type"),
+            dataset_cache=dataset_cache,
+        )
+        repo_eval = (bench_dict.get("meta") or {}).get("repo_eval", {})
+        bench.meta["bench_kind"] = BENCH_KIND_EXTERNAL
+        bench.meta["repo_eval"] = repo_eval
+        return bench
 
     eval_type = bench_dict.get("bench_dataflow_eval_type")
     if eval_type not in VALID_EVAL_TYPES:
