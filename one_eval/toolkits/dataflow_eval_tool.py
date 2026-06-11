@@ -919,7 +919,16 @@ class DataFlowEvalTool:
         # 构造 Prompt Template (简单通用版)
         # 注意：对于 chat 模型，通常建议使用 apply_chat_template，这里简化为 FormatStrPrompt
         # 如果是 base 模型，这个 template 很重要
-        prompt_tmpl = FormatStrPrompt(f_str_template="{{question}}\nAnswer:")
+        #
+        # 选择题（key3_q_choices_a / key3_q_choices_as）必须把 choices 注入到 prompt，否则
+        # 模型看不到选项、会把题干当填空题续写，导致 parse_failed / 分数异常偏低。
+        # FormatStrPrompt 只做占位符替换，模板里没有 {choices} 就会丢掉选项；这里对选择题
+        # 传 None，让 BenchAnswerGenerator 走自带的 choice-aware fallback（含 "Output only the
+        # option letter"）。其余生成型任务仍用简单的问答模板。
+        if bench.bench_dataflow_eval_type in ("key3_q_choices_a", "key3_q_choices_as"):
+            prompt_tmpl = None
+        else:
+            prompt_tmpl = FormatStrPrompt(f_str_template="{{question}}\nAnswer:")
         
         generator = BenchAnswerGenerator(
             llm_serving=self.llm_serving,
