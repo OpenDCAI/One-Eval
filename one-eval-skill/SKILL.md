@@ -63,7 +63,7 @@ python scripts/check_model.py --api --model <名> --api-url <url> --api-key <key
 
 ### 2. 选 benchmark
 - 先看 `references/bench_gallery.md`：**READY 区**（已测通、可直接复用）优先；
-  否则从**候选区**（96 个未验证 bench）选，接入前需走 smoke 验证。
+  否则从**候选区**（103 个未验证 bench）选，接入前需走 smoke 验证。
 - 用户要评测 gallery 之外的新数据集 → 用 `scripts/prepare_bench.py` 下载并**预览嵌套结构**，
   再按 `references/eval_types.md` 判断 eval_type、规划 key_mapping（嵌套字段须先拍平）。
 - **自带仓库 / 需特殊环境的 bench**（LiveCodeBench、BFCL、EvalPlus 等需沙箱执行的）→
@@ -124,27 +124,16 @@ python scripts/render_report.py --results eval_outputs/eval_results.json \
 # 不想自动打开时加 --no-open；公开分数表默认读 references/leaderboard_scores.json，可用 --scores 覆盖
 ```
 **这一步必须由你（agent）在评测+metric 跑完后主动调用**，让用户做完评测直接看到弹出的报告，
-而不是把渲染留给用户手动操作。`render_report.py` 一次性产出：总览卡片（模型 × 各 bench 主分）、
-leaderboard（本模型 ★ 金色高亮穿插进公开分排名、条形图、hover 看来源/设置）、多维度 metric 热力图、
-逐 bench 详情、附录「评测设置」——单个 `report.html` 文件，零依赖可离线。
+而不是把渲染留给用户手动操作。一次产出单文件 `report.html`（总览卡片 + leaderboard 条形图 + metric
+热力图 + 逐 bench 详情 + 附录「评测设置」，零依赖可离线）。
 
-报告先给用户一个**初版结果摘要**（核心分数 + 一句话结论），再说明完整报告已生成并自动打开（附绝对路径）。
+对话里先给**初版摘要**（核心分数 + 一句话水位结论 + 强弱 bench），再说明完整报告已生成并自动打开（附绝对路径）。
 
 > 退路（无法用浏览器 / 用户要 markdown 时）：`make_plots.py` 出 PNG、`render_leaderboard.py` 出 markdown 表，
 > 再按 `references/report_template.md` 拼 markdown 报告。HTML 是默认主路径。
 
-**报告立场**：面向**被评测模型的性能**（考了多少、在公开模型里什么水位、强弱在哪），
-**不要**复盘/批判 One-Eval 评测流程本身；评测设置只在「附：评测设置」如实附上。
-
-**leaderboard**：读 `references/leaderboard_scores.json`（手工维护的公开分数表，
-每条带来源/设置/日期）把本模型 ★ 标出排名。公开分数没有可靠出处就不要加；各家 shot/CoT/子集不同，
-排名仅供粗略定位、非严格对标，报告里要保留来源标注。
-
-**输出落盘与路径规范（务必遵守）**：
-- 报告里引用的所有产物路径（`report.html` / `eval_results.json` / `metric_results.json` /
-  逐样本明细 `detail_path`）一律写**绝对路径**，让用户能直接点开。脚本打印的就是绝对路径，直接引用即可。
-- **有总有分**：HTML 报告已内置「总」（总览卡片 + leaderboard 水位）与「分」（逐 bench 详情）；
-  你对话里的摘要同样先总后分——一句话水位结论，再点出强弱 bench。
+**报告立场、leaderboard 来源标注、产物绝对路径**等写报告的硬约束见 `references/report_template.md`，
+落地前务必照它执行（核心：面向被评测模型性能而非复盘流程；公开分保留来源、排名仅供粗略定位；所有路径写绝对路径）。
 
 ## 文件地图
 - `references/eval_types.md` — 6 种 eval_type 与 key_mapping 硬契约（**接入 bench 必读**）
