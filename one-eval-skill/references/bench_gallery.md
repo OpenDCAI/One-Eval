@@ -20,7 +20,20 @@
 > 运行时由 `run_eval.py` 通过 `.local_state.json` 自动识别 READY，无需在此手填即可复用；
 > 这里的清单仅供人查阅「哪些已稳定可用」。
 
-_（暂无）_
+| bench_name | eval_type | 本地数据路径(cache/) | key_mapping | 备注 |
+|---|---|---|---|---|
+| gsm8k | `key2_qa` | openai__gsm8k__main__test.jsonl | question / answer | 小学数学，含 math_verify 假阴性翻正 |
+| MATH-500 | `key2_qa` | HuggingFaceH4__MATH-500__None__test.jsonl | problem / answer | 竞赛数学 500 题 |
+| AIME_2024 | `key2_qa` | Maxwell-Jia__AIME_2024__None__train.jsonl | question / answer | AIME 2024，仅 30 题、整数答案、方差大 |
+| MMLU-Pro | `key3_q_choices_a` | TIGER-Lab__MMLU-Pro__None__test.jsonl | question / choices / answer | 10 选项进阶知识，12032 题，14 学科 |
+| mmlu-redux | `key3_q_choices_a` | edinburgh-dawg__mmlu-redux-2.0__abstract_algebra__test.jsonl | question / choices / answer | 子集 abstract_algebra |
+| supergpqa | `key3_q_choices_a` | m-a-p__SuperGPQA__default__train.jsonl | (见 spec) | 研究生级跨学科 285 学科 |
+| c-eval | `key3_q_choices_a` | ceval__ceval-exam__accountant__val.jsonl | question / choices / answer | 中文，子集 accountant |
+| polymath | `key2_qa` | Qwen__PolyMath__en__high.jsonl | (见 spec) | 子集 en/high |
+
+> MMLU-Pro / AIME_2024 因 datasets 4.0 下载层对镜像不稳，改用 `curl` 直拉
+> `https://hf-mirror.com/datasets/<repo>/resolve/main/<file>` 后转 jsonl 入 cache，按
+> `{repo//→__}__{config}__{split}.jsonl` 命名即被 `run_eval.py` 自动复用、免下载。
 
 
 

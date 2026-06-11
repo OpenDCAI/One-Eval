@@ -10,36 +10,484 @@
     "   只有 setting 与用户评测大致可比时，才适合并排排名；否则在报告里标注「设置不同，仅供参考」。",
     "3. 分数用 0-1 小数（与本框架主分一致）。若来源是百分数，换算后填，并在 note 注明。",
     "4. bench key 用本框架的 bench_name（与 evalspec / eval_results.json 对齐），大小写敏感。",
-    "5. 这些是种子示例，数字可能随论文/榜单更新而过时 —— 用户应自行核对来源后再信任并排名。"
+    "5. 这些是种子示例，数字可能随论文/榜单更新而过时 —— 用户应自行核对来源后再信任并排名。",
+    "6. 只收单次推理分数（0-shot/few-shot CoT、greedy 或 avg@1）；严禁 maj@k/self-consistency 投票分。",
+    "   avg@1（多次跑取平均、非投票）可收但在 setting 标注。凑不齐 8 条就如实留几条，不硬凑。",
+    "",
+    "已知缺口（留空待补，不硬凑）：",
+    "- IFEval：主流来源口径不统一——Open LLM Leaderboard 用 prompt-level strict acc，",
+    "  而 Meta Llama card 报的是 4 项子指标平均，两者不可混排。暂无 8 条口径一致的可靠公开分，故留空。",
+    "  如需补：统一用 prompt_level_strict_acc，参考 llm-stats.com/benchmarks/ifeval 或 Open LLM Leaderboard。",
+    "- HumanEval：仅 6 条，且跨厂商报告 temperature/prompt 口径略有差异（已逐条标 setting）；",
+    "  要更干净的同口径列建议引 EvalPlus leaderboard（evalplus.github.io/leaderboard）。",
+    "- GPQA-Diamond：用 DeepSeek-V3 README 同一脚本的 7 条 Pass@1（最干净同口径）；Meta card 另有几条",
+    "  但未点名 Diamond 子集、口径为 em，未并入以免污染。",
+    "- MATH-500 / AIME_2024：均来自 DeepSeek-V3 同一张表（竞品由 DeepSeek 复现），属同源，",
+    "  各 7 条已是该表非推理模型全部，未硬凑第 8 条。AIME 为 16 次平均 pass@1、仅 30 题，方差大。"
   ],
   "benchmarks": {
     "gsm8k": [
       {
-        "model": "GPT-4o",
-        "score": 0.943,
+        "model": "Mistral 7B",
+        "score": 0.532,
         "setting": "8-shot CoT",
-        "source": "OpenAI GPT-4o 官方报告",
-        "source_url": "https://openai.com/index/hello-gpt-4o/",
-        "as_of": "2024-05",
-        "note": "官方公布 94.3%，换算 0.943；与本框架 0-shot/few-shot 设置可能不同，仅供参考"
+        "source": "Llama 3.1 论文 (Herd of Models)",
+        "source_url": "https://arxiv.org/abs/2407.21783",
+        "as_of": "2024-07"
+      },
+      {
+        "model": "Gemma 2 9B",
+        "score": 0.767,
+        "setting": "8-shot CoT",
+        "source": "Llama 3.1 论文 (Herd of Models)",
+        "source_url": "https://arxiv.org/abs/2407.21783",
+        "as_of": "2024-07"
+      },
+      {
+        "model": "GPT-3.5 Turbo",
+        "score": 0.816,
+        "setting": "8-shot CoT",
+        "source": "Llama 3.1 论文 (Herd of Models)",
+        "source_url": "https://arxiv.org/abs/2407.21783",
+        "as_of": "2024-07"
+      },
+      {
+        "model": "Llama 3 8B",
+        "score": 0.845,
+        "setting": "8-shot CoT",
+        "source": "Llama 3.1 论文 (Herd of Models)",
+        "source_url": "https://arxiv.org/abs/2407.21783",
+        "as_of": "2024-07"
+      },
+      {
+        "model": "Mixtral 8x22B",
+        "score": 0.882,
+        "setting": "8-shot CoT",
+        "source": "Llama 3.1 论文 (Herd of Models)",
+        "source_url": "https://arxiv.org/abs/2407.21783",
+        "as_of": "2024-07"
+      },
+      {
+        "model": "GPT-4 (0125)",
+        "score": 0.942,
+        "setting": "8-shot CoT",
+        "source": "Llama 3.1 论文 (Herd of Models)",
+        "source_url": "https://arxiv.org/abs/2407.21783",
+        "as_of": "2024-07"
+      },
+      {
+        "model": "Llama 3 70B",
+        "score": 0.951,
+        "setting": "8-shot CoT",
+        "source": "Llama 3.1 论文 (Herd of Models)",
+        "source_url": "https://arxiv.org/abs/2407.21783",
+        "as_of": "2024-07"
+      },
+      {
+        "model": "GPT-4o",
+        "score": 0.961,
+        "setting": "8-shot CoT",
+        "source": "Llama 3.1 论文 (Herd of Models)",
+        "source_url": "https://arxiv.org/abs/2407.21783",
+        "as_of": "2024-07"
       },
       {
         "model": "Claude 3.5 Sonnet",
         "score": 0.964,
-        "setting": "0-shot CoT",
-        "source": "Anthropic Claude 3.5 Sonnet 发布说明",
-        "source_url": "https://www.anthropic.com/news/claude-3-5-sonnet",
-        "as_of": "2024-06",
-        "note": "官方 96.4%"
+        "setting": "8-shot CoT",
+        "source": "Llama 3.1 论文 (Herd of Models)",
+        "source_url": "https://arxiv.org/abs/2407.21783",
+        "as_of": "2024-07",
+        "note": "另据 Anthropic model card 0-shot CoT 亦为 96.4%"
+      },
+      {
+        "model": "Llama 3.1 405B",
+        "score": 0.968,
+        "setting": "8-shot CoT",
+        "source": "Llama 3.1 论文 (Herd of Models)",
+        "source_url": "https://arxiv.org/abs/2407.21783",
+        "as_of": "2024-07"
+      }
+    ],
+    "MATH-500": [
+      {
+        "model": "DeepSeek-V2-0506",
+        "score": 0.563,
+        "setting": "0-shot CoT, greedy, EM",
+        "source": "DeepSeek-V3 技术报告 Table 6",
+        "source_url": "https://arxiv.org/abs/2412.19437",
+        "as_of": "2024-12"
+      },
+      {
+        "model": "Llama-3.1-405B-Instruct",
+        "score": 0.738,
+        "setting": "0-shot CoT, greedy, EM",
+        "source": "DeepSeek-V3 技术报告 Table 6",
+        "source_url": "https://arxiv.org/abs/2412.19437",
+        "as_of": "2024-12"
+      },
+      {
+        "model": "GPT-4o-0513",
+        "score": 0.746,
+        "setting": "0-shot CoT, greedy, EM",
+        "source": "DeepSeek-V3 技术报告 Table 6",
+        "source_url": "https://arxiv.org/abs/2412.19437",
+        "as_of": "2024-12"
+      },
+      {
+        "model": "DeepSeek-V2.5-0905",
+        "score": 0.747,
+        "setting": "0-shot CoT, greedy, EM",
+        "source": "DeepSeek-V3 技术报告 Table 6",
+        "source_url": "https://arxiv.org/abs/2412.19437",
+        "as_of": "2024-12"
+      },
+      {
+        "model": "Claude-3.5-Sonnet-1022",
+        "score": 0.783,
+        "setting": "0-shot CoT, greedy, EM",
+        "source": "DeepSeek-V3 技术报告 Table 6",
+        "source_url": "https://arxiv.org/abs/2412.19437",
+        "as_of": "2024-12"
+      },
+      {
+        "model": "Qwen2.5-72B-Instruct",
+        "score": 0.8,
+        "setting": "0-shot CoT, greedy, EM",
+        "source": "DeepSeek-V3 技术报告 Table 6",
+        "source_url": "https://arxiv.org/abs/2412.19437",
+        "as_of": "2024-12"
+      },
+      {
+        "model": "DeepSeek-V3",
+        "score": 0.902,
+        "setting": "0-shot CoT, greedy, EM",
+        "source": "DeepSeek-V3 技术报告 Table 6",
+        "source_url": "https://arxiv.org/abs/2412.19437",
+        "as_of": "2024-12"
+      }
+    ],
+    "AIME_2024": [
+      {
+        "model": "DeepSeek-V2-0506",
+        "score": 0.046,
+        "setting": "Pass@1 (avg of 16 runs @T=0.7); 30题方差大",
+        "source": "DeepSeek-V3 技术报告 Table 6",
+        "source_url": "https://arxiv.org/abs/2412.19437",
+        "as_of": "2024-12"
+      },
+      {
+        "model": "GPT-4o-0513",
+        "score": 0.093,
+        "setting": "Pass@1 (avg of 16 runs @T=0.7); 30题方差大",
+        "source": "DeepSeek-V3 技术报告 Table 6",
+        "source_url": "https://arxiv.org/abs/2412.19437",
+        "as_of": "2024-12"
+      },
+      {
+        "model": "Claude-3.5-Sonnet-1022",
+        "score": 0.16,
+        "setting": "Pass@1 (avg of 16 runs @T=0.7); 30题方差大",
+        "source": "DeepSeek-V3 技术报告 Table 6",
+        "source_url": "https://arxiv.org/abs/2412.19437",
+        "as_of": "2024-12"
+      },
+      {
+        "model": "DeepSeek-V2.5-0905",
+        "score": 0.167,
+        "setting": "Pass@1 (avg of 16 runs @T=0.7); 30题方差大",
+        "source": "DeepSeek-V3 技术报告 Table 6",
+        "source_url": "https://arxiv.org/abs/2412.19437",
+        "as_of": "2024-12"
+      },
+      {
+        "model": "Qwen2.5-72B-Instruct",
+        "score": 0.233,
+        "setting": "Pass@1 (avg of 16 runs @T=0.7); 30题方差大",
+        "source": "DeepSeek-V3 技术报告 Table 6",
+        "source_url": "https://arxiv.org/abs/2412.19437",
+        "as_of": "2024-12"
+      },
+      {
+        "model": "Llama-3.1-405B-Instruct",
+        "score": 0.233,
+        "setting": "Pass@1 (avg of 16 runs @T=0.7); 30题方差大",
+        "source": "DeepSeek-V3 技术报告 Table 6",
+        "source_url": "https://arxiv.org/abs/2412.19437",
+        "as_of": "2024-12"
+      },
+      {
+        "model": "DeepSeek-V3",
+        "score": 0.392,
+        "setting": "Pass@1 (avg of 16 runs @T=0.7); 30题方差大",
+        "source": "DeepSeek-V3 技术报告 Table 6",
+        "source_url": "https://arxiv.org/abs/2412.19437",
+        "as_of": "2024-12"
+      }
+    ],
+    "MMLU-Pro": [
+      {
+        "model": "Claude-3.5-Sonnet",
+        "score": 0.7612,
+        "setting": "5-shot CoT, 单次",
+        "source": "MMLU-Pro 官方 repo mini-leaderboard",
+        "source_url": "https://github.com/TIGER-AI-Lab/MMLU-Pro",
+        "as_of": "2024-10"
+      },
+      {
+        "model": "GPT-4o",
+        "score": 0.7255,
+        "setting": "5-shot CoT, 单次",
+        "source": "MMLU-Pro 官方 repo mini-leaderboard",
+        "source_url": "https://github.com/TIGER-AI-Lab/MMLU-Pro",
+        "as_of": "2024-10"
+      },
+      {
+        "model": "Gemini-1.5-Pro",
+        "score": 0.6903,
+        "setting": "5-shot CoT, 单次",
+        "source": "MMLU-Pro 官方 repo mini-leaderboard",
+        "source_url": "https://github.com/TIGER-AI-Lab/MMLU-Pro",
+        "as_of": "2024-10"
+      },
+      {
+        "model": "Claude-3-Opus",
+        "score": 0.6845,
+        "setting": "5-shot CoT, 单次",
+        "source": "MMLU-Pro 官方 repo mini-leaderboard",
+        "source_url": "https://github.com/TIGER-AI-Lab/MMLU-Pro",
+        "as_of": "2024-10"
+      },
+      {
+        "model": "GPT-4-Turbo",
+        "score": 0.6371,
+        "setting": "5-shot CoT, 单次",
+        "source": "MMLU-Pro 官方 repo mini-leaderboard",
+        "source_url": "https://github.com/TIGER-AI-Lab/MMLU-Pro",
+        "as_of": "2024-10"
+      },
+      {
+        "model": "Gemini-1.5-Flash",
+        "score": 0.5912,
+        "setting": "5-shot CoT, 单次",
+        "source": "MMLU-Pro 官方 repo mini-leaderboard",
+        "source_url": "https://github.com/TIGER-AI-Lab/MMLU-Pro",
+        "as_of": "2024-10"
       },
       {
         "model": "Llama-3-70B-Instruct",
-        "score": 0.930,
-        "setting": "8-shot CoT",
-        "source": "Meta Llama 3 model card",
-        "source_url": "https://github.com/meta-llama/llama3/blob/main/MODEL_CARD.md",
-        "as_of": "2024-04",
-        "note": "官方 93.0%"
+        "score": 0.562,
+        "setting": "5-shot CoT, 单次",
+        "source": "MMLU-Pro 官方 repo mini-leaderboard",
+        "source_url": "https://github.com/TIGER-AI-Lab/MMLU-Pro",
+        "as_of": "2024-10"
+      },
+      {
+        "model": "DeepSeek-V2-Chat",
+        "score": 0.5481,
+        "setting": "5-shot CoT, 单次",
+        "source": "MMLU-Pro 官方 repo mini-leaderboard",
+        "source_url": "https://github.com/TIGER-AI-Lab/MMLU-Pro",
+        "as_of": "2024-10"
+      },
+      {
+        "model": "Qwen1.5-72B-Chat",
+        "score": 0.5264,
+        "setting": "5-shot CoT, 单次",
+        "source": "MMLU-Pro 官方 repo mini-leaderboard",
+        "source_url": "https://github.com/TIGER-AI-Lab/MMLU-Pro",
+        "as_of": "2024-10"
+      }
+    ],
+    "GPQA-Diamond": [
+      {
+        "model": "Claude-3.5-Sonnet-1022",
+        "score": 0.65,
+        "setting": "Pass@1, 单次",
+        "source": "DeepSeek-V3 官方 README 对比表",
+        "source_url": "https://github.com/deepseek-ai/DeepSeek-V3",
+        "as_of": "2024-12"
+      },
+      {
+        "model": "DeepSeek-V3",
+        "score": 0.591,
+        "setting": "Pass@1, 单次",
+        "source": "DeepSeek-V3 官方 README 对比表",
+        "source_url": "https://github.com/deepseek-ai/DeepSeek-V3",
+        "as_of": "2024-12"
+      },
+      {
+        "model": "Llama3.1-405B-Instruct",
+        "score": 0.511,
+        "setting": "Pass@1, 单次",
+        "source": "DeepSeek-V3 官方 README 对比表",
+        "source_url": "https://github.com/deepseek-ai/DeepSeek-V3",
+        "as_of": "2024-12"
+      },
+      {
+        "model": "GPT-4o-0513",
+        "score": 0.499,
+        "setting": "Pass@1, 单次",
+        "source": "DeepSeek-V3 官方 README 对比表",
+        "source_url": "https://github.com/deepseek-ai/DeepSeek-V3",
+        "as_of": "2024-12"
+      },
+      {
+        "model": "Qwen2.5-72B-Instruct",
+        "score": 0.49,
+        "setting": "Pass@1, 单次",
+        "source": "DeepSeek-V3 官方 README 对比表",
+        "source_url": "https://github.com/deepseek-ai/DeepSeek-V3",
+        "as_of": "2024-12"
+      },
+      {
+        "model": "DeepSeek-V2.5-0905",
+        "score": 0.413,
+        "setting": "Pass@1, 单次",
+        "source": "DeepSeek-V3 官方 README 对比表",
+        "source_url": "https://github.com/deepseek-ai/DeepSeek-V3",
+        "as_of": "2024-12"
+      },
+      {
+        "model": "DeepSeek-V2-0506",
+        "score": 0.353,
+        "setting": "Pass@1, 单次",
+        "source": "DeepSeek-V3 官方 README 对比表",
+        "source_url": "https://github.com/deepseek-ai/DeepSeek-V3",
+        "as_of": "2024-12"
+      }
+    ],
+    "supergpqa": [
+      {
+        "model": "DeepSeek-R1",
+        "score": 0.6182,
+        "setting": "zero-shot, 单次 (Reasoning)",
+        "source": "SuperGPQA 官方 paper repo (Main Result)",
+        "source_url": "https://github.com/SuperGPQA/SuperGPQA",
+        "as_of": "2025-02"
+      },
+      {
+        "model": "o1-2024-12-17",
+        "score": 0.6024,
+        "setting": "zero-shot, 单次 (Reasoning)",
+        "source": "SuperGPQA 官方 paper repo (Main Result)",
+        "source_url": "https://github.com/SuperGPQA/SuperGPQA",
+        "as_of": "2025-02"
+      },
+      {
+        "model": "o3-mini-high",
+        "score": 0.5522,
+        "setting": "zero-shot, 单次 (Reasoning)",
+        "source": "SuperGPQA 官方 paper repo (Main Result)",
+        "source_url": "https://github.com/SuperGPQA/SuperGPQA",
+        "as_of": "2025-02"
+      },
+      {
+        "model": "Doubao-1.5-pro-32k",
+        "score": 0.5509,
+        "setting": "zero-shot, 单次 (Chat)",
+        "source": "SuperGPQA 官方 paper repo (Main Result)",
+        "source_url": "https://github.com/SuperGPQA/SuperGPQA",
+        "as_of": "2025-02"
+      },
+      {
+        "model": "Qwen-max-2025-01-25",
+        "score": 0.5008,
+        "setting": "zero-shot, 单次 (Chat)",
+        "source": "SuperGPQA 官方 paper repo (Main Result)",
+        "source_url": "https://github.com/SuperGPQA/SuperGPQA",
+        "as_of": "2025-02"
+      },
+      {
+        "model": "Claude-3.5-Sonnet-1022",
+        "score": 0.4816,
+        "setting": "zero-shot, 单次 (Chat)",
+        "source": "SuperGPQA 官方 paper repo (Main Result)",
+        "source_url": "https://github.com/SuperGPQA/SuperGPQA",
+        "as_of": "2025-02"
+      },
+      {
+        "model": "Gemini-2.0-flash",
+        "score": 0.4773,
+        "setting": "zero-shot, 单次 (Chat)",
+        "source": "SuperGPQA 官方 paper repo (Main Result)",
+        "source_url": "https://github.com/SuperGPQA/SuperGPQA",
+        "as_of": "2025-02"
+      },
+      {
+        "model": "Qwen2.5-72B",
+        "score": 0.3433,
+        "setting": "zero-shot, 单次 (Base)",
+        "source": "SuperGPQA 官方 paper repo (Main Result)",
+        "source_url": "https://github.com/SuperGPQA/SuperGPQA",
+        "as_of": "2025-02"
+      },
+      {
+        "model": "DeepSeek-V3-Base",
+        "score": 0.3214,
+        "setting": "zero-shot, 单次 (Base)",
+        "source": "SuperGPQA 官方 paper repo (Main Result)",
+        "source_url": "https://github.com/SuperGPQA/SuperGPQA",
+        "as_of": "2025-02"
+      },
+      {
+        "model": "Yi-1.5-34B",
+        "score": 0.2762,
+        "setting": "zero-shot, 单次 (Base)",
+        "source": "SuperGPQA 官方 paper repo (Main Result)",
+        "source_url": "https://github.com/SuperGPQA/SuperGPQA",
+        "as_of": "2025-02"
+      }
+    ],
+    "HumanEval": [
+      {
+        "model": "Qwen2.5-Coder-32B-Instruct",
+        "score": 0.927,
+        "setting": "pass@1, greedy",
+        "source": "Qwen2.5-Coder 技术报告",
+        "source_url": "https://arxiv.org/abs/2409.12186",
+        "as_of": "2024-11"
+      },
+      {
+        "model": "Claude 3.5 Sonnet",
+        "score": 0.92,
+        "setting": "pass@1, 0-shot",
+        "source": "Anthropic 发布说明",
+        "source_url": "https://www.anthropic.com/news/claude-3-5-sonnet",
+        "as_of": "2024-06"
+      },
+      {
+        "model": "GPT-4o",
+        "score": 0.902,
+        "setting": "pass@1",
+        "source": "Qwen2.5-Coder 报告对比表",
+        "source_url": "https://arxiv.org/abs/2409.12186",
+        "as_of": "2024-09",
+        "note": "DeepSeek-Coder-V2 同列亦 0.902"
+      },
+      {
+        "model": "Qwen2.5-Coder-7B-Instruct",
+        "score": 0.884,
+        "setting": "pass@1",
+        "source": "Qwen2.5-Coder 技术报告",
+        "source_url": "https://arxiv.org/abs/2409.12186",
+        "as_of": "2024-09"
+      },
+      {
+        "model": "Codestral-22B",
+        "score": 0.811,
+        "setting": "pass@1",
+        "source": "Mistral AI Codestral 公告",
+        "source_url": "https://mistral.ai/news/codestral/",
+        "as_of": "2024-05"
+      },
+      {
+        "model": "GPT-4",
+        "score": 0.67,
+        "setting": "pass@1, 0-shot",
+        "source": "OpenAI GPT-4 技术报告",
+        "source_url": "https://openai.com/index/gpt-4-research/",
+        "as_of": "2023-03"
       }
     ]
   }
