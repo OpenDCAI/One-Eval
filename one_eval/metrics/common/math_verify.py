@@ -1,6 +1,6 @@
 from typing import List, Any, Dict, Optional
 from one_eval.core.metric_registry import register_metric, MetricCategory, MetricDimension
-from one_eval.utils.extractor import AnswerExtractor
+from one_eval.utils.extractor import AnswerExtractor, numeric_answer_match
 
 try:
     from math_verify import parse, verify
@@ -57,13 +57,21 @@ def compute_math_verify(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str
         for gt in targets:
             if gt is None:
                 continue
-                
-            # A. 文本匹配检查 (检查原始预测和提取后预测)
+
+            # A. 数值匹配（gold 严格取单值，pred 取候选集，命中任一即对）。
+            #    专治 CoT 拖带时间/单位导致「取最后一个数」假阴性的老问题。
+            num_ok = numeric_answer_match(p_raw, gt)
+            if num_ok is True:
+                is_match = True
+                match_type = "numeric_match"
+                break
+
+            # B. 文本匹配检查 (检查原始预测和提取后预测)
             text_ok = extractor.text_contains_match(p_raw, gt) or extractor.text_contains_match(p_extracted, gt)
-            
-            # B. 数学等价性检查
+
+            # C. 数学等价性检查
             math_res = _try_math_verify_compare(p_extracted, gt)
-            
+
             if text_ok:
                 is_match = True
                 match_type = "text_match"

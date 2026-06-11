@@ -80,6 +80,75 @@ def extract_first_number(text: Any) -> Optional[float]:
     return safe_float(m.group(0))
 
 
+def extract_gold_number(text: Any) -> Optional[float]:
+    """从「标准答案」里抽取唯一数值。
+
+    Gold 端用严格策略：金标通常是干净的单值（"#### 8" / "\\boxed{44}" / "44"），
+    我们只取它表达的那一个数，绝不被多余数字干扰。优先级：#### > \\boxed > 去壳后最后一个数。
+    """
+    if text is None:
+        return None
+    s = str(text)
+    if "####" in s:
+        return extract_first_number(s.split("####")[-1])
+    boxed = re.findall(r"\\boxed\{([^}]+)\}", s)
+    if boxed:
+        return extract_first_number(boxed[-1])
+    s = re.sub(r"\\text\{([^}]*)\}", r"\1", s)
+    s = s.replace("\\[", "").replace("\\]", "").replace("$", "").replace(",", "")
+    nums = re.findall(r"[-+]?\d+(?:\.\d+)?", s)
+    return safe_float(nums[-1]) if nums else None
+
+
+def pred_candidate_numbers(text: Any) -> List[float]:
+    """从「模型预测」里抽取候选数值（宽松、多候选）。
+
+    Pred 端 CoT 文本里会拖带时间/单位等噪声数字，取「最后一个数」会被污染
+    （如 "1:00 PM to 5:00 PM ... 8 candles" 取到 0）。策略：
+      #### / \\boxed 命中即唯一返回；否则找 "answer is/=" 锚点；
+      再否则取最后一个「含数字的句子」里的所有数，整句一起作为候选。
+    """
+    if text is None:
+        return []
+    s = str(text)
+    if "####" in s:
+        v = extract_first_number(s.split("####")[-1])
+        return [v] if v is not None else []
+    boxed = re.findall(r"\\boxed\{([^}]+)\}", s)
+    if boxed:
+        v = extract_first_number(boxed[-1])
+        return [v] if v is not None else []
+    s2 = re.sub(r"\\text\{([^}]*)\}", r"\1", s).replace("\\[", "").replace("\\]", "").replace("$", "")
+    # 末位「final answer / answer」锚点（取最后一次出现），容忍 : / 换行 / markdown **。
+    # 不用裸 = 作锚点：CoT 中间步骤全是等式，裸 = 会抓到第一步算式而非最终答案。
+    anchors = re.findall(
+        r"(?:final answer|answer)\s*(?:is)?\s*:?\s*[\n\r]*\**\s*([-+]?[\d,]+(?:\.\d+)?)",
+        s2, re.I,
+    )
+    if anchors:
+        v = safe_float(anchors[-1].replace(",", ""))
+        if v is not None:
+            return [v]
+    sents = re.split(r"(?<=[.!?])\s+", s2.strip())
+    for sent in reversed(sents):
+        nums = re.findall(r"[-+]?\d[\d,]*(?:\.\d+)?", sent)
+        if nums:
+            return [v for v in (safe_float(n.replace(",", "")) for n in nums) if v is not None]
+    return []
+
+
+def numeric_answer_match(pred: Any, gold: Any, tol: float = 1e-6) -> Optional[bool]:
+    """数值答案匹配：gold 严格取单值，pred 取候选集，命中任一即算对。
+
+    返回 None 表示金标里抽不出数值（非数值题，交回文本/math_verify 判定）。
+    """
+    g = extract_gold_number(gold)
+    if g is None:
+        return None
+    cands = pred_candidate_numbers(pred)
+    return any(c is not None and abs(c - g) <= tol for c in cands)
+
+
 def normalize_text(x: Any) -> str:
     """
     Standard text normalization for metrics:
