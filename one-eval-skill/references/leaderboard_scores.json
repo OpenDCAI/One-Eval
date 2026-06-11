@@ -1,0 +1,46 @@
+{
+  "_README": [
+    "公开模型参考分数表（leaderboard 用）。手工维护，render_leaderboard.py 读取本文件，",
+    "把用户自评模型的分数穿插进同一 bench 的公开分数里排名，输出到报告。",
+    "",
+    "硬规矩（可信度优先，宁缺毋滥）：",
+    "1. 每条分数必须带 source（来源名）+ source_url + as_of（日期）+ setting（评测设置）。",
+    "   没有可靠出处的分数不要往里加 —— 报告会原样展示来源，编的数字会砸招牌。",
+    "2. setting 要写清 shot 数 / 是否 CoT / 子集，因为同一 bench 不同设置分数不可比。",
+    "   只有 setting 与用户评测大致可比时，才适合并排排名；否则在报告里标注「设置不同，仅供参考」。",
+    "3. 分数用 0-1 小数（与本框架主分一致）。若来源是百分数，换算后填，并在 note 注明。",
+    "4. bench key 用本框架的 bench_name（与 evalspec / eval_results.json 对齐），大小写敏感。",
+    "5. 这些是种子示例，数字可能随论文/榜单更新而过时 —— 用户应自行核对来源后再信任并排名。"
+  ],
+  "benchmarks": {
+    "gsm8k": [
+      {
+        "model": "GPT-4o",
+        "score": 0.943,
+        "setting": "8-shot CoT",
+        "source": "OpenAI GPT-4o 官方报告",
+        "source_url": "https://openai.com/index/hello-gpt-4o/",
+        "as_of": "2024-05",
+        "note": "官方公布 94.3%，换算 0.943；与本框架 0-shot/few-shot 设置可能不同，仅供参考"
+      },
+      {
+        "model": "Claude 3.5 Sonnet",
+        "score": 0.964,
+        "setting": "0-shot CoT",
+        "source": "Anthropic Claude 3.5 Sonnet 发布说明",
+        "source_url": "https://www.anthropic.com/news/claude-3-5-sonnet",
+        "as_of": "2024-06",
+        "note": "官方 96.4%"
+      },
+      {
+        "model": "Llama-3-70B-Instruct",
+        "score": 0.930,
+        "setting": "8-shot CoT",
+        "source": "Meta Llama 3 model card",
+        "source_url": "https://github.com/meta-llama/llama3/blob/main/MODEL_CARD.md",
+        "as_of": "2024-04",
+        "note": "官方 93.0%"
+      }
+    ]
+  }
+}
