@@ -55,6 +55,12 @@ python scripts/check_model.py --api --model <名> --api-url <url> --api-key <key
 ```
 连通失败**不要往下走**，先按 stderr 的可读原因排查（鉴权/端点/网络）。
 
+**连通后，主动与用户确认生成参数**（别用默认值闷头跑）：温度 `temperature`、`top_p`、
+`max_tokens`、`seed`。给出推荐并说明影响——评测默认 `temperature=0`+固定 `seed` 求可复现；
+`max_tokens` 对数学/CoT 题不要太小（截断会导致抽不出答案、假阴性，宁可放大到 2048+）。
+若用户想测模型「发挥上限」或多样性，再调高 temperature 并说明分数会抖动。最终确认值写进
+`evalspec.yaml`，并在报告的「评测设置」里如实记录（见 step 8 / report_template）。
+
 ### 2. 选 benchmark
 - 先看 `references/bench_gallery.md`：**READY 区**（已测通、可直接复用）优先；
   否则从**候选区**（96 个未验证 bench）选，接入前需走 smoke 验证。
@@ -65,9 +71,24 @@ python scripts/check_model.py --api --model <名> --api-url <url> --api-key <key
   仓库地址 + 安装/运行/取分说明。`run_eval.py` 会对这类 bench 优雅短路（返回
   `external_repo_pending` + `repo_eval`），由你据此在外部执行后回填分数（本版未内置执行器）。
 
-### 3. 选 metric（可选，多维度打分）
-- dataflow 主分数是每个 eval_type 的默认指标；额外维度从注册表挑。
-- `python scripts/run_metrics.py --list` 查看所有可用 metric。
+### 3. 选 metric（默认已给主分，额外维度可选）
+**先告诉用户每个 bench 默认用什么主分、它衡量什么能力**（dataflow 内核按 eval_type 自动选）：
+
+| eval_type | 默认主指标 | 衡量的能力 |
+|---|---|---|
+| key2_qa | math_verify（数值/数学等价+文本匹配，已修假阴性） | 答案正确性（数学/简答 QA） |
+| key2_q_ma | any_math_verify | 多参考答案命中任一即对 |
+| key3_q_choices_a | ll_choice_acc（API 模型自动退回 parse_choice_acc） | 单选题准确率 |
+| key3_q_choices_as | micro_f1 | 多选题集合 F1 |
+| key3_q_a_rejected | pairwise_ll_winrate | 偏好对比胜率 |
+| key1_text_score | ppl（困惑度） | 语言建模流畅度 |
+
+- **主分够用就够用**；但要**主动问用户是否补充维度**，并解释每个维度查什么：
+  正确性（exact_match/numerical_match）、相似度（bleu/rouge_l/chrf/token_f1，翻译摘要长答案）、
+  格式遵循（extraction_rate/format_compliance_score，低分会拖累正确性）、
+  生成健康度（repetition_rate 抓复读）、弃答率（missing_answer_rate 做正确性归因）、
+  代码合法性（code_validity，注意只验能否解析、非逻辑正确）。
+- `python scripts/run_metrics.py --list` 查看全部 14 个 metric（按维度分组，含适用场景）。
 - 用户想要注册表里没有的维度 → 参考 `references/metric_registry.md` + `assets/custom_metric.template.py`
   跟用户聊清楚需求后写新 metric，落到 `custom_metrics/`。
 

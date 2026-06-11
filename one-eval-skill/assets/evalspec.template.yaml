@@ -24,11 +24,12 @@ model:
   # gpu_memory_utilization: 0.9
   # max_model_len: 4096
 
-  # ---- 采样参数（两种模型通用）----
-  temperature: 0.0
-  top_p: 1.0
-  max_tokens: 2048
-  seed: 42
+  # ---- 采样参数（两种模型通用，会原样进推理请求；务必与用户确认）----
+  # 评测可复现性的关键。默认给「确定性评测」推荐值；如用户要测模型发挥上限/多样性，再调高。
+  temperature: 0.0    # 0=贪心解码、可复现（评测默认）；调高更随机，分数会抖动
+  top_p: 1.0          # nucleus 采样阈值；temperature=0 时基本无影响
+  max_tokens: 2048    # 生成上限。数学/CoT 题偏小会被截断导致抽不出答案 → 假阴性，宁可放大
+  seed: 42            # 固定种子，配合 temperature=0 让结果可复现（部分 API 不保证生效）
 
 # --- 待评测的 benchmark 列表 ------------------------------------------------
 # 每个 bench 必须属于 6 种 eval_type 之一，且按类型填全 key_mapping 必填字段。
