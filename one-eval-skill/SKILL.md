@@ -28,6 +28,11 @@ uv pip install -e .
 ```
 依赖含 `datasets` / `dataflow` 等较重的包；装不全会在首次 `run_eval.py` 时报 import 错。
 
+**装完先自检**（确认依赖齐全，避免跑到一半才发现缺包）：
+```bash
+python scripts/doctor.py     # 必需项齐全则退出码 0；缺啥会列出并给修复命令
+```
+
 **装好之后**：用户**直接用自然语言对话即可**，不需要手敲脚本——你（agent）会按下方流程
 替用户调脚本。例如用户说「用 gpt-4o-mini 评一下 mmlu-redux 和 polymath，API 地址 xxx、
 key xxx」，你就从测连通一路跑到出报告。脚本路径、evalspec 都由你生成与调用。

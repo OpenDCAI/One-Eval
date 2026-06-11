@@ -117,8 +117,16 @@ def load_metric_implementations():
     for _, mod_name, _ in pkgutil.walk_packages(lib_module.__path__, lib_package_name + "."):
         try:
             importlib.import_module(mod_name)
+        except ModuleNotFoundError as e:
+            # 可选依赖缺失（如 LLM-judge 型 metric 需要的 langchain_openai、
+            # text_gen 的 rouge_score）：该模块下的 metric 自动跳过，不影响确定性评测。
+            # 用 info 而非 error，避免在正常的确定性评测里刷红色报错吓到用户。
+            log.info(
+                f"跳过可选 Metric 模块 {mod_name}（缺少依赖 {e.name}）。"
+                f"如需该模块的指标，请安装对应依赖；确定性评测不受影响。"
+            )
         except Exception as e:
-            log.error(f"加载 Metric 模块 {mod_name} 失败: {e}")
+            log.warning(f"加载 Metric 模块 {mod_name} 失败: {e}")
 
 def get_metric_fn(name: str) -> Optional[Callable]:
     """获取 Metric 计算函数"""
