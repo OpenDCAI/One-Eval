@@ -185,7 +185,7 @@ def main(argv=None):
         return 1
     print("已生成图表：")
     for m in made:
-        print(f"  • {m}")
+        print(f"  • {Path(m).absolute()}")
     return 0
 
 

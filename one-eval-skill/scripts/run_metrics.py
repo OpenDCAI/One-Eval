@@ -182,7 +182,7 @@ def main(argv=None):
         Path(results_path).parent / "metric_results.json"
     out_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2),
                         encoding="utf-8")
-    print(f"\nmetric 结果已写入: {out_path}")
+    print(f"\nmetric 结果已写入: {out_path.absolute()}")
 
     # 全部 bench 都失败/跳过才算非 0
     any_ok = any(

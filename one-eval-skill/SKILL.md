@@ -103,6 +103,13 @@ python scripts/make_plots.py --results eval_outputs/eval_results.json \
 - 先给用户一个**初版结果摘要**（核心分数 + 一句话结论）。
 - 再写**完整报告**落盘（含图表引用、逐 bench 详情、跨 bench 对比、结论建议）。
 
+**输出落盘与路径规范（务必遵守）**：
+- 报告里引用的所有产物路径（`eval_results.json` / `metric_results.json` / 图表 PNG /
+  逐样本明细 `detail_path`）一律写**绝对路径**，让用户能直接点开。脚本现在打印的就是绝对路径，直接引用即可。
+- **有总有分**：报告先「总」——一张总览表（模型 × 各 bench 主分 + 关键维度），一句话结论；
+  再「分」——每个 bench 一节，给该 bench 的分数、有效样本数、典型对/错样例（指向 `detail_path`）、
+  以及该 bench 考察的能力维度。让用户既能一眼看懂全局，又能下钻到单题。
+
 ## 文件地图
 - `references/eval_types.md` — 6 种 eval_type 与 key_mapping 硬契约（**接入 bench 必读**）
 - `references/bench_gallery.md` — READY 区 + 候选区 + 外部仓库 bench 区

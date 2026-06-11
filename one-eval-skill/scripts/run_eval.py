@@ -245,7 +245,7 @@ def main(argv=None):
                    ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    print(f"\n结果已写入: {out_file}")
+    print(f"\n结果已写入: {out_file.absolute()}")
     return 0 if n_fail == 0 else 1
 
 
