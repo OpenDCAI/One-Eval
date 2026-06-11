@@ -115,31 +115,36 @@ python scripts/run_metrics.py --results eval_outputs/eval_results.json --metrics
 ```
 产出 `eval_outputs/metric_results.json`。
 
-### 8. 出图 + leaderboard + 写报告（图文并茂、有总有详）
+### 8. 生成 HTML 报告并自动打开（图文并茂、有总有详）
 ```bash
-python scripts/make_plots.py --results eval_outputs/eval_results.json \
-    --metrics eval_outputs/metric_results.json --out eval_outputs/plots
-
-# 把本模型分数穿插进公开模型分数里排名（公开分数表带来源，可手工维护补充）
-python scripts/render_leaderboard.py --results eval_outputs/eval_results.json \
-    --out eval_outputs/leaderboard.md
+# 主产物：单文件 HTML 报告（内联 CSS/JS、零 CDN、可离线、leaderboard 条形图 + metric 热力图）
+# 默认生成后自动在浏览器打开，用户直接点开即可，不需手动渲染
+python scripts/render_report.py --results eval_outputs/eval_results.json \
+    --metrics eval_outputs/metric_results.json --out eval_outputs/report.html
+# 不想自动打开时加 --no-open；公开分数表默认读 references/leaderboard_scores.json，可用 --scores 覆盖
 ```
-然后按 `references/report_template.md`：
-- 先给用户一个**初版结果摘要**（核心分数 + 一句话结论）。
-- 再写**完整报告**落盘（含图表、leaderboard 排名、逐 bench 详情、跨 bench 对比、结论建议）。
+**这一步必须由你（agent）在评测+metric 跑完后主动调用**，让用户做完评测直接看到弹出的报告，
+而不是把渲染留给用户手动操作。`render_report.py` 一次性产出：总览卡片（模型 × 各 bench 主分）、
+leaderboard（本模型 ★ 金色高亮穿插进公开分排名、条形图、hover 看来源/设置）、多维度 metric 热力图、
+逐 bench 详情、附录「评测设置」——单个 `report.html` 文件，零依赖可离线。
+
+报告先给用户一个**初版结果摘要**（核心分数 + 一句话结论），再说明完整报告已生成并自动打开（附绝对路径）。
+
+> 退路（无法用浏览器 / 用户要 markdown 时）：`make_plots.py` 出 PNG、`render_leaderboard.py` 出 markdown 表，
+> 再按 `references/report_template.md` 拼 markdown 报告。HTML 是默认主路径。
 
 **报告立场**：面向**被评测模型的性能**（考了多少、在公开模型里什么水位、强弱在哪），
 **不要**复盘/批判 One-Eval 评测流程本身；评测设置只在「附：评测设置」如实附上。
 
-**leaderboard**：`render_leaderboard.py` 读 `references/leaderboard_scores.json`（手工维护的公开分数表，
+**leaderboard**：读 `references/leaderboard_scores.json`（手工维护的公开分数表，
 每条带来源/设置/日期）把本模型 ★ 标出排名。公开分数没有可靠出处就不要加；各家 shot/CoT/子集不同，
 排名仅供粗略定位、非严格对标，报告里要保留来源标注。
 
 **输出落盘与路径规范（务必遵守）**：
-- 报告里引用的所有产物路径（`eval_results.json` / `metric_results.json` / 图表 PNG /
-  `leaderboard.md` / 逐样本明细 `detail_path`）一律写**绝对路径**，让用户能直接点开。脚本打印的就是绝对路径，直接引用即可。
-- **有总有分**：报告先「总」——总览表（模型 × 各 bench 主分）+ leaderboard 水位 + 一句话结论；
-  再「分」——每个 bench 一节，给分数、有效样本数、典型对/错样例（指向 `detail_path`）、考察的能力维度。
+- 报告里引用的所有产物路径（`report.html` / `eval_results.json` / `metric_results.json` /
+  逐样本明细 `detail_path`）一律写**绝对路径**，让用户能直接点开。脚本打印的就是绝对路径，直接引用即可。
+- **有总有分**：HTML 报告已内置「总」（总览卡片 + leaderboard 水位）与「分」（逐 bench 详情）；
+  你对话里的摘要同样先总后分——一句话水位结论，再点出强弱 bench。
 
 ## 文件地图
 - `references/eval_types.md` — 6 种 eval_type 与 key_mapping 硬契约（**接入 bench 必读**）
@@ -149,7 +154,7 @@ python scripts/render_leaderboard.py --results eval_outputs/eval_results.json \
 - `references/model_setup.md` — API / vLLM 模型接入与凭证、HF 下载配置
 - `references/report_template.md` — 报告结构模板（面向模型性能 + 评测设置）
 - `references/leaderboard_scores.json` — 公开模型分数表（手工维护、带来源），leaderboard 排名用
-- `scripts/` — check_model / prepare_bench / run_eval / run_metrics / make_plots / render_leaderboard
+- `scripts/` — check_model / prepare_bench / run_eval / run_metrics / render_report（HTML 主报告）/ make_plots / render_leaderboard（markdown 退路）
 - `assets/` — evalspec.template.yaml / custom_metric.template.py / external_bench.entry.template.json
 
 ## 安全 & 边界
