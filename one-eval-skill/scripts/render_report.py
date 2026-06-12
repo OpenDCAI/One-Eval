@@ -340,21 +340,51 @@ def build_details(overview: dict) -> str:
     return "".join(parts)
 
 
-def build_settings(overview: dict, args, paths: dict) -> str:
+def build_settings(results: dict, overview: dict, args, paths: dict) -> str:
+    mc = results.get("model_config") or {}
+    rt = results.get("runtime") or {}
+    run_id = results.get("run_id")
+    gen_at = results.get("generated_at")
+
+    # 被测模型 + 运行标识（让报告自包含、可追溯，杜绝「测了哪个模型」歧义）
     rows = [
-        ('采样规模', '各 bench 见上方「模式」（full=全量 / smoke=3 条抽样）'),
-        ('使用 metric', '主分（各 eval_type 默认）' + (' + 见「多维度 Metric」节' if paths.get('metrics') else '')),
-        ('eval_results', f'<span class="path">{_esc(paths["results"])}</span>'),
+        ('被测模型', _esc(str(mc.get("model_name_or_path") or overview.get("model") or "—"))),
+        ('模型类型', 'API' if mc.get("is_api") else ('本地 vLLM' if mc.get("is_api") is False else '—')),
     ]
+    if mc.get("api_provider"):
+        rows.append(('API provider', _esc(str(mc["api_provider"]))))
+    if run_id:
+        rows.append(('run_id', _esc(str(run_id))))
+    if gen_at:
+        rows.append(('评测时间', _esc(str(gen_at))))
+
+    # 生成参数真值（可复现的关键）—— 直接落 evalspec 里用过的值，缺失标 —
+    def g(k):
+        v = mc.get(k)
+        return _esc(str(v)) if v is not None else '—'
+    gen_line = (f'temperature={g("temperature")} · top_p={g("top_p")} · '
+                f'max_tokens={g("max_tokens")} · seed={g("seed")}')
+    rows.append(('生成参数', gen_line))
+
+    sm = rt.get("smoke")
+    ms = rt.get("max_samples")
+    sampling = ('smoke（每 bench 3 条抽样）' if sm
+                else (f'全量' if ms in (None, 0) else f'每 bench 截断 {ms} 条'))
+    rows.append(('采样规模', f'{sampling}；各 bench 实际模式见上方「模式」列'))
+    rows.append(('使用 metric', '主分（各 eval_type 默认）' + (' + 见「多维度 Metric」节' if paths.get('metrics') else '')))
+    rows.append(('eval_results', f'<span class="path">{_esc(paths["results"])}</span>'))
     if paths.get("metrics"):
         rows.append(('metric_results', f'<span class="path">{_esc(paths["metrics"])}</span>'))
     rows.append(('leaderboard 分数表', f'<span class="path">{_esc(paths["scores"])}</span>'))
     rows.append(('本报告', f'<span class="path">{_esc(paths["out"])}</span>'))
+
     body = "".join(f'<div class="kv"><b>{k}</b>{v}</div>' for k, v in rows)
-    return ('<h2>附：评测设置（供判断分数可比性）</h2>'
-            '<div class="callout" style="border-left-color:var(--muted)">'
-            '模型生成参数（temperature / top_p / max_tokens / seed）记录于本次 '
-            'evalspec.yaml；如需写入报告，请在生成时补充。</div>'
+    note = ('seed + temperature=0 用于可复现；部分 API 不保证 seed 严格生效。'
+            if str(mc.get("temperature")) == "0.0" or mc.get("temperature") == 0
+            else '当前 temperature 非 0，重复评测分数可能抖动。')
+    return ('<h2>附：评测设置（供判断分数可比性 / 复现）</h2>'
+            f'<div class="callout" style="border-left-color:var(--muted)">{note}'
+            ' 参数取自本次 evalspec.yaml，已随结果落盘。</div>'
             f'<div class="detail">{body}</div>')
 
 
@@ -391,7 +421,7 @@ def render_html(results: dict, metrics: dict, scores: dict, args, paths: dict) -
             + build_leaderboard(lb)
             + build_metric_section(mx)
             + build_details(overview)
-            + build_settings(overview, args, paths)
+            + build_settings(results, overview, args, paths)
             + '<footer>由 One-Eval skill 自动生成 · '
             f'<a href="{REPO_URL}" target="_blank" rel="noopener">github.com/OpenDCAI/One-Eval</a>'
             ' · 排名仅供粗略定位，公开分以各自来源为准</footer></div>')

@@ -24,10 +24,44 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 # --- 路径约定 ---
-DEFAULT_OUTPUT_DIR = SKILL_DIR / "eval_outputs"         # 评测产出（结果/图/报告）
+DEFAULT_OUTPUT_DIR = SKILL_DIR / "eval_outputs"         # 评测产出根（结果/图/报告）
 DEFAULT_CACHE_DIR = SKILL_DIR / "cache"                 # 数据集下载缓存
 LOCAL_STATE_PATH = SKILL_DIR / ".local_state.json"      # 已测通 bench 的 READY 记录
 CUSTOM_METRICS_DIR = SKILL_DIR / "custom_metrics"       # 用户自定义 metric 落地处
+RUNS_SUBDIR = "runs"                                    # 每次评测独立子目录的父目录名
+LATEST_RUN_FILE = "latest_run.txt"                      # 指向最新 run 目录的指针文件
+
+
+def new_run_id() -> str:
+    """生成本次评测的唯一 run_id（本地时间戳，秒级）。
+
+    用于把产物隔离到 eval_outputs/runs/<run_id>/，避免多次评测互相覆盖。
+    """
+    import datetime as _dt
+    return _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
+def make_run_dir(output_root: Path, run_id: str) -> Path:
+    """在 output_root/runs/<run_id>/ 下建本次评测目录，并把 latest 指针指向它。"""
+    run_dir = Path(output_root) / RUNS_SUBDIR / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        (Path(output_root) / LATEST_RUN_FILE).write_text(str(run_dir.resolve()),
+                                                         encoding="utf-8")
+    except Exception:
+        pass  # 指针只是便利，写失败不影响评测
+    return run_dir
+
+
+def sanitize_model_config(model_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """落盘用的模型配置快照：保留可复现关键参数，api_key 脱敏（绝不落真值）。"""
+    keep = ["model_name_or_path", "is_api", "api_provider", "api_url",
+            "temperature", "top_p", "top_k", "repetition_penalty",
+            "max_tokens", "seed", "tensor_parallel_size", "max_model_len"]
+    snap = {k: model_dict.get(k) for k in keep if model_dict.get(k) is not None}
+    if model_dict.get("api_key"):
+        snap["api_key"] = "***"  # 标记用过 key，但不落真值
+    return snap
 
 # bench 种类：dataflow（默认，走确定性内核）/ external_repo（自带仓库、需特殊环境，
 # 不走内核，按 meta.repo_eval 在外部执行后回填分数）。详见 references/external_bench.md。

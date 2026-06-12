@@ -56,6 +56,39 @@ def _has(mod_name: str) -> bool:
         return False
 
 
+def _check_env_isolation() -> None:
+    """检查当前 python 是否跑在隔离环境里（venv / conda），避免污染系统/用户环境。
+
+    只告警不阻断：One-Eval 依赖较重，强烈建议跑在独立 venv/conda，
+    别装进系统自带 python 或用户全局 site-packages。
+    """
+    import os
+
+    exe = sys.executable or ""
+    in_venv = (hasattr(sys, "real_prefix")
+               or (getattr(sys, "base_prefix", sys.prefix) != sys.prefix))
+    conda_env = os.environ.get("CONDA_DEFAULT_ENV")
+    venv_env = os.environ.get("VIRTUAL_ENV")
+
+    print("\n运行环境隔离：")
+    if conda_env and conda_env != "base":
+        print(f"  [✓] conda 环境: {conda_env}")
+    elif conda_env == "base":
+        print(f"  [!] 处于 conda 'base' 环境 —— 建议为 One-Eval 单独建环境，勿污染 base")
+    elif venv_env or in_venv:
+        print(f"  [✓] 虚拟环境(venv): {venv_env or sys.prefix}")
+    else:
+        # 没有任何隔离迹象，且像系统自带 python → 重点提示
+        looks_system = exe.startswith("/usr/bin") or exe.startswith("/usr/local/bin/python") \
+            or exe.startswith("/System/")
+        mark = "✗" if looks_system else "!"
+        print(f"  [{mark}] 未检测到隔离环境（venv/conda）")
+        print(f"      当前解释器: {exe}")
+        print(f"      强烈建议独立环境：conda create -n one-eval python=3.11 / "
+              f"python -m venv .venv，再 pip install -e .")
+        print(f"      之后所有脚本都用该环境的 python 绝对路径调用，勿动用系统/全局环境。")
+
+
 def main() -> int:
     print("One-Eval 环境自检\n" + "=" * 40)
 
@@ -78,6 +111,8 @@ def main() -> int:
     for mod, friendly, impact in OPTIONAL:
         ok = _has(mod)
         print(f"  [{'✓' if ok else '○'}] {friendly}" + ("" if ok else f"  — {impact}"))
+
+    _check_env_isolation()
 
     print("\n" + "=" * 40)
     if missing_required:
