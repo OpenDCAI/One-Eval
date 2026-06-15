@@ -74,21 +74,16 @@ uv pip install -e .
 
 ### 3.2 Use with Claude Code (Recommended)
 
-The fastest way to use One-Eval is through **Claude Code** (Codex and other agents work too). One-Eval ships as a self-contained **Skill** (under [`one-eval-skill/`](./one-eval-skill)): Claude Code reads the skill, sets up the environment, and drives the whole pipeline — connectivity check, benchmark selection, evaluation, scoring, and an auto-opened HTML report — while you just talk to it in natural language.
+The simplest way to use One-Eval: paste the prompt below to **Claude Code** (or Codex, or any coding agent) and start evaluating right away.
 
-No frontend/backend to launch. Just paste a prompt like this to Claude Code:
+```text
+I want to use one-eval-skill for my model evaluation work. Please read the repo at
+https://github.com/OpenDCAI/One-Eval, install the One-Eval skill and its dependencies
+into an isolated environment, run scripts/doctor.py to self-check, then ask me which
+model and benchmarks to evaluate and drive the whole evaluation for me.
+```
 
-> I want to use **one-eval-skill** for my upcoming model evaluation work. Please look at this repo `https://github.com/OpenDCAI/One-Eval`, install the One-Eval skill and its dependencies into an isolated environment, run its `doctor.py` self-check, and get everything ready so we can start evaluating. Once it's set up, ask me which model and benchmarks to evaluate.
-
-Claude Code will then:
-
-1. Clone/locate the repo and install One-Eval into a dedicated environment (`pip install -e .`).
-2. Run `python one-eval-skill/scripts/doctor.py` to verify dependencies and environment isolation.
-3. Ask you for the model under test (API or local vLLM) and the benchmarks, then walk through connectivity → smoke → full evaluation → scoring → report.
-
-> 💡 You stay in control: Claude Code confirms the model under test, generation parameters (temperature/seed/max_tokens), and benchmark choices with you before running. API keys are written only to a local `evalspec.yaml` (gitignored) and never echoed back.
-
-For details on what the skill can do and its file map, see [`one-eval-skill/SKILL.md`](./one-eval-skill/SKILL.md).
+That's it — Claude Code handles setup, benchmark selection, evaluation, scoring, and the final report. See [`one-eval-skill/SKILL.md`](./one-eval-skill/SKILL.md) for what the skill can do.
 
 ### 3.3 Start Services (Frontend + Backend)
 
@@ -111,18 +106,6 @@ npm run dev
 Visit <http://localhost:5173> to start interactive evaluation.
 
 > Note: After starting, please enter the settings interface first to configure parameters such as API, model, and HF Token (to support batch data download), and click save.
-
-### 3.4 Minimal Code Mode (Developer Mode)
-
-If you prefer to call directly in code, you can run the built-in complete workflow example:\
-[workflow_all.py](./one_eval/graph/workflow_all.py)
-
-```bash
-# Example: Initiate a reasoning capability evaluation directly via command line
-python -m one_eval.graph.workflow_all "I want to evaluate my model's performance on Reasoning tasks"
-```
-
-This Graph demonstrates the complete closed loop from Query parsing to report generation. You are welcome to develop and extend nodes based on this.
 
 ## 🗂️ 4. Bench Gallery
 

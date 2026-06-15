@@ -71,21 +71,15 @@ uv pip install -e .
 
 ### 3.2 在 Claude Code 中使用（推荐）
 
-使用 One-Eval 最快的方式是通过 **Claude Code**（Codex 等其他 agent 同样适用）。One-Eval 以一个自包含的 **Skill** 形式提供（位于 [`one-eval-skill/`](./one-eval-skill)）：Claude Code 读取该 skill 后，会自行准备环境并驱动整条流程——连通性检查、基准选择、评测、打分，到自动打开的 HTML 报告——而你只需用自然语言与它对话。
+使用 One-Eval 最简单的方式：把下面这段话粘贴给 **Claude Code**（或 Codex 等任意 coding agent），即可直接开始评测。
 
-无需启动前后端。把下面这样一段话丢给 Claude Code 即可：
+```text
+我想用 one-eval-skill 来做模型评测工作。请阅读这个仓库
+https://github.com/OpenDCAI/One-Eval ，把 One-Eval skill 及其依赖安装到一个独立环境里，
+运行 scripts/doctor.py 自检，然后问我要评测哪个模型、跑哪些 benchmark，并替我完成整个评测。
+```
 
-> 我想用 **one-eval-skill** 来做我后续的模型评测工作。请你查看这个仓库 `https://github.com/OpenDCAI/One-Eval`，把 One-Eval skill 及其依赖安装到一个独立环境里，运行它的 `doctor.py` 自检，并准备好让我们开始评测。准备就绪后，问我要评测哪个模型、跑哪些 benchmark。
-
-Claude Code 随后会：
-
-1. 克隆/定位仓库，并把 One-Eval 安装到独立环境（`pip install -e .`）。
-2. 运行 `python one-eval-skill/scripts/doctor.py` 校验依赖与环境隔离。
-3. 询问你被测模型（API 或本地 vLLM）与 benchmark，然后依次走完 连通性 → smoke → 全量评测 → 打分 → 报告。
-
-> 💡 全程由你掌控：Claude Code 在开跑前会与你确认被测模型、生成参数（temperature/seed/max_tokens）以及 benchmark 选择。API key 只写入本地 `evalspec.yaml`（已 gitignore），绝不回显。
-
-skill 的完整能力与文件地图见 [`one-eval-skill/SKILL.md`](./one-eval-skill/SKILL.md)。
+就这么简单——环境准备、基准选择、评测、打分到最终报告都由 Claude Code 完成。skill 的完整能力见 [`one-eval-skill/SKILL.md`](./one-eval-skill/SKILL.md)。
 
 ### 3.3 启动服务（前后端）
 
@@ -104,18 +98,6 @@ npm run dev
 ```
 访问 http://localhost:5173 即可开始交互式评测。
 > 启动后应先进入设置界面，配置API、模型以及HF Token等参数（以支持批量下载数据），并点击保存。
-
-### 3.4 极简代码模式 (开发者模式)
-
-如果你更喜欢在代码中直接调用，可以直接运行内置的完整工作流示例：  
-[workflow_all.py](./one_eval/graph/workflow_all.py)
-
-```bash
-# 示例：直接通过命令行发起一次数学能力评估
-python -m one_eval.graph.workflow_all "我想评估我的模型在Reasoning上的表现"
-```
-
-该 Graph 展示了从 Query 解析到报告生成的完整闭环，欢迎基于此进行二次开发与节点扩展。
 
 ## 🗂️ 4. 评测基准库 (Bench Gallery)
 
