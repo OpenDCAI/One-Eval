@@ -53,26 +53,12 @@ Traditional evaluation often faces pain points such as complex scripts, fragment
 
 ## ⚡ 3. Quick Start
 
-### 3.1 Installation (Recommended)
+There are two independent ways to use One-Eval — **pick whichever suits you**:
 
-We provide two environment management methods: Conda and uv. Choose one to get started quickly:
+- **3.1 Use with Claude Code** — zero setup, just paste one line. Best for getting started fast.
+- **3.2 Web UI (Frontend + Backend)** — a full interactive interface; requires environment setup.
 
-#### Option A: Conda
-
-```bash
-conda create -n one-eval python=3.11 -y
-conda activate one-eval
-pip install -e .
-```
-
-#### Option B: uv
-
-```bash
-uv venv
-uv pip install -e .
-```
-
-### 3.2 Use with Claude Code (Recommended)
+### 3.1 Use with Claude Code
 
 Zero setup. Just paste this to **Claude Code** (or Codex, or any coding agent):
 
@@ -80,17 +66,32 @@ Zero setup. Just paste this to **Claude Code** (or Codex, or any coding agent):
 Use the one-eval-skill in https://github.com/OpenDCAI/One-Eval to get us started on evaluating my model.
 ```
 
-### 3.3 Start Services (Frontend + Backend)
+### 3.2 Web UI (Frontend + Backend)
 
-One-Eval also offers a full web UI. It adopts a separation of frontend and backend architecture. Please start the backend API and frontend interface respectively.
+A full web UI with a separation of frontend and backend architecture.
 
-#### ① Start Backend (FastAPI)
+#### Step 1: Install the environment
+
+We provide two environment management methods: Conda and uv. Choose one:
+
+```bash
+# Option A: Conda
+conda create -n one-eval python=3.11 -y
+conda activate one-eval
+pip install -e .
+
+# Option B: uv
+uv venv
+uv pip install -e .
+```
+
+#### Step 2: Start Backend (FastAPI)
 
 ```bash
 uvicorn one_eval.server.app:app --host 0.0.0.0 --port 8000
 ```
 
-#### ② Start Frontend (Vite + React)
+#### Step 3: Start Frontend (Vite + React)
 
 ```bash
 cd one-eval-web
