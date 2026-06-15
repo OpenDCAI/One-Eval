@@ -28,6 +28,8 @@ English | [简体中文](./README_zh.md)
 
 ## 📰 1. News
 
+- **\[2026-06] 🧩 One-Eval is now available as a portable Skill!**\
+  Use One-Eval directly inside **Claude Code** (or Codex) — no frontend/backend to launch. Just point Claude Code at this repo and start evaluating. See [Quick Start → Use with Claude Code](#32-use-with-claude-code-recommended).
 - **\[2026-03] 🎉 One-Eval (v0.1.0) is officially open-sourced!**\
   We released the first version, supporting full-link automation from natural language to evaluation reports (NL2Eval). Say goodbye to tedious manual scripts and make LLM evaluation as simple, intuitive, and controllable as chatting. Welcome to Star 🌟 and follow!
 
@@ -70,9 +72,27 @@ uv venv
 uv pip install -e .
 ```
 
-### 3.2 Start Services
+### 3.2 Use with Claude Code (Recommended)
 
-One-Eval adopts a separation of frontend and backend architecture. Please start the backend API and frontend interface respectively.
+The fastest way to use One-Eval is through **Claude Code** (Codex and other agents work too). One-Eval ships as a self-contained **Skill** (under [`one-eval-skill/`](./one-eval-skill)): Claude Code reads the skill, sets up the environment, and drives the whole pipeline — connectivity check, benchmark selection, evaluation, scoring, and an auto-opened HTML report — while you just talk to it in natural language.
+
+No frontend/backend to launch. Just paste a prompt like this to Claude Code:
+
+> I want to use **one-eval-skill** for my upcoming model evaluation work. Please look at this repo `https://github.com/OpenDCAI/One-Eval`, install the One-Eval skill and its dependencies into an isolated environment, run its `doctor.py` self-check, and get everything ready so we can start evaluating. Once it's set up, ask me which model and benchmarks to evaluate.
+
+Claude Code will then:
+
+1. Clone/locate the repo and install One-Eval into a dedicated environment (`pip install -e .`).
+2. Run `python one-eval-skill/scripts/doctor.py` to verify dependencies and environment isolation.
+3. Ask you for the model under test (API or local vLLM) and the benchmarks, then walk through connectivity → smoke → full evaluation → scoring → report.
+
+> 💡 You stay in control: Claude Code confirms the model under test, generation parameters (temperature/seed/max_tokens), and benchmark choices with you before running. API keys are written only to a local `evalspec.yaml` (gitignored) and never echoed back.
+
+For details on what the skill can do and its file map, see [`one-eval-skill/SKILL.md`](./one-eval-skill/SKILL.md).
+
+### 3.3 Start Services (Frontend + Backend)
+
+One-Eval also offers a full web UI. It adopts a separation of frontend and backend architecture. Please start the backend API and frontend interface respectively.
 
 #### ① Start Backend (FastAPI)
 
@@ -92,7 +112,7 @@ Visit <http://localhost:5173> to start interactive evaluation.
 
 > Note: After starting, please enter the settings interface first to configure parameters such as API, model, and HF Token (to support batch data download), and click save.
 
-### 3.3 Minimal Code Mode (Developer Mode)
+### 3.4 Minimal Code Mode (Developer Mode)
 
 If you prefer to call directly in code, you can run the built-in complete workflow example:\
 [workflow_all.py](./one_eval/graph/workflow_all.py)
