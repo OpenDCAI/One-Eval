@@ -74,16 +74,13 @@ uv pip install -e .
 
 ### 3.2 Use with Claude Code (Recommended)
 
-The simplest way to use One-Eval: paste the prompt below to **Claude Code** (or Codex, or any coding agent) and start evaluating right away.
+Zero setup. Just paste this to **Claude Code** (or Codex, or any coding agent):
 
 ```text
-I want to use one-eval-skill for my model evaluation work. Please read the repo at
-https://github.com/OpenDCAI/One-Eval, install the One-Eval skill and its dependencies
-into an isolated environment, run scripts/doctor.py to self-check, then ask me which
-model and benchmarks to evaluate and drive the whole evaluation for me.
+Use the one-eval-skill in https://github.com/OpenDCAI/One-Eval to help me evaluate my model.
 ```
 
-That's it — Claude Code handles setup, benchmark selection, evaluation, scoring, and the final report. See [`one-eval-skill/SKILL.md`](./one-eval-skill/SKILL.md) for what the skill can do.
+The agent reads the skill and takes it from there — it'll set things up and ask you what to evaluate.
 
 ### 3.3 Start Services (Frontend + Backend)
 

@@ -71,15 +71,13 @@ uv pip install -e .
 
 ### 3.2 在 Claude Code 中使用（推荐）
 
-使用 One-Eval 最简单的方式：把下面这段话粘贴给 **Claude Code**（或 Codex 等任意 coding agent），即可直接开始评测。
+零配置。把下面这句话粘贴给 **Claude Code**（或 Codex 等任意 coding agent）即可：
 
 ```text
-我想用 one-eval-skill 来做模型评测工作。请阅读这个仓库
-https://github.com/OpenDCAI/One-Eval ，把 One-Eval skill 及其依赖安装到一个独立环境里，
-运行 scripts/doctor.py 自检，然后问我要评测哪个模型、跑哪些 benchmark，并替我完成整个评测。
+请使用 https://github.com/OpenDCAI/One-Eval 中的 one-eval-skill 帮我评测模型。
 ```
 
-就这么简单——环境准备、基准选择、评测、打分到最终报告都由 Claude Code 完成。skill 的完整能力见 [`one-eval-skill/SKILL.md`](./one-eval-skill/SKILL.md)。
+Agent 读取 skill 后会自行接管——准备好环境，并主动问你要评测什么。
 
 ### 3.3 启动服务（前后端）
 
