@@ -1739,6 +1739,44 @@ def get_models():
         normalized.append(item)
     return normalized
 
+@app.delete("/api/models")
+def delete_model(req: Dict[str, Any]):
+    models = _load_json_file(MODELS_FILE, default=[])
+    if not isinstance(models, list):
+        models = []
+
+    removed: Optional[Dict[str, Any]] = None
+
+    idx = req.get("index")
+    if isinstance(idx, int) and 0 <= idx < len(models):
+        item = models.pop(idx)
+        if isinstance(item, dict):
+            removed = dict(item)
+    else:
+        name = str(req.get("name") or "").strip()
+        path = str(req.get("path") or "").strip()
+        is_api = bool(req.get("is_api", False))
+        if not name or not path:
+            raise HTTPException(status_code=400, detail="index or (name, path) is required")
+
+        next_models: List[Any] = []
+        for m in models:
+            if removed is None and isinstance(m, dict):
+                if bool(m.get("is_api", False)) == is_api and str(m.get("name") or "") == name and str(m.get("path") or "") == path:
+                    removed = dict(m)
+                    continue
+            next_models.append(m)
+        models = next_models
+
+    if removed is None:
+        raise HTTPException(status_code=404, detail="model not found")
+
+    try:
+        _write_json_file_strict(MODELS_FILE, models)
+    except Exception:
+        raise HTTPException(status_code=500, detail="failed to persist models registry")
+    return {"ok": True, "deleted": removed}
+
 @app.post("/api/models")
 def add_model(model: Dict[str, Any]):
     models = _load_json_file(MODELS_FILE, default=[])

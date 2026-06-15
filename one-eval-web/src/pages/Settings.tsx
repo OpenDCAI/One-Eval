@@ -106,6 +106,7 @@ export const Settings = () => {
   const [apiBaseUrl] = useState(() => localStorage.getItem("oneEval.apiBaseUrl") || "http://localhost:8000");
   const [backendReachable, setBackendReachable] = useState<boolean | null>(null);
   const [modelsLoadError, setModelsLoadError] = useState<string | null>(null);
+  const [deletingModelKey, setDeletingModelKey] = useState<string | null>(null);
   const [hfLoadError, setHfLoadError] = useState<string | null>(null);
   const [agentLoadError, setAgentLoadError] = useState<string | null>(null);
   const [judgeLoadError, setJudgeLoadError] = useState<string | null>(null);
@@ -215,6 +216,32 @@ export const Settings = () => {
       setModelsLoadError(`${tt("保存失败", "Save failed")}: ${detail}`);
     }
     setLoading(false);
+  };
+
+  const handleDeleteModel = async (m: ModelConfig, index: number) => {
+    const modelKey = m.is_api ? `api:${m.name || ""}:${m.path || ""}` : `local:${m.path || ""}`;
+    const ok = window.confirm(tt("确定要删除这个模型配置吗？", "Delete this model configuration?"));
+    if (!ok) return;
+    setDeletingModelKey(modelKey);
+    try {
+      await axios.delete(`${apiBaseUrl}/api/models`, {
+        data: { index, name: m.name, path: m.path, is_api: !!m.is_api },
+      });
+      setModels((prev) => prev.filter((_, i) => i !== index));
+      setModelTestMsg((prev) => {
+        if (!prev[modelKey]) return prev;
+        const next = { ...prev };
+        delete next[modelKey];
+        return next;
+      });
+      setModelsLoadError(null);
+    } catch (e) {
+      console.error(e);
+      const detail = axios.isAxiosError(e) ? (e.response?.data?.detail || e.message) : tt("请求异常", "request error");
+      setModelsLoadError(`${tt("删除失败", "Delete failed")}: ${detail}`);
+    } finally {
+      setDeletingModelKey(null);
+    }
   };
 
   const fetchHfConfig = async () => {
@@ -927,6 +954,15 @@ export const Settings = () => {
                               {testingApiModelKey === `api:${m.name || ""}:${m.path || ""}` ? tt("测试中...", "Testing...") : tt("测试请求", "Test Request")}
                             </Button>
                         )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                          onClick={() => handleDeleteModel(m, i)}
+                          disabled={deletingModelKey === (m.is_api ? `api:${m.name || ""}:${m.path || ""}` : `local:${m.path || ""}`)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
                       </div>
                     </div>
                     {modelTestMsg[m.is_api ? `api:${m.name || ""}:${m.path || ""}` : `local:${m.path}`] && (
