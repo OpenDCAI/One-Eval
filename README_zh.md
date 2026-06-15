@@ -74,10 +74,8 @@ uv pip install -e .
 零配置。把下面这句话粘贴给 **Claude Code**（或 Codex 等任意 coding agent）即可：
 
 ```text
-请使用 https://github.com/OpenDCAI/One-Eval 中的 one-eval-skill 帮我评测模型。
+请使用 https://github.com/OpenDCAI/One-Eval 中的 one-eval-skill 来让我们开始评测模型。
 ```
-
-Agent 读取 skill 后会自行接管——准备好环境，并主动问你要评测什么。
 
 ### 3.3 启动服务（前后端）
 

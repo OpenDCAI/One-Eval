@@ -77,10 +77,8 @@ uv pip install -e .
 Zero setup. Just paste this to **Claude Code** (or Codex, or any coding agent):
 
 ```text
-Use the one-eval-skill in https://github.com/OpenDCAI/One-Eval to help me evaluate my model.
+Use the one-eval-skill in https://github.com/OpenDCAI/One-Eval to get us started on evaluating my model.
 ```
-
-The agent reads the skill and takes it from there — it'll set things up and ask you what to evaluate.
 
 ### 3.3 Start Services (Frontend + Backend)
 
