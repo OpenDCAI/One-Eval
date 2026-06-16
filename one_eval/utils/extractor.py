@@ -261,6 +261,57 @@ def extract_multi_choice(text: Any) -> set:
     return set()
 
 
+def _normalize_set_item(item: Any) -> str:
+    s = unicodedata.normalize("NFKC", str(item)).strip()
+    s = re.sub(r"^\s*(?:[-*•]+|\(?\d+[\).\、]|[A-Za-z][\).\、])\s*", "", s)
+    s = s.strip(" \t\r\n\"'`“”‘’[](){}<>《》.,;:!?，。；：！？、")
+    return normalize_text(s)
+
+
+def extract_answer_set(text: Any) -> Set[str]:
+    """
+    Extract an open-ended answer set from free text.
+
+    Unlike extract_multi_choice(), this is for list-style QA/entity answers,
+    e.g. "Beijing, Shanghai" or "1. Beijing\n2. Shanghai".
+    """
+    if text is None:
+        return set()
+
+    if isinstance(text, (list, tuple, set)):
+        result: Set[str] = set()
+        for item in text:
+            result.update(extract_answer_set(item))
+        return result
+    else:
+        s = str(text).strip()
+        if not s:
+            return set()
+
+        try:
+            parsed = json.loads(s)
+            if isinstance(parsed, list):
+                items = parsed
+            else:
+                items = [s]
+        except Exception:
+            marker_match = re.search(
+                r"(?:final answer|answer|答案)\s*[:：]\s*(.+)$",
+                s,
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+            if marker_match:
+                s = marker_match.group(1).strip()
+            items = re.split(r"[\n\r,，;；、|]+", s)
+
+    result: Set[str] = set()
+    for item in items:
+        norm = _normalize_set_item(item)
+        if norm:
+            result.add(norm)
+    return result
+
+
 # -------------------------------------------------------------------------
 # Ported from DataFlow (dataflow/utils/reasoning/AnswerExtraction.py)
 # -------------------------------------------------------------------------

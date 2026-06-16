@@ -25,7 +25,7 @@ logits/跨类别标注。因此需要那类输入的统计指标（AUC-ROC、Pea
 
 | dimension | 衡量什么 | metric |
 |---|---|---|
-| `correctness` | 答案对不对（主结果轴） | exact_match / numerical_match / choice_accuracy / multilabel_f1 / math_verify |
+| `correctness` | 答案对不对（主结果轴） | exact_match / numerical_match / choice_accuracy / multilabel_f1 / set_f1 / math_verify |
 | `similarity` | 与参考文本的词面相似/重叠（翻译/摘要/长答案） | bleu / rouge_l / chrf / token_f1 / jaccard_similarity |
 | `validity` | 产物本身是否合法可用（≠正确） | code_validity |
 | `fluency` | 生成健康度（退化重复等失败模式） | repetition_rate |
@@ -39,6 +39,7 @@ logits/跨类别标注。因此需要那类输入的统计指标（AUC-ROC、Pea
 - `numerical_match` — 数值软匹配（1.0==1，容忍浮点误差，`atol` 可调）
 - `choice_accuracy`（别名 acc / accuracy）— 自动抽取 A/B/C/D 选项准确率
 - `multilabel_f1` — 多标签/多选集合 F1
+- `set_f1` — 开放答案集合 F1，适合列表型 QA、实体抽取、多答案短答
 - `math_verify` — 数学等价性校验（文本匹配 + 符号验证混合）
 
 **similarity**（text_gen.py）

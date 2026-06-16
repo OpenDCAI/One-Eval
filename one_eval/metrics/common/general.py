@@ -12,6 +12,7 @@ from one_eval.utils.extractor import (
     extract_first_number,
     extract_choice,
     extract_multi_choice,
+    extract_answer_set,
     AnswerExtractor,
 )
 from one_eval.core.metric_registry import register_metric, MetricCategory, MetricDimension
@@ -164,6 +165,57 @@ def compute_multilabel_f1(preds: List[Any], refs: List[Any], **kwargs) -> Dict[s
             f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
         scores.append(f1)
     return {"score": sum(scores) / len(scores) if scores else 0.0, "details": scores}
+
+
+@register_metric(
+    name="set_f1",
+    desc="开放答案集合 F1",
+    usage="列表型 QA、实体抽取、多答案短答。将预测与参考解析为开放文本集合后计算 F1",
+    categories=[MetricCategory.QA_SINGLE, MetricCategory.QA_MULTI],
+    dimension=MetricDimension.CORRECTNESS,
+)
+def compute_set_f1(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
+    scores = []
+    pred_sets = []
+    ref_sets = []
+    true_positives = []
+    false_positives = []
+    false_negatives = []
+
+    for p, r in zip(preds, refs):
+        p_set = extract_answer_set(p)
+        r_set = extract_answer_set(r)
+
+        if not p_set and not r_set:
+            f1 = 1.0
+        elif not p_set or not r_set:
+            f1 = 0.0
+        else:
+            tp = p_set & r_set
+            fp = p_set - r_set
+            fn = r_set - p_set
+            prec = len(tp) / (len(tp) + len(fp)) if (tp or fp) else 0.0
+            rec = len(tp) / (len(tp) + len(fn)) if (tp or fn) else 0.0
+            f1 = 2 * prec * rec / (prec + rec) if (prec + rec) > 0 else 0.0
+
+        scores.append(f1)
+        pred_sets.append(sorted(p_set))
+        ref_sets.append(sorted(r_set))
+        true_positives.append(sorted(p_set & r_set))
+        false_positives.append(sorted(p_set - r_set))
+        false_negatives.append(sorted(r_set - p_set))
+
+    return {
+        "score": sum(scores) / len(scores) if scores else 0.0,
+        "details": scores,
+        "artifacts": {
+            "pred_sets": pred_sets,
+            "ref_sets": ref_sets,
+            "tp": true_positives,
+            "fp": false_positives,
+            "fn": false_negatives,
+        },
+    }
 
 # __APPEND_FORMAT_DIMENSION__
 
