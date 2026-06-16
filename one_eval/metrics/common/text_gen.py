@@ -194,6 +194,37 @@ def compute_token_f1(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, A
         "details": scores
     }
 
+@register_metric(
+    name="jaccard_similarity",
+    desc="去重 token 集合 Jaccard 相似度",
+    usage="关键词覆盖/检索式 QA/事实列表。只看去重 token 重叠，不看词频与语序",
+    categories=[MetricCategory.QA_SINGLE, MetricCategory.QA_MULTI],
+    dimension=MetricDimension.SIMILARITY,
+    aliases=["jaccard"]
+)
+def compute_jaccard_similarity(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
+    """
+    计算 token 集合 Jaccard similarity: |pred ∩ ref| / |pred ∪ ref|。
+    多参考答案时取最高分，与 token_f1/rouge_l 保持一致。
+    """
+    scores = []
+
+    for p, r in zip(preds, refs):
+        p_str = str(p)
+        r_list = r if isinstance(r, list) else [r]
+
+        best_score = 0.0
+        for gold in r_list:
+            score = _compute_jaccard_single(p_str, str(gold))
+            if score > best_score:
+                best_score = score
+        scores.append(best_score)
+
+    return {
+        "score": sum(scores) / len(scores) if scores else 0.0,
+        "details": scores
+    }
+
 def _compute_f1_single(prediction: str, truth: str) -> float:
     from collections import Counter
     pred_tokens = normalize_text(prediction).split()
@@ -210,4 +241,16 @@ def _compute_f1_single(prediction: str, truth: str) -> float:
     precision = num_same / len(pred_tokens)
     recall = num_same / len(truth_tokens)
     return (2 * precision * recall) / (precision + recall)
+
+def _compute_jaccard_single(prediction: str, truth: str) -> float:
+    pred_tokens = set(normalize_text(prediction).split())
+    truth_tokens = set(normalize_text(truth).split())
+
+    if not pred_tokens or not truth_tokens:
+        return 1.0 if pred_tokens == truth_tokens else 0.0
+
+    union = pred_tokens | truth_tokens
+    if not union:
+        return 0.0
+    return len(pred_tokens & truth_tokens) / len(union)
 

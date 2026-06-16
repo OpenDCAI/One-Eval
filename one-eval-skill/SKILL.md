@@ -99,11 +99,11 @@ python scripts/check_model.py --api --model <名> --api-url <url> --api-key <key
 | key1_text_score | ppl（困惑度） | 语言建模流畅度 |
 
 - **主分够用就够用**；但要**主动问用户是否补充维度**，并解释每个维度查什么：
-  正确性（exact_match/numerical_match）、相似度（bleu/rouge_l/chrf/token_f1，翻译摘要长答案）、
+  正确性（exact_match/numerical_match）、相似度（bleu/rouge_l/chrf/token_f1/jaccard_similarity，翻译摘要长答案/关键词覆盖）、
   格式遵循（extraction_rate/format_compliance_score，低分会拖累正确性）、
   生成健康度（repetition_rate 抓复读）、弃答率（missing_answer_rate 做正确性归因）、
   代码合法性（code_validity，注意只验能否解析、非逻辑正确）。
-- `python scripts/run_metrics.py --list` 查看全部 14 个 metric（按维度分组，含适用场景）。
+- `python scripts/run_metrics.py --list` 查看全部 15 个 metric（按维度分组，含适用场景）。
 - 用户想要注册表里没有的维度 → 参考 `references/metric_registry.md` + `assets/custom_metric.template.py`
   跟用户聊清楚需求后写新 metric，落到 `custom_metrics/`。
 
