@@ -11857,6 +11857,71 @@
           "reasoning"
         ]
       }
+    },
+    {
+      "bench_name": "livecodebench",
+      "bench_kind": "external_repo",
+      "bench_table_exist": true,
+      "bench_dataflow_eval_type": null,
+      "bench_source_url": "https://livecodebench.github.io/",
+      "bench_prompt_template": null,
+      "bench_keys": [],
+      "meta": {
+        "bench_name": "livecodebench",
+        "source": "user",
+        "category": "Code",
+        "tags": [
+          "code",
+          "code-generation",
+          "contamination-free",
+          "pass@1"
+        ],
+        "description": "Contamination-free, time-windowed code generation benchmark; problems collected from LeetCode/AtCoder/Codeforces with release windows, scored by executing hidden test cases (pass@1).",
+        "description_zh": "无污染、按时间窗口收集的代码生成基准（题目来自 LeetCode/AtCoder/Codeforces，按发布时间分版本），通过在沙箱中执行隐藏测试用例打分（pass@1）。",
+        "repo_eval": {
+          "repo_url": "https://github.com/LiveCodeBench/LiveCodeBench",
+          "ref": "28fef95e",
+          "license": "MIT",
+          "env_requires": {
+            "python": ">=3.10",
+            "gpu": false,
+            "sandbox": "docker",
+            "system_deps": [
+              "docker"
+            ]
+          },
+          "setup": [
+            "git clone https://github.com/LiveCodeBench/LiveCodeBench {{work_dir}}",
+            "cd {{work_dir}} && git checkout 28fef95e",
+            "pip install -e .   # 或按 repo 的 poetry/uv 说明安装；含 datasets、用于执行测试的运行时"
+          ],
+          "model_interface": {
+            "type": "api",
+            "how": "LiveCodeBench 无现成的通用 OpenAI-base_url 透传 CLI：被测模型需先在 lcb_runner/lm_styles.py 注册一个 LanguageModel 条目（指定 model_name 与 LMStyle，OpenAI 兼容端点用 OpenAIChat 风格），base_url/api_key 通过其 OpenAI 客户端读取的环境变量注入（OPENAI_BASE_URL / OPENAI_API_KEY，运行时设置，绝不写进 gallery）。接入新 API 模型时这一步是主要摩擦点。"
+          },
+          "run": {
+            "work_dir": "{{work_dir}}",
+            "env": {
+              "OPENAI_BASE_URL": "{{api_base_url}}",
+              "OPENAI_API_KEY": "{{api_key}}"
+            },
+            "command": [
+              "python -m lcb_runner.runner.main --model {{model_name}} --scenario codegeneration --evaluate --release_version release_v1 --n 1 --output_dir {{output_dir}}"
+            ],
+            "max_samples_flag": "--num_process_evaluate 控制并发；限量 smoke 可用 repo 的 --start_date/--end_date 缩小题集（无直接 --max_samples，{{max_samples}} 需映射成日期窗口或子集）。"
+          },
+          "result": {
+            "path": "output/{{model_name}}/Scenario.codegeneration_*_eval_all.json",
+            "format": "json",
+            "score_path": "pass@1",
+            "scale": "percent",
+            "metric_name": "pass@1",
+            "note": "compute_scores.py 产出的汇总 json 里取 pass@1；其量纲为百分数(0-100)，回填时除以 100 归一到 ratio。"
+          },
+          "data_alignment": "需明确对齐到某个 release_version（如 release_v1 / release_v2 ...）及其时间窗口；不同 release 题量与难度不同，对齐 tech report 时必须核对报告用的是哪个 release 与日期区间，并在报告里写明。",
+          "notes": "1) 必须 Docker 沙箱执行生成代码，安全第一。2) 通用 API 模型需手动在 lm_styles.py 注册，非开箱即用。3) release_version 决定题集，务必固定并记录。4) ref 固定到 28fef95e 保证可复现，勿用浮动 main。"
+        }
+      }
     }
   ]
 }

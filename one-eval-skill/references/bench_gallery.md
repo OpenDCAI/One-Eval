@@ -5,7 +5,7 @@
 
 ## 接入约定（务必先读 `eval_types.md`）
 - **READY 区**：已 smoke 测通、key_mapping 已确认、本地数据就绪的 bench，可直接复用（免重测）。
-- **候选区**：来自主仓库 gallery 的 103 个 bench，**本版默认都未验证**。接入某个候选 bench 时：
+- **候选区**：来自主仓库 gallery 的 104 个 bench，**本版默认都未验证**。接入某个候选 bench 时：
   1. `eval_type` 列只是依据原始字段做的**初步归类**，需按 `eval_types.md` 复核。
   2. `原始字段` 是 HF 上的列名，**不等于** key_mapping —— 嵌套字段要先拍平。
   3. 用 `prepare_bench.py` 下载预览结构 → 填 key_mapping → `run_eval.py --smoke` 验证。
@@ -20,21 +20,19 @@
 > 运行时由 `run_eval.py` 通过 `.local_state.json` 自动识别 READY，无需在此手填即可复用；
 > 这里的清单仅供人查阅「哪些已稳定可用」。
 
-| bench_name | eval_type | 本地数据路径(cache/) | key_mapping | 备注 |
+_（暂无）_
+
+
+---
+
+## 外部仓库 bench（external_repo，需特殊环境）
+
+> 这类 bench 自带评测仓库/沙箱，不走确定性内核。`run_eval.py` 遇到它们会优雅短路，
+> 返回 `external_repo_pending` + `meta.repo_eval`，由调用方按 `external_bench.md` 在外部执行后回填分数。
+
+| bench_name | repo_url | ref | 环境前提 | 数据对齐 |
 |---|---|---|---|---|
-| gsm8k | `key2_qa` | openai__gsm8k__main__test.jsonl | question / answer | 小学数学，含 math_verify 假阴性翻正 |
-| MATH-500 | `key2_qa` | HuggingFaceH4__MATH-500__None__test.jsonl | problem / answer | 竞赛数学 500 题 |
-| AIME_2024 | `key2_qa` | Maxwell-Jia__AIME_2024__None__train.jsonl | question / answer | AIME 2024，仅 30 题、整数答案、方差大 |
-| MMLU-Pro | `key3_q_choices_a` | TIGER-Lab__MMLU-Pro__None__test.jsonl | question / choices / answer | 10 选项进阶知识，12032 题，14 学科 |
-| mmlu-redux | `key3_q_choices_a` | edinburgh-dawg__mmlu-redux-2.0__abstract_algebra__test.jsonl | question / choices / answer | 子集 abstract_algebra |
-| supergpqa | `key3_q_choices_a` | m-a-p__SuperGPQA__default__train.jsonl | (见 spec) | 研究生级跨学科 285 学科 |
-| c-eval | `key3_q_choices_a` | ceval__ceval-exam__accountant__val.jsonl | question / choices / answer | 中文，子集 accountant |
-| polymath | `key2_qa` | Qwen__PolyMath__en__high.jsonl | (见 spec) | 子集 en/high |
-
-> MMLU-Pro / AIME_2024 因 datasets 4.0 下载层对镜像不稳，改用 `curl` 直拉
-> `https://hf-mirror.com/datasets/<repo>/resolve/main/<file>` 后转 jsonl 入 cache，按
-> `{repo//→__}__{config}__{split}.jsonl` 命名即被 `run_eval.py` 自动复用、免下载。
-
+| livecodebench | https://github.com/LiveCodeBench/LiveCodeBench | `28fef95e` | python=>=3.10, sandbox=docker, system_deps=['docker'] | 需明确对齐到某个 release_version（如 release_v1 / release_v2 ...）及其时间窗口；不同 release 题量与难度不同，对齐 tech report 时必须核对报告用的是哪个 release 与日期区间，并在报告里写明。 |
 
 
 ---

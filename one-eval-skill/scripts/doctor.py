@@ -89,6 +89,24 @@ def _check_env_isolation() -> None:
         print(f"      之后所有脚本都用该环境的 python 绝对路径调用，勿动用系统/全局环境。")
 
 
+def _check_skill_registration() -> None:
+    """检查 skill 是否能被 Claude Code 自动发现（项目级 .claude/skills/ 软链）。
+
+    Claude Code 只扫描 ~/.claude/skills/ 与 <项目>/.claude/skills/ 下的 <name>/SKILL.md。
+    本仓库在 <repo>/.claude/skills/one-eval 放了指向 one-eval-skill 的相对软链，
+    clone 下来即自动可见；缺失时只告警并给出补建命令（不影响"读文件照流程跑"的用法）。
+    """
+    link = common.REPO_ROOT / ".claude" / "skills" / "one-eval"
+    print("\nClaude Code skill 注册：")
+    if link.exists() and (link / "SKILL.md").exists():
+        print(f"  [✓] 已注册为项目级 skill：{link}")
+        print(f"      重启 Claude Code 后，/skills 列表里会出现 one-eval（在本仓库内）。")
+    else:
+        print(f"  [○] 未检测到项目级 skill 软链（不影响把 SKILL.md 当文档读的用法）")
+        print(f"      如想让 /skills 自动发现，在仓库根执行：")
+        print(f"      mkdir -p .claude/skills && ln -s ../../one-eval-skill .claude/skills/one-eval")
+
+
 def main() -> int:
     print("One-Eval 环境自检\n" + "=" * 40)
 
@@ -113,6 +131,7 @@ def main() -> int:
         print(f"  [{'✓' if ok else '○'}] {friendly}" + ("" if ok else f"  — {impact}"))
 
     _check_env_isolation()
+    _check_skill_registration()
 
     print("\n" + "=" * 40)
     if missing_required:

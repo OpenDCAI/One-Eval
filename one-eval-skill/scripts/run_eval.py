@@ -284,6 +284,7 @@ def main(argv=None):
     all_results = []
     n_fail = 0
     for i, bench_dict in enumerate(benches, 1):
+        bench_dict = common.enrich_external_bench(bench_dict)  # external_repo 按名从 gallery 回填 repo_eval
         name = bench_dict.get("bench_name", f"bench_{i}")
         if name in done:
             all_results.append(done[name])
