@@ -29,7 +29,7 @@ logits/跨类别标注。因此需要那类输入的统计指标（AUC-ROC、Pea
 | `similarity` | 与参考文本的词面相似/重叠（翻译/摘要/长答案） | bleu / rouge_l / chrf / token_f1 / jaccard_similarity |
 | `validity` | 产物本身是否合法可用（≠正确） | code_validity |
 | `fluency` | 生成健康度（退化重复等失败模式） | repetition_rate |
-| `format` | 格式遵循/可抽取性 | extraction_rate / format_compliance_score |
+| `format` | 格式遵循/可抽取性 | extraction_rate / format_compliance_score / json_validity |
 | `diagnostic` | 纯诊断信号（不直接代表好坏，用于归因） | missing_answer_rate |
 
 ## 内置 metric 一览
@@ -52,6 +52,7 @@ logits/跨类别标注。因此需要那类输入的统计指标（AUC-ROC、Pea
 **format / diagnostic**
 - `extraction_rate` — 可抽取率（**强烈建议常带上**，诊断是否按格式输出；`extractor` = number/choice/generic）
 - `format_compliance_score` — 答案是否被显式标记出来（boxed/####/答案标记）。+0.5 非空 +0.5 有标记
+- `json_validity` — JSON 合法率；默认要求整段输出可被 `json.loads` 解析，`allow_extraction=True` 时允许从 markdown fenced block 或文本中首个 JSON object/array 提取后解析
 - `missing_answer_rate` — 弃答率（= 1 − 可抽取率）
 
 > **没有确定性指标的两种题型**：纯文本打分（key1_text_score）和偏好对比

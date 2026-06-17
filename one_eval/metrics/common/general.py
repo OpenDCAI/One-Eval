@@ -3,9 +3,11 @@ general.py —— 通用维度指标:正确性(correctness) + 格式遵循(forma
 
 设计原则:每个指标只服务一个清晰的质量维度,不做参数变体的重复注册。
 - correctness:exact_match / numerical_match / choice_accuracy / multilabel_f1
-- format    :extraction_rate(可抽取性) / format_compliance(答案分隔规范度)
+- format    :extraction_rate(可抽取性) / format_compliance(答案分隔规范度) / json_validity
 - diagnostic:missing_answer_rate(弃答率,= 1 - 抽取率,供归因)
 """
+import json
+import re
 from typing import List, Dict, Any, Optional, Set, Tuple
 from one_eval.utils.extractor import (
     normalize_text,
@@ -313,6 +315,94 @@ def compute_format_compliance_score(preds: List[Any], refs: List[Any], **kwargs)
         "score": sum(scores) / len(scores) if scores else 0.0,
         "details": scores,
         "artifacts": arts,
+    }
+
+
+def _extract_json_candidate(text: str) -> Tuple[str, bool]:
+    """Return a JSON candidate and whether it was extracted from surrounding text."""
+    s = text.strip()
+    if not s:
+        return s, False
+
+    fenced = re.search(r"```(?:json|JSON)?\s*([\s\S]*?)```", s)
+    if fenced:
+        return fenced.group(1).strip(), True
+
+    decoder = json.JSONDecoder()
+    for idx, ch in enumerate(s):
+        if ch not in "{[":
+            continue
+        try:
+            _, end = decoder.raw_decode(s[idx:])
+        except json.JSONDecodeError:
+            continue
+        return s[idx:idx + end].strip(), idx != 0 or idx + end != len(s)
+
+    return s, False
+
+
+def _parse_json_prediction(pred: Any, allow_extraction: bool) -> Tuple[bool, Dict[str, Any]]:
+    s = "" if pred is None else str(pred).strip()
+    candidate = s
+    extracted = False
+    if allow_extraction:
+        candidate, extracted = _extract_json_candidate(s)
+
+    art: Dict[str, Any] = {
+        "extracted": extracted,
+        "candidate": candidate[:500],
+    }
+    if not candidate:
+        art["error"] = "empty"
+        return False, art
+
+    try:
+        parsed = json.loads(candidate)
+    except json.JSONDecodeError as e:
+        art["error"] = e.msg
+        art["error_pos"] = e.pos
+        return False, art
+
+    art["parsed_type"] = type(parsed).__name__
+    return True, art
+
+
+@register_metric(
+    name="json_validity",
+    desc="JSON 合法率:输出是否可被 json.loads 解析",
+    usage=(
+        "结构化输出、tool calling、agent 任务、JSON-only 指令。默认严格要求整段输出是 JSON；"
+        "allow_extraction=True 时允许从 markdown fenced block 或周围文本中提取首个 JSON 对象/数组再解析"
+    ),
+    categories=[
+        MetricCategory.TEXT_SCORE,
+        MetricCategory.QA_SINGLE, MetricCategory.QA_MULTI,
+        MetricCategory.CHOICE_SINGLE, MetricCategory.CHOICE_MULTI,
+    ],
+    dimension=MetricDimension.FORMAT,
+)
+def compute_json_validity(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
+    """逐条检查预测是否是合法 JSON。
+
+    kwargs.allow_extraction:
+      False(默认): str(pred).strip() 必须整体可被 json.loads 解析。
+      True: 可从 ```json fenced block``` 或文本中第一个 JSON object/array 提取后解析。
+    """
+    allow_extraction = bool(kwargs.get("allow_extraction", False))
+    details, artifacts = [], []
+
+    for p in preds:
+        ok, art = _parse_json_prediction(p, allow_extraction=allow_extraction)
+        details.append(1.0 if ok else 0.0)
+        artifacts.append(art)
+
+    return {
+        "score": sum(details) / len(details) if details else 0.0,
+        "details": details,
+        "artifacts": {
+            "allow_extraction": allow_extraction,
+            "items": artifacts,
+        },
     }
 
 
