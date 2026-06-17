@@ -30,7 +30,7 @@ logits/跨类别标注。因此需要那类输入的统计指标（AUC-ROC、Pea
 | `validity` | 产物本身是否合法可用（≠正确） | code_validity |
 | `fluency` | 生成健康度（退化重复等失败模式） | repetition_rate |
 | `format` | 格式遵循/可抽取性 | extraction_rate / format_compliance_score / json_validity |
-| `diagnostic` | 纯诊断信号（不直接代表好坏，用于归因） | missing_answer_rate |
+| `diagnostic` | 纯诊断信号（不直接代表好坏，用于归因） | missing_answer_rate / empty_or_whitespace_rate |
 
 ## 内置 metric 一览
 
@@ -54,6 +54,7 @@ logits/跨类别标注。因此需要那类输入的统计指标（AUC-ROC、Pea
 - `format_compliance_score` — 答案是否被显式标记出来（boxed/####/答案标记）。+0.5 非空 +0.5 有标记
 - `json_validity` — JSON 合法率；默认要求整段输出可被 `json.loads` 解析，`allow_extraction=True` 时允许从 markdown fenced block 或文本中首个 JSON object/array 提取后解析
 - `missing_answer_rate` — 弃答率（= 1 − 可抽取率）
+- `empty_or_whitespace_rate` — 空输出率：输出为 None、空字符串或纯空白的比例。用于定位服务/生成链路未产出可评内容，**分越低越好**
 
 > **没有确定性指标的两种题型**：纯文本打分（key1_text_score）和偏好对比
 > （key3_q_a_rejected）。后者 runner 只把 better 当 ref 传进来、rejected 取不到，

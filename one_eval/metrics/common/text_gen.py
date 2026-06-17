@@ -212,13 +212,10 @@ def compute_jaccard_similarity(preds: List[Any], refs: List[Any], **kwargs) -> D
     for p, r in zip(preds, refs):
         p_str = str(p)
         r_list = r if isinstance(r, list) else [r]
-
-        best_score = 0.0
-        for gold in r_list:
-            score = _compute_jaccard_single(p_str, str(gold))
-            if score > best_score:
-                best_score = score
-        scores.append(best_score)
+        scores.append(max(
+            (_compute_jaccard_single(p_str, str(gold)) for gold in r_list),
+            default=0.0,
+        ))
 
     return {
         "score": sum(scores) / len(scores) if scores else 0.0,
@@ -250,7 +247,5 @@ def _compute_jaccard_single(prediction: str, truth: str) -> float:
         return 1.0 if pred_tokens == truth_tokens else 0.0
 
     union = pred_tokens | truth_tokens
-    if not union:
-        return 0.0
     return len(pred_tokens & truth_tokens) / len(union)
 
