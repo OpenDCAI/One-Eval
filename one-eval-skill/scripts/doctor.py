@@ -37,10 +37,10 @@ REQUIRED = [
     ("yaml", "pyyaml", "无法解析 evalspec.yaml"),
 ]
 OPTIONAL = [
-    ("langchain_openai", "langchain-openai", "LLM-judge 型 metric 跳过（确定性评测不受影响）"),
-    ("rouge_score", "rouge-score", "rouge_l 指标不可用"),
-    ("sacrebleu", "sacrebleu", "bleu / chrf 指标不可用"),
-    ("matplotlib", "matplotlib", "make_plots 出图不可用"),
+    ("langchain_openai", "langchain-openai", "LLM-judge 型 metric"),
+    ("rouge_score", "rouge-score", "rouge_l 指标"),
+    ("sacrebleu", "sacrebleu", "bleu / chrf 指标"),
+    ("matplotlib", "matplotlib", "make_plots 出 PNG 图（HTML 报告不需要）"),
 ]
 
 INSTALL_HINT = (
@@ -89,6 +89,44 @@ def _check_env_isolation() -> None:
         print(f"      之后所有脚本都用该环境的 python 绝对路径调用，勿动用系统/全局环境。")
 
 
+def _check_reusable_envs() -> None:
+    """探测可直接复用的 Python 环境，优先复用、避免重复装 GB 级重包(torch 等)。
+
+    很多机器已有现成环境（仓库 .venv/、已激活的 conda/venv）。命中就提示直接用，
+    不必新建——新建从零装 torch/open-dataflow 等最耗时，复用是最快路径。
+    """
+    import os
+
+    print("\n可复用的 Python 环境探测：")
+    found = []
+    # 1) 仓库根的 .venv
+    venv_py = common.REPO_ROOT / ".venv" / "bin" / "python"
+    if venv_py.exists():
+        found.append(f"仓库内 .venv → 直接用：{venv_py}")
+    # 2) 当前已激活的 venv / conda
+    if os.environ.get("VIRTUAL_ENV"):
+        found.append(f"已激活 venv：{os.environ['VIRTUAL_ENV']}")
+    conda_env = os.environ.get("CONDA_DEFAULT_ENV")
+    if conda_env and conda_env != "base":
+        found.append(f"已激活 conda 环境：{conda_env}")
+
+    if found:
+        for f in found:
+            print(f"  [✓] {f}")
+        print("  ↳ 已有可用环境就直接用它跑脚本，**无需新建、无需重装**（重装 torch 等重包最慢）。")
+    else:
+        # 没有现成环境：报告机器上实际可用的环境管理器，别罗列没装的
+        avail = [t for t in ("conda", "uv") if _which(t)]
+        avail.append("python -m venv")  # 兜底总是可用
+        print(f"  [○] 未发现现成可复用环境。可用的环境管理器：{', '.join(avail)}")
+        print("      装在独立环境里即可（别污染系统/全局 python）；按上面列出的实际可用工具选，别选没装的。")
+
+
+def _which(cmd: str) -> bool:
+    import shutil
+    return shutil.which(cmd) is not None
+
+
 def _check_skill_registration() -> None:
     """检查 skill 是否能被 Claude Code 自动发现（项目级 .claude/skills/ 软链）。
 
@@ -125,12 +163,15 @@ def main() -> int:
         if not ok:
             missing_required.append(friendly)
 
-    print("\n可选依赖（缺失不影响确定性评测）：")
+    print("\n可选依赖（非必需，纯 API 评测无需安装，缺失不影响主流程）：")
     for mod, friendly, impact in OPTIONAL:
         ok = _has(mod)
-        print(f"  [{'✓' if ok else '○'}] {friendly}" + ("" if ok else f"  — {impact}"))
+        tail = "" if ok else f"  — 缺失：仅当用到 {impact} 才需装"
+        print(f"  [{'✓' if ok else '○'}] {friendly}" + tail)
+    print("  ↳ 这些标 [○] 是正常的，按需再装即可——不要逐个征询用户是否安装。")
 
     _check_env_isolation()
+    _check_reusable_envs()
     _check_skill_registration()
 
     print("\n" + "=" * 40)
