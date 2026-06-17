@@ -57,6 +57,13 @@ benchmarks:
   #     input_choices_key: "choices"
   #     input_label_key: "answer"
 
+  # 示例：external_repo bench（自带仓库/需沙箱执行，如 livecodebench）
+  # 只需写 bench_name + bench_kind；meta.repo_eval（repo/装法/跑法/取分）会按名从
+  # bench_gallery.json 自动回填。run_eval 遇到它优雅短路，返回 external_repo_pending，
+  # 由 agent 按 references/external_bench.md 在外部沙箱执行后回填分数（本机不内置执行器）。
+  # - bench_name: "livecodebench"
+  #   bench_kind: "external_repo"
+
 # --- 额外多维度 metric（dataflow 主分数之外，可选）-------------------------
 # 用 run_metrics.py 计算；用 `run_metrics.py --list` 查看注册表所有可用 metric。
 # 留空则只用 dataflow 主分数。

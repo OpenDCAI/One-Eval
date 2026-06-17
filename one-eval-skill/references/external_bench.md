@@ -112,9 +112,10 @@ gallery 条目（`bench_gallery.json` 的 `benches[]`）新增**顶层字段** `
 2. 复制 `assets/external_bench.entry.template.json`，按 §2–§4 填全 `meta.repo_eval`。
 3. 把条目追加进 `bench_gallery.json` 的 `benches[]`（`bench_kind="external_repo"`）。
 4. `python scripts/build_gallery_md.py` 重生成 gallery md（external 条目会单列一区）。
-5. 在 evalspec 里引用该 bench → `run_eval.py` 会短路返回 `external_repo_pending` +
-   `repo_eval`。当前版本由你（agent）据此**手动执行外部评测**并回填分数；
-   待积累几个后再决定是否写统一的 `external_runner.py` 自动化。
+5. 在 evalspec 里引用该 bench（**只需写 `bench_name` + `bench_kind: external_repo`**，
+   `meta.repo_eval` 会由 `run_eval.py` 按名从 `bench_gallery.json` 自动回填，无需在 spec 里重抄）
+   → `run_eval.py` 会短路返回 `external_repo_pending` + `repo_eval`。当前版本由你（agent）据此
+   **手动执行外部评测**并回填分数；待积累几个后再决定是否写统一的 `external_runner.py` 自动化。
 
 ## 6. 安全边界（重要）
 

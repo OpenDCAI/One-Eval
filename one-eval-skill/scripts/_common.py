@@ -23,6 +23,9 @@ REPO_ROOT = SKILL_DIR.parent                            # One-Eval/（含 one_ev
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+# --- gallery 路径（external_repo 条目的元信息源；run_eval 据名回填 repo_eval）---
+BENCH_GALLERY_JSON = REPO_ROOT / "one_eval" / "utils" / "bench_table" / "bench_gallery.json"
+
 # --- 路径约定 ---
 DEFAULT_OUTPUT_DIR = SKILL_DIR / "eval_outputs"         # 评测产出根（结果/图/报告）
 DEFAULT_CACHE_DIR = SKILL_DIR / "cache"                 # 数据集下载缓存
@@ -79,6 +82,53 @@ def get_bench_kind(bench_dict: Dict[str, Any]) -> str:
             f"只能是 {sorted(VALID_BENCH_KINDS)}"
         )
     return kind
+
+
+_GALLERY_CACHE: Optional[Dict[str, Dict[str, Any]]] = None
+
+
+def _load_gallery_index() -> Dict[str, Dict[str, Any]]:
+    """读 bench_gallery.json，建 {bench_name: bench_dict} 索引（带缓存）。
+
+    gallery 缺失/损坏时返回空索引，不抛错——只影响 external_repo 的回填。
+    """
+    global _GALLERY_CACHE
+    if _GALLERY_CACHE is not None:
+        return _GALLERY_CACHE
+    idx: Dict[str, Dict[str, Any]] = {}
+    try:
+        data = json.loads(BENCH_GALLERY_JSON.read_text(encoding="utf-8"))
+        for b in data.get("benches", []) or []:
+            name = b.get("bench_name")
+            if name:
+                idx[name] = b
+    except Exception:
+        pass
+    _GALLERY_CACHE = idx
+    return idx
+
+
+def enrich_external_bench(bench_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """external_repo bench 的字段回填。
+
+    用户在 evalspec 里只需写 `bench_name` + `bench_kind: external_repo`，
+    其余 `meta.repo_eval` 等执行信息从 gallery 按名补齐（spec 已显式写的字段优先，
+    不被覆盖）。dataflow bench 原样返回。这样 external_bench.md「只需引用 bench」
+    的说法与实现一致。
+    """
+    if get_bench_kind(bench_dict) != BENCH_KIND_EXTERNAL:
+        return bench_dict
+    g = _load_gallery_index().get(bench_dict.get("bench_name"))
+    if not g:
+        return bench_dict
+    merged = dict(g)            # 以 gallery 为底
+    merged.update({k: v for k, v in bench_dict.items() if v is not None})  # spec 覆盖底
+    # meta 做浅合并：gallery 的 repo_eval 等保留，spec 的 meta 字段叠加
+    g_meta = g.get("meta") or {}
+    s_meta = bench_dict.get("meta") or {}
+    if g_meta or s_meta:
+        merged["meta"] = {**g_meta, **s_meta}
+    return merged
 
 
 # 6 种合法 eval 类型（硬契约，与 one_eval/nodes/dataflow_eval_node.py 一致）
