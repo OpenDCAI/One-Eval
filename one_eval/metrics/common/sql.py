@@ -50,26 +50,20 @@ def compute_sql_parse_validity(preds: List[Any], refs: List[Any], **kwargs) -> D
             artifacts.append({"valid": False, "error": "empty", "extracted": extracted})
             continue
 
+        error = None
         try:
-            expressions = sqlglot.parse(candidate, read=dialect)
-            valid = bool(expressions)
-            scores.append(1.0 if valid else 0.0)
-            artifacts.append({
-                "valid": valid,
-                "dialect": dialect or "default",
-                "extracted": extracted,
-                "statements": len(expressions),
-                "candidate": candidate[:500],
-            })
+            valid = bool(sqlglot.parse(candidate, read=dialect))
         except Exception as e:
-            scores.append(0.0)
-            artifacts.append({
-                "valid": False,
-                "dialect": dialect or "default",
-                "extracted": extracted,
-                "error": str(e),
-                "candidate": candidate[:500],
-            })
+            valid = False
+            error = str(e)
+
+        scores.append(1.0 if valid else 0.0)
+        item = {"valid": valid, "extracted": extracted}
+        if dialect:
+            item["dialect"] = dialect
+        if error:
+            item["error"] = error
+        artifacts.append(item)
 
     return {
         "score": sum(scores) / len(scores) if scores else 0.0,
