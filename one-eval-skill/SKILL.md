@@ -101,7 +101,7 @@ python scripts/check_model.py --api --model <名> --api-url <url> --api-key <key
 - **主分够用就够用**；但要**主动问用户是否补充维度**，并解释每个维度查什么：
   正确性（exact_match/numerical_match/set_f1，短答案、数值、开放答案集合）、相似度（bleu/rouge_l/chrf/token_f1/jaccard_similarity，翻译摘要长答案/关键词覆盖）、
   格式遵循（extraction_rate/format_compliance_score/json_validity，低分会拖累正确性或结构化输出可用性）、
-  生成健康度（repetition_rate 抓复读）、弃答率与空输出率（missing_answer_rate/empty_or_whitespace_rate 做正确性归因）、
+  生成健康度（repetition_rate 抓复读、garbled_text_rate 抓乱码/异常编码）、弃答率与空输出率（missing_answer_rate/empty_or_whitespace_rate 做正确性归因）、
   代码合法性（code_validity，注意只验能否解析、非逻辑正确）。
 - `python scripts/run_metrics.py --list` 查看当前注册表里的全部 metric（按维度分组，含适用场景）。
 - 用户想要注册表里没有的维度 → 参考 `references/metric_registry.md` + `assets/custom_metric.template.py`

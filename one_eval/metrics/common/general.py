@@ -5,9 +5,11 @@ general.py —— 通用维度指标:正确性(correctness) + 格式遵循(forma
 - correctness:exact_match / numerical_match / choice_accuracy / multilabel_f1
 - format    :extraction_rate(可抽取性) / format_compliance(答案分隔规范度) / json_validity
 - diagnostic:missing_answer_rate(弃答率,= 1 - 抽取率,供归因) / empty_or_whitespace_rate
+- fluency   :repetition_rate(退化重复) / garbled_text_rate(乱码/异常编码)
 """
 import json
 import re
+import unicodedata
 from typing import List, Dict, Any, Optional, Set, Tuple
 from one_eval.utils.extractor import (
     normalize_text,
@@ -425,6 +427,80 @@ def compute_json_validity(preds: List[Any], refs: List[Any], **kwargs) -> Dict[s
 
 
 # ============================ 流畅度维度 ============================
+
+_ALLOWED_CONTROL_CHARS = {"\n", "\r", "\t"}
+_STRONG_MOJIBAKE_PATTERNS = [
+    "â€™", "â€œ", "â€\x9d", "â€¦", "â€“", "â€”",
+    "ä¸", "ä½", "å›", "å¤", "æ˜", "æœ",
+    "è¿", "è¯", "çš", "ç”", "ï¼", "ï½",
+]
+
+
+def _garbled_reasons(text: str) -> List[str]:
+    reasons = []
+    if "\ufffd" in text:
+        reasons.append("replacement_char")
+
+    for ch in text:
+        code = ord(ch)
+        category = unicodedata.category(ch)
+        if category == "Cc" and ch not in _ALLOWED_CONTROL_CHARS:
+            reasons.append("control_char")
+            break
+        if category == "Cs":
+            reasons.append("surrogate")
+            break
+        if 0xFDD0 <= code <= 0xFDEF or (code & 0xFFFE) == 0xFFFE:
+            reasons.append("noncharacter")
+            break
+
+    if any(pattern in text for pattern in _STRONG_MOJIBAKE_PATTERNS):
+        reasons.append("mojibake")
+
+    return reasons
+
+
+@register_metric(
+    name="garbled_text_rate",
+    desc="乱码率:输出中明显编码损坏/异常 Unicode 的比例",
+    usage="生成健康度,无需 ref。保守检测乱码和异常字符；分越低越好",
+    categories=[
+        MetricCategory.TEXT_SCORE,
+        MetricCategory.QA_SINGLE, MetricCategory.QA_MULTI,
+        MetricCategory.CHOICE_SINGLE, MetricCategory.CHOICE_MULTI,
+        MetricCategory.PAIRWISE,
+    ],
+    dimension=MetricDimension.FLUENCY,
+)
+def compute_garbled_text_rate(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
+    """保守检测乱码/异常编码。空输出记 0,交给 empty_or_whitespace_rate 归因。"""
+    scores, bad_indices, reasons_by_index = [], [], {}
+
+    for idx, p in enumerate(preds):
+        s = "" if p is None else str(p)
+        if not s.strip():
+            scores.append(0.0)
+            continue
+
+        reasons = _garbled_reasons(s)
+        score = 1.0 if reasons else 0.0
+        scores.append(score)
+        if reasons:
+            bad_indices.append(idx)
+            reasons_by_index[str(idx)] = reasons
+
+    garbled_count = int(sum(scores))
+    return {
+        "score": garbled_count / len(scores) if scores else 0.0,
+        "details": scores,
+        "artifacts": {
+            "garbled_count": garbled_count,
+            "total": len(scores),
+            "garbled_indices": bad_indices,
+            "reasons_by_index": reasons_by_index,
+        },
+    }
+
 
 @register_metric(
     name="repetition_rate",

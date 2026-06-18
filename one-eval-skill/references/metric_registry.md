@@ -28,7 +28,7 @@ logits/跨类别标注。因此需要那类输入的统计指标（AUC-ROC、Pea
 | `correctness` | 答案对不对（主结果轴） | exact_match / numerical_match / choice_accuracy / multilabel_f1 / set_f1 / math_verify |
 | `similarity` | 与参考文本的词面相似/重叠（翻译/摘要/长答案） | bleu / rouge_l / chrf / token_f1 / jaccard_similarity |
 | `validity` | 产物本身是否合法可用（≠正确） | code_validity |
-| `fluency` | 生成健康度（退化重复等失败模式） | repetition_rate |
+| `fluency` | 生成健康度（退化重复、乱码/异常编码等失败模式） | repetition_rate / garbled_text_rate |
 | `format` | 格式遵循/可抽取性 | extraction_rate / format_compliance_score / json_validity |
 | `diagnostic` | 纯诊断信号（不直接代表好坏，用于归因） | missing_answer_rate / empty_or_whitespace_rate |
 
@@ -48,6 +48,7 @@ logits/跨类别标注。因此需要那类输入的统计指标（AUC-ROC、Pea
 **validity / fluency**
 - `code_validity`（别名 soft_code_execution）— 代码能否 AST 解析 + 是否定义函数/类。**只验合法性，不代表逻辑正确**；要真 Pass@k 请在受控沙箱自写 custom metric
 - `repetition_rate` — 退化重复率（1 − distinct-n）。无需 ref，抓“复读机/卡循环”，**分越低越好**（建议作诊断，`n` 可调，默认 3）
+- `garbled_text_rate` — 乱码率。无需 ref，保守检测明显编码损坏；**分越低越好**
 
 **format / diagnostic**
 - `extraction_rate` — 可抽取率（**强烈建议常带上**，诊断是否按格式输出；`extractor` = number/choice/generic）
