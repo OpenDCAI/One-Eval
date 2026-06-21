@@ -71,6 +71,99 @@ def sanitize_model_config(model_dict: Dict[str, Any]) -> Dict[str, Any]:
 BENCH_KIND_DATAFLOW = "dataflow"
 BENCH_KIND_EXTERNAL = "external_repo"
 VALID_BENCH_KINDS = {BENCH_KIND_DATAFLOW, BENCH_KIND_EXTERNAL}
+BENCH_NAME_FIELD = "bench_name"
+BENCH_NAME_ALIASES = ("benchmark", "benchmark_name")
+
+
+def get_bench_name(bench_dict: Dict[str, Any]) -> Optional[str]:
+    """读取 bench 唯一名。
+
+    Canonical schema 使用 `bench_name`，与 bench_gallery.json 对齐。
+    `benchmark` / `benchmark_name` 仅作为 evalspec 兼容别名。
+    """
+    if not isinstance(bench_dict, dict):
+        return None
+    name = bench_dict.get(BENCH_NAME_FIELD)
+    if name:
+        return str(name)
+    for alias in BENCH_NAME_ALIASES:
+        value = bench_dict.get(alias)
+        if value:
+            return str(value)
+    return None
+
+
+def normalize_benchmark_entry(raw: Any, index: int = 0) -> Dict[str, Any]:
+    """把 evalspec benchmark entry 规范化为 gallery 对齐的 `bench_name` schema."""
+    if isinstance(raw, str):
+        return {BENCH_NAME_FIELD: raw}
+    if not isinstance(raw, dict):
+        raise ValueError(f"evalspec.benchmarks[{index}] 必须是 dict 或字符串，实际是 {type(raw).__name__}")
+
+    out = dict(raw)
+    canonical = out.get(BENCH_NAME_FIELD)
+    for alias in BENCH_NAME_ALIASES:
+        alias_value = out.get(alias)
+        if not alias_value:
+            continue
+        if canonical and str(canonical) != str(alias_value):
+            raise ValueError(
+                f"evalspec.benchmarks[{index}] 同时设置了 bench_name={canonical!r} "
+                f"和 {alias}={alias_value!r}，请只保留 bench_name"
+            )
+        canonical = alias_value
+
+    if not canonical:
+        raise ValueError(
+            f"evalspec.benchmarks[{index}] 缺少 bench 名称字段；标准字段是 `bench_name`，"
+            "`benchmark` / `benchmark_name` 仅作为兼容别名"
+        )
+
+    out[BENCH_NAME_FIELD] = str(canonical)
+    for alias in BENCH_NAME_ALIASES:
+        out.pop(alias, None)
+    return out
+
+
+def normalize_evalspec(spec: Dict[str, Any]) -> Dict[str, Any]:
+    """规范化 evalspec schema。
+
+    标准格式:
+      benchmarks:
+        - bench_name: gsm8k
+
+    兼容输入:
+      - benchmark: gsm8k              # 顶层单 bench
+      - benchmark_name: gsm8k         # 顶层单 bench
+      - benchmarks: ["gsm8k"]
+      - benchmarks: [{benchmark: gsm8k}]
+      - benchmarks: [{benchmark_name: gsm8k}]
+    """
+    out = dict(spec)
+    benches = out.get("benchmarks")
+    if benches is None:
+        for alias in ("benchmark", "benchmark_name"):
+            if alias not in out:
+                continue
+            raw = out.pop(alias)
+            if isinstance(raw, list):
+                benches = raw
+            elif isinstance(raw, dict):
+                benches = [raw]
+            else:
+                benches = [{BENCH_NAME_FIELD: raw}]
+            break
+
+    if benches is None:
+        out["benchmarks"] = []
+        return out
+    if isinstance(benches, dict) or isinstance(benches, str):
+        benches = [benches]
+    if not isinstance(benches, list):
+        raise ValueError("evalspec.benchmarks 必须是 list；单个 bench 可写顶层 benchmark/benchmark_name 兼容字段")
+
+    out["benchmarks"] = [normalize_benchmark_entry(item, idx) for idx, item in enumerate(benches)]
+    return out
 
 
 def get_bench_kind(bench_dict: Dict[str, Any]) -> str:
@@ -78,7 +171,7 @@ def get_bench_kind(bench_dict: Dict[str, Any]) -> str:
     kind = (bench_dict.get("bench_kind") or BENCH_KIND_DATAFLOW)
     if kind not in VALID_BENCH_KINDS:
         raise ValueError(
-            f"bench {bench_dict.get('bench_name')!r} 的 bench_kind 非法: {kind!r}，"
+            f"bench {get_bench_name(bench_dict)!r} 的 bench_kind 非法: {kind!r}，"
             f"只能是 {sorted(VALID_BENCH_KINDS)}"
         )
     return kind
@@ -116,9 +209,10 @@ def enrich_external_bench(bench_dict: Dict[str, Any]) -> Dict[str, Any]:
     不被覆盖）。dataflow bench 原样返回。这样 external_bench.md「只需引用 bench」
     的说法与实现一致。
     """
+    bench_dict = normalize_benchmark_entry(bench_dict)
     if get_bench_kind(bench_dict) != BENCH_KIND_EXTERNAL:
         return bench_dict
-    g = _load_gallery_index().get(bench_dict.get("bench_name"))
+    g = _load_gallery_index().get(get_bench_name(bench_dict))
     if not g:
         return bench_dict
     merged = dict(g)            # 以 gallery 为底
@@ -129,6 +223,13 @@ def enrich_external_bench(bench_dict: Dict[str, Any]) -> Dict[str, Any]:
     if g_meta or s_meta:
         merged["meta"] = {**g_meta, **s_meta}
     return merged
+
+
+def get_gallery_bench(bench_name: str) -> Optional[Dict[str, Any]]:
+    """按 bench_name 读取 gallery 条目；找不到返回 None。"""
+    if not bench_name:
+        return None
+    return _load_gallery_index().get(bench_name)
 
 
 # 6 种合法 eval 类型（硬契约，与 one_eval/nodes/dataflow_eval_node.py 一致）
@@ -175,16 +276,23 @@ def build_bench_info(bench_dict: Dict[str, Any], dataset_cache: Optional[str] = 
     """
     from one_eval.core.state import BenchInfo
 
+    bench_dict = normalize_benchmark_entry(bench_dict)
+    bench_name = get_bench_name(bench_dict)
+
     # external_repo bench 不走内核，eval_type/key_mapping 不适用：直接带出 repo_eval 信息。
     # 正常情况下 run_eval.py 会在更上层就短路，这里是防御性兜底（避免误调时崩在硬校验上）。
     if get_bench_kind(bench_dict) == BENCH_KIND_EXTERNAL:
         bench = BenchInfo(
-            bench_name=bench_dict.get("bench_name"),
+            bench_name=bench_name,
+            bench_table_exist=bool(bench_dict.get("bench_table_exist", False)),
             bench_source_url=bench_dict.get("bench_source_url"),
             bench_dataflow_eval_type=bench_dict.get("bench_dataflow_eval_type"),
+            bench_prompt_template=bench_dict.get("bench_prompt_template"),
+            bench_keys=bench_dict.get("bench_keys") or [],
             dataset_cache=dataset_cache,
         )
-        repo_eval = (bench_dict.get("meta") or {}).get("repo_eval", {})
+        bench.meta.update(dict(bench_dict.get("meta") or {}))
+        repo_eval = bench.meta.get("repo_eval", {})
         bench.meta["bench_kind"] = BENCH_KIND_EXTERNAL
         bench.meta["repo_eval"] = repo_eval
         return bench
@@ -196,23 +304,29 @@ def build_bench_info(bench_dict: Dict[str, Any], dataset_cache: Optional[str] = 
             f"只能是 6 种之一: {sorted(VALID_EVAL_TYPES)}"
         )
 
-    key_mapping = bench_dict.get("key_mapping", {}) or {}
+    meta = bench_dict.get("meta") or {}
+    key_mapping = bench_dict.get("key_mapping") or meta.get("key_mapping") or {}
     missing = [k for k in REQUIRED_KEYS[eval_type] if not key_mapping.get(k)]
     if missing:
         raise ValueError(
-            f"bench {bench_dict.get('bench_name')!r} 的 eval_type={eval_type} "
+            f"bench {bench_name!r} 的 eval_type={eval_type} "
             f"缺少必填 key_mapping 字段: {missing}"
         )
 
     bench = BenchInfo(
-        bench_name=bench_dict.get("bench_name"),
+        bench_name=bench_name,
+        bench_table_exist=bool(bench_dict.get("bench_table_exist", False)),
         bench_source_url=bench_dict.get("bench_source_url"),
         bench_dataflow_eval_type=eval_type,
+        bench_prompt_template=bench_dict.get("bench_prompt_template"),
+        bench_keys=bench_dict.get("bench_keys") or [],
         dataset_cache=dataset_cache,
     )
+    bench.meta.update(dict(meta))
     bench.meta["key_mapping"] = key_mapping
-    if bench_dict.get("download_config"):
-        bench.meta["download_config"] = bench_dict["download_config"]
+    download_config = bench_dict.get("download_config") or meta.get("download_config")
+    if download_config:
+        bench.meta["download_config"] = download_config
     return bench
 
 
@@ -250,14 +364,14 @@ def get_ready_bench(bench_name: str) -> Optional[Dict[str, Any]]:
 
 
 def load_evalspec(path: str) -> Dict[str, Any]:
-    """读取 evalspec.yaml。"""
+    """读取 evalspec.yaml，并把 benchmark 名称字段规范化为 `bench_name`。"""
     import yaml
 
     with open(path, "r", encoding="utf-8") as f:
         spec = yaml.safe_load(f)
     if not isinstance(spec, dict):
         raise ValueError(f"evalspec 解析结果不是 dict: {path}")
-    return spec
+    return normalize_evalspec(spec)
 
 
 # --- metric 注册表加载：内置 + 用户自定义 ---
@@ -299,4 +413,3 @@ def ensure_metrics_loaded() -> List[str]:
 
     _METRICS_LOADED = True
     return loaded_custom
-

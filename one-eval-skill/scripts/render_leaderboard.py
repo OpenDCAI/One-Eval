@@ -34,14 +34,39 @@ def _load(path: str) -> dict:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-def _user_scores(results: dict) -> dict:
-    """从 eval_results.json 取每个 bench 的主分数。"""
+def _metric_result_index(metrics: dict) -> dict:
+    return {
+        r.get("bench_name"): r
+        for r in (metrics or {}).get("metric_results", []) or []
+        if r.get("bench_name")
+    }
+
+
+def _primary_score_from_metric_row(row: dict):
+    primary = row.get("primary_metric_result")
+    if isinstance(primary, dict) and primary.get("score") is not None:
+        return primary.get("score")
+    for val in (row.get("metrics") or {}).values():
+        if isinstance(val, dict) and val.get("priority") == "primary" and val.get("score") is not None:
+            return val.get("score")
+    return None
+
+
+def _user_scores(results: dict, metrics: dict | None = None) -> dict:
+    """取每个 bench 的主分数；缺 primary 时才 fallback 到 DataFlow diagnostic。"""
     model = results.get("model") or "（待评测模型）"
     out = {}
+    metric_rows = _metric_result_index(metrics or {})
     for r in results.get("results", []) or []:
         if not r.get("ok"):
             continue
-        score = (r.get("dataflow_score") or {}).get("score")
+        score = None
+        if isinstance(r.get("primary_metric_result"), dict):
+            score = r["primary_metric_result"].get("score")
+        if score is None:
+            score = _primary_score_from_metric_row(metric_rows.get(r.get("bench_name"), {}))
+        if score is None:
+            score = (r.get("dataflow_score") or {}).get("score")
         if score is None:
             continue
         out[r.get("bench_name")] = score
@@ -93,8 +118,8 @@ def _rank_table(bench: str, user_model: str, user_score: float, public: list) ->
     return "\n".join(lines)
 
 
-def build_markdown(results: dict, scores: dict) -> str:
-    user_model, user_bench_scores = _user_scores(results)
+def build_markdown(results: dict, scores: dict, metrics: dict | None = None) -> str:
+    user_model, user_bench_scores = _user_scores(results, metrics)
     table = scores.get("benchmarks", {}) or {}
 
     parts = ["## Leaderboard：本模型在公开分数中的位置", ""]
@@ -124,6 +149,7 @@ def build_markdown(results: dict, scores: dict) -> str:
 def main(argv=None):
     p = argparse.ArgumentParser(description="渲染 leaderboard 排名 markdown")
     p.add_argument("--results", required=True, help="eval_results.json 路径")
+    p.add_argument("--metrics", help="metric_results.json 路径（推荐，包含 primary metric）")
     p.add_argument("--scores", default=str(DEFAULT_SCORES), help="公开分数表 json 路径")
     p.add_argument("--out", help="输出 markdown 文件路径（默认打印到 stdout）")
     args = p.parse_args(argv or sys.argv[1:])
@@ -132,9 +158,10 @@ def main(argv=None):
         print(f"✗ 结果文件不存在: {args.results}", file=sys.stderr)
         return 2
     results = _load(args.results)
+    metrics = _load(args.metrics) if args.metrics and Path(args.metrics).exists() else {}
     scores = _load(args.scores) if Path(args.scores).exists() else {"benchmarks": {}}
 
-    md = build_markdown(results, scores)
+    md = build_markdown(results, scores, metrics)
     if args.out:
         out = Path(args.out)
         out.parent.mkdir(parents=True, exist_ok=True)

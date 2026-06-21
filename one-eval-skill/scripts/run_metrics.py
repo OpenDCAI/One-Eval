@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-run_metrics.py — 在 dataflow 主评测之外，按用户选择的 metric 注册表补充多维度打分。
+run_metrics.py — 按 gallery evaluation contract 计算 benchmark 主分，并可补充诊断 metric。
 
 定位：
-  run_eval.py 给出的是 dataflow 内核的「主分数」（每个 eval_type 的默认指标）。
-  本脚本读取每个 bench 的明细输出（detail_path / records），把用户挑选的额外 metric
-  （如 bleu / rouge / exact_match / 自定义 LLM 裁判等）逐一算出来，形成多维度评分。
+  run_eval.py 负责 DataFlow 生成、明细和诊断分；benchmark 主分由本脚本读取
+  meta.evaluation.primary_metric 后计算。用户显式传入的 --metrics 作为额外诊断维度。
 
 数据来源：
   run_eval.py 落盘的 eval_results.json，每个 bench 含 detail_path（dataflow 写出的明细），
@@ -15,7 +14,10 @@ run_metrics.py — 在 dataflow 主评测之外，按用户选择的 metric 注�
   # 列出注册表里所有可用 metric（供 agent 给用户挑选）
   python run_metrics.py --list
 
-  # 对某次评测结果补充 metric（metrics 用逗号分隔的注册名）
+  # 按 gallery contract 自动计算主分
+  python run_metrics.py --results eval_outputs/eval_results.json
+
+  # 对某次评测结果补充 diagnostic metric（metrics 用逗号分隔的注册名）
   python run_metrics.py --results eval_outputs/eval_results.json --metrics bleu,rouge_l
 
   # 指定每个 metric 的优先级（primary 进主表，secondary 进附表）
@@ -27,8 +29,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _common as common  # noqa: E402
@@ -83,6 +87,41 @@ def _parse_metrics_arg(s: str) -> list:
     return out
 
 
+def _default_evaluation_for_eval_type(eval_type: str) -> dict:
+    if eval_type == "key3_q_choices_a":
+        return {
+            "score_source": "metric_stage",
+            "official_metric": "accuracy",
+            "primary_metric": "choice_accuracy",
+            "denominator": "total",
+            "prediction_mode": "generation",
+            "parser": {"type": "choice_letter", "choices": "A-D"},
+            "failure_policy": {
+                "parse_failed": "score_zero",
+                "empty_output": "score_zero",
+                "invalid_reference": "exclude",
+            },
+            "official_compatibility": {
+                "equivalent": False,
+                "reason": "Fallback generation+parse contract; gallery meta.evaluation is missing.",
+            },
+        }
+    return {}
+
+
+def _resolve_evaluation_contract(bench_result: dict) -> dict:
+    evaluation = bench_result.get("evaluation")
+    if isinstance(evaluation, dict) and evaluation.get("primary_metric"):
+        return evaluation
+
+    gallery = common.get_gallery_bench(bench_result.get("bench_name")) or {}
+    gallery_eval = ((gallery.get("meta") or {}).get("evaluation") or {})
+    if isinstance(gallery_eval, dict) and gallery_eval.get("primary_metric"):
+        return gallery_eval
+
+    return _default_evaluation_for_eval_type(bench_result.get("bench_dataflow_eval_type"))
+
+
 def _build_bench_for_metrics(bench_result: dict):
     """从单个 bench 的评测结果构造 BenchInfo，把明细路径塞进 meta.artifact_paths。
 
@@ -91,23 +130,132 @@ def _build_bench_for_metrics(bench_result: dict):
     from one_eval.core.state import BenchInfo
 
     detail = bench_result.get("detail_path")
+    gallery = common.get_gallery_bench(bench_result.get("bench_name")) or {}
+    meta = dict(gallery.get("meta") or {})
     bench = BenchInfo(
         bench_name=bench_result.get("bench_name"),
         bench_dataflow_eval_type=bench_result.get("bench_dataflow_eval_type"),
         dataset_cache=detail,
+        bench_prompt_template=bench_result.get("bench_prompt_template") or gallery.get("bench_prompt_template"),
     )
+    meta.update({k: v for k, v in (bench_result.get("meta") or {}).items()})
+    bench.meta.update(meta)
     if detail:
         bench.meta["artifact_paths"] = {"records": detail}
     # key_mapping 里的 target key 作为 ref 提示（若有）
     km = bench_result.get("key_mapping") or {}
-    ref_key = (km.get("input_target_key") or km.get("input_label_key")
-               or km.get("input_better_key"))
+    eval_type = bench_result.get("bench_dataflow_eval_type")
+    pred_key = "generated_ans"
+    if eval_type in ("key3_q_choices_a", "key3_q_choices_as"):
+        pred_key = "generated_ans"
+    ref_key = (
+        km.get("input_target_key")
+        or km.get("input_targets_key")
+        or km.get("input_label_key")
+        or km.get("input_labels_key")
+        or km.get("input_better_key")
+    )
+    bench.meta["pred_key"] = pred_key
     if ref_key:
         bench.meta["ref_key"] = ref_key
+    if km:
+        bench.meta["key_mapping"] = km
     return bench
 
 
-def run_metrics(results_path: str, metrics_cfg: list) -> dict:
+def _safe_name(name: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", str(name or "bench")).strip("_") or "bench"
+
+
+def _primary_step3_path(results_path: str, bench_result: dict) -> Path:
+    detail = Path(bench_result.get("detail_path") or "")
+    if detail.name == "step_step2.jsonl" and detail.parent.exists():
+        return detail.parent / "step_step3_primary.jsonl"
+    return Path(results_path).parent / f"{_safe_name(bench_result.get('bench_name'))}_step3_primary.jsonl"
+
+
+def _detail_score(detail: Any) -> Any:
+    if isinstance(detail, dict) and "score" in detail:
+        return detail.get("score")
+    if isinstance(detail, bool):
+        return 1.0 if detail else 0.0
+    if isinstance(detail, (int, float)) or detail is None:
+        return detail
+    return None
+
+
+def _drop_dataflow_diagnostics(record: dict) -> dict:
+    legacy = {
+        "eval_valid",
+        "eval_score",
+        "eval_error",
+        "eval_pred",
+        "eval_pred_choice",
+        "eval_ref_choice",
+        "eval_parse_strategy",
+        "judge_response",
+    }
+    return {k: v for k, v in record.items() if k not in legacy}
+
+
+def _primary_answer(
+    idx: int,
+    detail: Any,
+    artifacts: dict,
+    parse_result: dict | None = None,
+) -> Any:
+    pred_parse = (parse_result or {}).get("pred") or {}
+    if pred_parse.get("normalized") is not None:
+        return pred_parse.get("normalized")
+
+    pred_choices = artifacts.get("pred_choices") or []
+    if idx < len(pred_choices) and pred_choices[idx] is not None:
+        return pred_choices[idx]
+
+    for key in ("pred_vals", "extracted_values"):
+        values = artifacts.get(key) or []
+        if idx < len(values) and values[idx] is not None:
+            return values[idx]
+
+    if isinstance(detail, dict):
+        for key in ("extracted", "answer", "pred", "prediction"):
+            if detail.get(key) is not None:
+                return detail.get(key)
+    return None
+
+
+def _write_primary_step3(results_path: str, bench_result: dict, bench, runner, primary_row: dict) -> str | None:
+    """Write raw sample fields + generated answer + compact primary metric result.
+
+    This becomes the report dashboard source of truth. DataFlow step2 fields remain
+    diagnostic/legacy and are intentionally not copied into step3.
+    """
+    inputs = runner._resolve_inputs(bench)
+    if not inputs:
+        return None
+    preds, refs, records, _align = runner._load_pred_ref_records(inputs, bench)
+    details = primary_row.get("primary_metric_details") or []
+    artifacts = primary_row.get("primary_metric_artifacts") or {}
+    parse_results = artifacts.get("parse_results") or []
+
+    out_path = _primary_step3_path(results_path, bench_result)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with out_path.open("w", encoding="utf-8") as f:
+        for idx, record in enumerate(records):
+            detail = details[idx] if idx < len(details) else None
+            parse_result = parse_results[idx] if idx < len(parse_results) else None
+            score = _detail_score(detail)
+            row = _drop_dataflow_diagnostics(dict(record))
+            if "generated_ans" not in row:
+                row["generated_ans"] = preds[idx] if idx < len(preds) else None
+            row["primary_answer"] = _primary_answer(idx, detail, artifacts, parse_result)
+            row["primary_score"] = score
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    return str(out_path.absolute())
+
+
+def run_metrics(results_path: str, metrics_cfg: list | None = None) -> dict:
     """对 eval_results.json 里每个 bench 补充 metric 打分，返回汇总 dict。"""
     common.ensure_metrics_loaded()
     from one_eval.metrics.runner import MetricRunner
@@ -125,8 +273,33 @@ def run_metrics(results_path: str, metrics_cfg: list) -> dict:
                  "reason": "主评测未成功或无明细输出"})
             continue
         bench = _build_bench_for_metrics(br)
-        res = runner.run_bench(bench, metrics_cfg)
-        out["metric_results"].append({"bench_name": name, **res})
+        row = {"bench_name": name}
+
+        evaluation = _resolve_evaluation_contract(br)
+        if evaluation:
+            bench.meta["evaluation"] = evaluation
+            primary = runner.run_bench_with_contract(bench, evaluation)
+            if primary.get("primary_metric_result"):
+                step3_path = _write_primary_step3(results_path, br, bench, runner, primary)
+                if step3_path:
+                    primary["primary_detail_path"] = step3_path
+                    br["primary_detail_path"] = step3_path
+                    br.setdefault("artifact_paths", {})["primary_samples"] = step3_path
+            primary.pop("primary_metric_details", None)
+            row.update(primary)
+        else:
+            row["primary_metric_warning"] = "missing evaluation contract; DataFlow score remains diagnostic only"
+
+        if metrics_cfg:
+            diagnostic = runner.run_bench(bench, metrics_cfg)
+            if diagnostic.get("metrics"):
+                row["metrics"] = diagnostic.get("metrics")
+                row.setdefault("num_samples", diagnostic.get("num_samples"))
+                row.setdefault("alignment", diagnostic.get("alignment"))
+            elif diagnostic.get("error"):
+                row["diagnostic_error"] = diagnostic.get("error")
+        out["metric_results"].append(row)
+    Path(results_path).write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     return out
 
 
@@ -141,6 +314,12 @@ def _print_summary(summary: dict) -> None:
             print(f"\n  [{name}] 错误：{mr.get('error')}")
             continue
         print(f"\n  [{name}] 样本数={mr.get('num_samples')}")
+        primary = mr.get("primary_metric_result") or {}
+        if primary:
+            print(f"    ★ primary {primary.get('metric')}: {primary.get('score')} "
+                  f"(source={primary.get('score_source')}, denominator={primary.get('denominator')})")
+        elif mr.get("primary_metric_warning"):
+            print(f"    ! {mr.get('primary_metric_warning')}")
         for mname, mres in (mr.get("metrics") or {}).items():
             if mres.get("error"):
                 print(f"    ✗ {mname}: {mres['error']}")
@@ -160,9 +339,8 @@ def main(argv=None):
     if args.list:
         return _list_metrics()
 
-    if not args.results or not args.metrics:
-        print("错误：需要 --results 与 --metrics（或用 --list 查看可用 metric）",
-              file=sys.stderr)
+    if not args.results:
+        print("错误：需要 --results（或用 --list 查看可用 metric）", file=sys.stderr)
         return 2
 
     results_path = args.results
@@ -170,10 +348,7 @@ def main(argv=None):
         print(f"✗ 结果文件不存在: {results_path}", file=sys.stderr)
         return 2
 
-    metrics_cfg = _parse_metrics_arg(args.metrics)
-    if not metrics_cfg:
-        print("✗ 未解析出任何 metric", file=sys.stderr)
-        return 2
+    metrics_cfg = _parse_metrics_arg(args.metrics) if args.metrics else []
 
     summary = run_metrics(results_path, metrics_cfg)
     _print_summary(summary)
@@ -186,7 +361,11 @@ def main(argv=None):
 
     # 全部 bench 都失败/跳过才算非 0
     any_ok = any(
-        (not mr.get("skipped") and not mr.get("error") and mr.get("metrics"))
+        (
+            not mr.get("skipped")
+            and not mr.get("error")
+            and (mr.get("primary_metric_result") or mr.get("metrics"))
+        )
         for mr in summary["metric_results"]
     )
     return 0 if any_ok else 1
