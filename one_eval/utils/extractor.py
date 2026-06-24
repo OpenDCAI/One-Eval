@@ -194,44 +194,10 @@ def normalize_text(x: Any) -> str:
 
 
 def extract_choice(text: Any) -> Optional[str]:
-    if text is None:
-        return None
-        
-    # 0. Handle integer input (0 -> 'A')
-    if isinstance(text, int):
-        if 0 <= text <= 25:
-            return chr(65 + text) # 0->A, 1->B
-        return None
+    from one_eval.metrics.parsers import parse_value
 
-    s = str(text)
-    
-    # 1. CoT: #### A
-    if "####" in s:
-        s = s.split("####")[-1]
-    
-    # 2. CoT: \boxed{A}
-    boxed_matches = re.findall(r"\\boxed\{([^}]+)\}", s)
-    if boxed_matches:
-        s = boxed_matches[-1]
-
-    s = s.strip().upper()
-    if not s:
-        return None
-        
-    # 3. Explicit "Answer: A" or "Answer is A" pattern
-    # Matches "Answer:" followed by optional text then a single letter A-Z
-    m_ans = re.search(r"(?:answer|option)\s*[:is]\s*\(?([A-Z])\)?(?:\W|$)", s, re.IGNORECASE)
-    if m_ans:
-        return m_ans.group(1).upper()
-
-    # 4. Standard patterns (Fallbacks)
-    m = re.search(r"\b([A-Z])\b", s)
-    if m:
-        return m.group(1)
-    m = re.search(r"^\(?\s*([A-Z])\s*\)?", s)
-    if m:
-        return m.group(1)
-    return None
+    res = parse_value(text, {"type": "choice_letter", "choices": "A-Z"})
+    return res.normalized if res.ok else None
 
 
 def extract_multi_choice(text: Any) -> set:

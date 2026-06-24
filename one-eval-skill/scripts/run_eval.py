@@ -103,6 +103,7 @@ def _ensure_dataset(bench_dict: dict, cache_dir: Path) -> str:
 
     优先复用已 READY 的本地数据；否则用 HFDownloadTool 下载。
     """
+    bench_dict = common.normalize_benchmark_entry(bench_dict)
     bench_name = bench_dict["bench_name"]
 
     ready = common.get_ready_bench(bench_name)
@@ -133,13 +134,16 @@ def _ensure_dataset(bench_dict: dict, cache_dir: Path) -> str:
 
 
 def _extract_score(stats: dict) -> dict:
-    """从 dataflow stats 提取核心分数（统一字段）。"""
+    """从 dataflow stats 提取诊断分数（统一字段）。"""
     return {
         "accuracy": stats.get("accuracy", stats.get("score")),
         "score": stats.get("score", stats.get("accuracy")),
         "total_samples": stats.get("total_samples"),
         "valid_samples": stats.get("valid_samples"),
         "metric": stats.get("metric"),
+        "role": stats.get("role", "diagnostic"),
+        "display_as_primary": bool(stats.get("display_as_primary", False)),
+        "note": stats.get("note", "DataFlow score is diagnostic only; primary score is computed by metric stage."),
     }
 
 
@@ -149,6 +153,7 @@ def _external_repo_result(bench_dict: dict) -> dict:
     不下载、不调内核、不报错：把 meta.repo_eval 原样带出，交给调用方 agent 按
     references/external_bench.md 在外部执行评测、再回填分数。当前版本不内置执行器。
     """
+    bench_dict = common.normalize_benchmark_entry(bench_dict)
     meta = bench_dict.get("meta") or {}
     return {
         "bench_name": bench_dict.get("bench_name"),
@@ -156,8 +161,12 @@ def _external_repo_result(bench_dict: dict) -> dict:
         "bench_dataflow_eval_type": bench_dict.get("bench_dataflow_eval_type"),
         "mode": "external_repo_pending",
         "dataflow_score": {"score": None, "total_samples": None, "valid_samples": None,
-                           "metric": None},
+                           "metric": None, "role": "diagnostic",
+                           "display_as_primary": False},
         "repo_eval": meta.get("repo_eval", {}),
+        "evaluation": meta.get("evaluation"),
+        "prompt": meta.get("prompt"),
+        "readiness": meta.get("readiness"),
         "note": "external_repo bench：需在外部仓库/沙箱执行评测后回填分数，详见 references/external_bench.md",
         "ok": True,  # 不算失败：只是待外部执行，不应让整批退出码非 0
     }
@@ -167,6 +176,8 @@ def run_one_bench(bench_dict: dict, model_dict: dict, cache_dir: Path,
                   output_dir: Path, smoke: bool, max_samples) -> dict:
     """评测单个 benchmark，返回结果 dict。"""
     from one_eval.toolkits.dataflow_eval_tool import DataFlowEvalTool
+
+    bench_dict = common.normalize_benchmark_entry(bench_dict)
 
     # external_repo：不走确定性内核，优雅短路（不下载/不调内核/不报错）。
     if common.get_bench_kind(bench_dict) == common.BENCH_KIND_EXTERNAL:
@@ -216,6 +227,9 @@ def run_one_bench(bench_dict: dict, model_dict: dict, cache_dir: Path,
         "dataflow_score": score,
         "detail_path": df_result.get("detail_path"),
         "key_mapping": df_result.get("key_mapping", bench_dict.get("key_mapping")),
+        "evaluation": bench.meta.get("evaluation"),
+        "prompt": df_result.get("prompt", bench.meta.get("prompt")),
+        "readiness": bench.meta.get("readiness"),
         "ok": score.get("score") is not None,
     }
 
@@ -329,4 +343,3 @@ def main(argv=None):
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

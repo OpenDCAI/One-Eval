@@ -34,6 +34,8 @@ model:
 # --- 待评测的 benchmark 列表 ------------------------------------------------
 # 每个 bench 必须属于 6 种 eval_type 之一，且按类型填全 key_mapping 必填字段。
 # eval_type 与 key_mapping 的对应见 references/eval_types.md。
+# 字段名标准与 bench_gallery.json 对齐：列表项使用 bench_name。
+# benchmark / benchmark_name 仅作为旧 spec 兼容别名，脚本会读入后规范化为 bench_name。
 benchmarks:
   - bench_name: "MATH-500"
     bench_dataflow_eval_type: "key2_qa"          # 6 选 1

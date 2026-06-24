@@ -20,6 +20,7 @@ from one_eval.utils.extractor import (
     AnswerExtractor,
 )
 from one_eval.core.metric_registry import register_metric, MetricCategory, MetricDimension
+from one_eval.metrics.parsers import parse_value
 
 
 # ============================ 正确性维度 ============================
@@ -104,6 +105,10 @@ def compute_numerical_match(preds: List[Any], refs: List[Any], **kwargs) -> Dict
     dimension=MetricDimension.CORRECTNESS,
 )
 def compute_choice_accuracy(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
+    parser_cfg = kwargs.get("parser")
+    if isinstance(parser_cfg, dict) and parser_cfg.get("type"):
+        return _compute_choice_accuracy_with_parser(preds, refs, **kwargs)
+
     scores: List[float] = []
     pred_choices: List[Optional[str]] = []
     ref_choices: List[Any] = []
@@ -131,6 +136,100 @@ def compute_choice_accuracy(preds: List[Any], refs: List[Any], **kwargs) -> Dict
         "score": sum(scores) / len(scores) if scores else 0.0,
         "details": scores,
         "artifacts": {"pred_choices": pred_choices, "ref_choices": ref_choices},
+    }
+
+
+def _compute_choice_accuracy_with_parser(preds: List[Any], refs: List[Any], **kwargs) -> Dict[str, Any]:
+    parser_cfg = kwargs.get("parser") or {"type": "choice_letter", "choices": "A-D"}
+    denominator = str(kwargs.get("denominator") or "total")
+    failure_policy = kwargs.get("failure_policy") or {}
+    parse_failed_policy = failure_policy.get("parse_failed", "score_zero")
+    empty_policy = failure_policy.get("empty_output", "score_zero")
+    invalid_ref_policy = failure_policy.get("invalid_reference", "exclude")
+    records = kwargs.get("records") or [None] * len(preds)
+
+    details: List[Optional[float]] = []
+    pred_choices: List[Optional[str]] = []
+    ref_choices: List[Optional[str]] = []
+    parse_results: List[Dict[str, Any]] = []
+
+    valid_predictions = 0
+    parse_failed = 0
+    empty_output = 0
+    invalid_references = 0
+    denominator_count = 0
+    score_sum = 0.0
+
+    for idx, (pred, ref) in enumerate(zip(preds, refs)):
+        record = records[idx] if idx < len(records) else None
+        pred_parse = parse_value(pred, parser_cfg, record if isinstance(record, dict) else None)
+        ref_parse = parse_value(ref, parser_cfg, record if isinstance(record, dict) else None)
+
+        pred_choices.append(pred_parse.normalized if pred_parse.ok else None)
+        ref_choices.append(ref_parse.normalized if ref_parse.ok else None)
+        parse_results.append({
+            "pred": pred_parse.to_dict(),
+            "ref": ref_parse.to_dict(),
+        })
+
+        if pred_parse.ok:
+            valid_predictions += 1
+        elif pred_parse.error == "empty_output":
+            empty_output += 1
+        else:
+            parse_failed += 1
+
+        if not ref_parse.ok:
+            invalid_references += 1
+            if invalid_ref_policy == "exclude":
+                details.append(None)
+                continue
+
+        should_count = denominator == "total"
+        if denominator == "valid_only":
+            should_count = pred_parse.ok and ref_parse.ok
+        elif denominator == "official":
+            should_count = ref_parse.ok
+
+        if not should_count:
+            details.append(None)
+            continue
+
+        denominator_count += 1
+        if pred_parse.ok and ref_parse.ok:
+            score = 1.0 if pred_parse.normalized == ref_parse.normalized else 0.0
+        elif pred_parse.error == "empty_output" and empty_policy == "exclude":
+            denominator_count -= 1
+            details.append(None)
+            continue
+        elif pred_parse.error != "empty_output" and parse_failed_policy == "exclude":
+            denominator_count -= 1
+            details.append(None)
+            continue
+        else:
+            score = 0.0
+
+        details.append(score)
+        score_sum += score
+
+    score = score_sum / denominator_count if denominator_count > 0 else 0.0
+    return {
+        "score": score,
+        "details": details,
+        "total_samples": len(preds),
+        "scored_samples": denominator_count,
+        "valid_predictions": valid_predictions,
+        "parse_failed": parse_failed,
+        "empty_output": empty_output,
+        "invalid_references": invalid_references,
+        "denominator": denominator,
+        "parser": parser_cfg,
+        "failure_policy": failure_policy,
+        "artifacts": {
+            "pred_choices": pred_choices,
+            "ref_choices": ref_choices,
+            "parse_results": parse_results,
+        },
     }
 
 
@@ -536,4 +635,3 @@ def compute_repetition_rate(preds: List[Any], refs: List[Any], **kwargs) -> Dict
         "details": scores,
         "artifacts": arts,
     }
-

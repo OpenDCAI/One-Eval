@@ -13,7 +13,7 @@ from multiprocessing import cpu_count
 log = get_logger("MetricRunner")
 
 # Metrics that are corpus-level and should not be chunked
-NON_PARALLEL_METRICS = {"bleu", "chrf", "case_study_analyst", "metric_summary_analyst"}
+NON_PARALLEL_METRICS = {"bleu", "chrf", "choice_accuracy", "case_study_analyst", "metric_summary_analyst"}
 
 class MetricRunner:
     def __init__(self, max_workers: Optional[int] = None):
@@ -136,6 +136,62 @@ class MetricRunner:
 
         return results
 
+    def run_bench_with_contract(self, bench: BenchInfo, evaluation: Dict[str, Any]) -> Dict[str, Any]:
+        inputs = self._resolve_inputs(bench)
+        if not inputs:
+            return {"error": "missing_inputs"}
+
+        try:
+            preds, refs, records, align_info = self._load_pred_ref_records(inputs, bench)
+        except Exception as e:
+            return {"error": f"load_failed: {str(e)}"}
+
+        metric_name = evaluation.get("primary_metric")
+        if not metric_name:
+            return {"error": "missing_primary_metric"}
+
+        fn = get_metric_fn(metric_name)
+        if not fn:
+            return {"error": f"metric_not_implemented: {metric_name}"}
+
+        runtime_kwargs = {
+            "records": records,
+            "parser": evaluation.get("parser"),
+            "denominator": evaluation.get("denominator", "total"),
+            "failure_policy": evaluation.get("failure_policy") or {},
+            "evaluation": evaluation,
+        }
+        try:
+            res = fn(preds, refs, **runtime_kwargs)
+        except Exception as e:
+            log.error(f"Primary metric {metric_name} error: {e}")
+            return {"error": str(e)}
+
+        primary = {
+            "metric": metric_name,
+            "official_metric": evaluation.get("official_metric"),
+            "score": res.get("score"),
+            "score_source": evaluation.get("score_source", "metric_stage"),
+            "prediction_mode": evaluation.get("prediction_mode"),
+            "denominator": res.get("denominator", evaluation.get("denominator", "total")),
+            "total_samples": res.get("total_samples", len(refs)),
+            "scored_samples": res.get("scored_samples"),
+            "valid_predictions": res.get("valid_predictions"),
+            "parse_failed": res.get("parse_failed"),
+            "empty_output": res.get("empty_output"),
+            "invalid_references": res.get("invalid_references"),
+            "parser": res.get("parser", evaluation.get("parser")),
+            "failure_policy": res.get("failure_policy", evaluation.get("failure_policy") or {}),
+            "official_compatibility": evaluation.get("official_compatibility"),
+        }
+        return {
+            "num_samples": len(refs),
+            "alignment": align_info,
+            "primary_metric_result": primary,
+            "primary_metric_details": res.get("details"),
+            "primary_metric_artifacts": res.get("artifacts", {}),
+        }
+
     def _resolve_inputs(self, bench: BenchInfo) -> Optional[Dict[str, Any]]:
         # Prefer artifact_paths first (outputs from DataFlow steps)
         meta = getattr(bench, "meta", {}) or {}
@@ -212,6 +268,14 @@ class MetricRunner:
         return None
 
     def _load_pred_ref(self, inputs: Dict[str, Any], bench: BenchInfo) -> Tuple[List[Any], List[Any], Dict[str, Any]]:
+        preds, refs, _records, align_info = self._load_pred_ref_records(inputs, bench)
+        return preds, refs, align_info
+
+    def _load_pred_ref_records(
+        self,
+        inputs: Dict[str, Any],
+        bench: BenchInfo,
+    ) -> Tuple[List[Any], List[Any], List[Dict[str, Any]], Dict[str, Any]]:
         mode = inputs.get("mode")
         if mode == "records":
             records_path: Path = inputs["records_path"]
@@ -223,7 +287,7 @@ class MetricRunner:
             
             preds = [self._get_pred(r, pred_key_hint) for r in records]
             refs = [self._get_ref(r, ref_key_hint) for r in records]
-            return preds, refs, {"mode": "records", "path": str(records_path)}
+            return preds, refs, records, {"mode": "records", "path": str(records_path)}
 
         pred_path: Path = inputs["pred_path"]
         gt_path: Path = inputs["gt_path"]
@@ -247,6 +311,7 @@ class MetricRunner:
 
         preds: List[Any] = []
         refs: List[Any] = []
+        records: List[Dict[str, Any]] = []
 
         missing_pred = 0
         extra_pred = 0
@@ -258,13 +323,19 @@ class MetricRunner:
                 preds.append(None)
             else:
                 preds.append(self._get_pred(pred_rec, pred_key_hint))
+            merged = dict(gt_rec)
+            if pred_rec:
+                merged["_prediction_record"] = pred_rec
+                for k, v in pred_rec.items():
+                    merged.setdefault(k, v)
+            records.append(merged)
             refs.append(self._get_ref(gt_rec, ref_key_hint))
 
         for sid in pred_index.keys():
             if sid not in gt_index:
                 extra_pred += 1
 
-        return preds, refs, {
+        return preds, refs, records, {
             "mode": "split",
             "pred_path": str(pred_path),
             "gt_path": str(gt_path),

@@ -147,6 +147,8 @@ python scripts/check_model.py --api --model <名> --api-url <url> --api-key <key
 ### 4. 生成 evalspec.yaml
 基于 `assets/evalspec.template.yaml` 填写 model / benchmarks / metrics / runtime。
 eval_type 与 key_mapping 必须符合 `references/eval_types.md` 的硬契约。
+`benchmarks[]` 中 benchmark 名称字段统一写 `bench_name`，与 `bench_gallery.json` 对齐；
+`benchmark` / `benchmark_name` 只是脚本兼容旧 spec 的别名，不作为新 spec 的标准写法。
 
 ### 5. Smoke 验证（强制，除非已 READY）
 正式全量评测前，**每个未 READY 的 bench 先抽 3 条**跑通：
@@ -180,6 +182,9 @@ python scripts/run_eval.py evalspec.yaml --resume eval_outputs/runs/<run_id>
 python scripts/run_metrics.py --results eval_outputs/runs/<run_id>/eval_results.json --metrics <名,名:primary>
 ```
 产出 `eval_outputs/runs/<run_id>/metric_results.json`（与 results 同目录）。
+同时会为每个 bench 生成 primary metric 逐样本明细 `step_step3_primary.jsonl`：
+保留原始样本字段与 `generated_ans`，只追加 `primary_answer` 和 `primary_score`。
+报告内嵌看板优先读取这个 step3；DataFlow step2 只作为诊断与 fallback。
 
 ### 8. 生成 HTML 报告并自动打开（图文并茂、有总有详）
 ```bash
@@ -190,8 +195,10 @@ python scripts/render_report.py --results eval_outputs/runs/<run_id>/eval_result
 # 不想自动打开时加 --no-open；公开分数表默认读 references/leaderboard_scores.json，可用 --scores 覆盖
 ```
 **这一步必须由你（agent）在评测+metric 跑完后主动调用**，让用户做完评测直接看到弹出的报告，
-而不是把渲染留给用户手动操作。一次产出单文件 `report.html`（总览卡片 + leaderboard 条形图 + metric
-热力图 + 逐 bench 详情 + 附录「评测设置」含被测模型/run_id/生成参数真值，零依赖可离线）。
+而不是把渲染留给用户手动操作。默认只产出一个 `report.html`，其中包含总览卡片、
+leaderboard 条形图、metric 热力图、逐 bench 详情、内嵌逐样本看板，以及附录「评测设置」
+（被测模型/run_id/生成参数真值），零依赖可离线。报告页面采用左侧导航：第一个入口是
+「测评总览」，其余入口对应每个 bench 的完整样本明细页。
 
 对话里先给**初版摘要**（**明说被测模型名** + 核心分数 + 一句话水位结论 + 强弱 bench），再说明完整报告已生成并自动打开（附绝对路径）。
 
@@ -209,7 +216,7 @@ python scripts/render_report.py --results eval_outputs/runs/<run_id>/eval_result
 - `references/model_setup.md` — API / vLLM 模型接入与凭证、HF 下载配置
 - `references/report_template.md` — 报告结构模板（面向模型性能 + 评测设置）
 - `references/leaderboard_scores.json` — 公开模型分数表（手工维护、带来源），leaderboard 排名用
-- `scripts/` — check_model / prepare_bench / run_eval / run_metrics / render_report（HTML 主报告）/ make_plots / render_leaderboard（markdown 退路）
+- `scripts/` — check_model / prepare_bench / run_eval / run_metrics / render_report（HTML 主报告，内嵌逐样本看板）/ render_sample_dashboard（逐样本看板调试工具）/ make_plots / render_leaderboard（markdown 退路）
 - `assets/` — evalspec.template.yaml / custom_metric.template.py / external_bench.entry.template.json
 
 ## 安全 & 边界

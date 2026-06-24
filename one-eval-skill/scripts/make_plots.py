@@ -7,8 +7,8 @@ make_plots.py — 把评测结果渲染成分析图，供最终报告（图文�
   图怎么解读、怎么串成叙事，由调用方 agent 按 report_template 写文字。
 
 输入：
-  - eval_results.json（run_eval.py 产出）：每个 bench 的 dataflow 主分数
-  - metric_results.json（run_metrics.py 产出，可选）：多维度 metric 打分
+  - eval_results.json（run_eval.py 产出）：每个 bench 的 DataFlow 诊断分数
+  - metric_results.json（run_metrics.py 产出，可选）：primary metric + 多维度 metric 打分
 
 产出（默认写到结果同目录的 plots/ 下）：
   - bench_scores.png        各 bench 主分数对比（条形图）
@@ -48,11 +48,40 @@ def _load(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-def plot_bench_scores(results: dict, out_dir: Path):
+def _metric_result_index(metrics: dict) -> dict:
+    return {
+        r.get("bench_name"): r
+        for r in (metrics or {}).get("metric_results", []) or []
+        if r.get("bench_name")
+    }
+
+
+def _primary_score_from_metric_row(row: dict):
+    primary = row.get("primary_metric_result")
+    if isinstance(primary, dict) and primary.get("score") is not None:
+        return primary.get("score")
+    for val in (row.get("metrics") or {}).values():
+        if isinstance(val, dict) and val.get("priority") == "primary" and val.get("score") is not None:
+            return val.get("score")
+    return None
+
+
+def plot_bench_scores(results: dict, metrics: dict, out_dir: Path):
     """各 bench 主分数对比条形图。"""
-    rows = [(r["bench_name"], (r.get("dataflow_score") or {}).get("score"))
-            for r in results.get("results", [])
-            if r.get("ok") and (r.get("dataflow_score") or {}).get("score") is not None]
+    metric_rows = _metric_result_index(metrics)
+    rows = []
+    for r in results.get("results", []):
+        if not r.get("ok"):
+            continue
+        score = None
+        if isinstance(r.get("primary_metric_result"), dict):
+            score = r["primary_metric_result"].get("score")
+        if score is None:
+            score = _primary_score_from_metric_row(metric_rows.get(r.get("bench_name"), {}))
+        if score is None:
+            score = (r.get("dataflow_score") or {}).get("score")
+        if score is not None:
+            rows.append((r["bench_name"], score))
     if not rows:
         return None
     names = [r[0] for r in rows]
@@ -169,14 +198,15 @@ def main(argv=None):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     made = []
-    p1 = plot_bench_scores(results, out_dir)
+    metrics = _load(args.metrics) if args.metrics and Path(args.metrics).exists() else {}
+    p1 = plot_bench_scores(results, metrics, out_dir)
     if p1:
         made.append(p1)
     p2 = plot_sample_validity(results, out_dir)
     if p2:
         made.append(p2)
-    if args.metrics and Path(args.metrics).exists():
-        p3 = plot_metric_heatmap(_load(args.metrics), out_dir)
+    if metrics:
+        p3 = plot_metric_heatmap(metrics, out_dir)
         if p3:
             made.append(p3)
 

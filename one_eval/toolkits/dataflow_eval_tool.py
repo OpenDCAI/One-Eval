@@ -5,6 +5,7 @@ import time
 import traceback
 import json
 import threading
+import hashlib
 from pathlib import Path
 from typing import Dict, Any, Optional, Callable, List
 import re
@@ -322,6 +323,10 @@ class DataFlowEvalTool:
                         key_mapping["input_label_key"] = cand
                         log.info(f"[{bench_name}] Auto-selected label column '{cand}' for key3_q_choices_a")
                         break
+
+        active_choices_key = key_mapping.get("input_choices_key")
+        if isinstance(active_choices_key, str) and active_choices_key in df.columns:
+            df["choices_text"] = df[active_choices_key].apply(self._choices_text)
         
         return df, key_mapping
 
@@ -392,6 +397,54 @@ class DataFlowEvalTool:
                     if len(parts) > 1:
                         return parts
         return [self._stringify_value(value).strip()]
+
+    def _choices_text(self, value: Any) -> str:
+        choices = self._normalize_choices_value(value)
+        return "\n".join([f"{chr(65 + i)}. {choice}" for i, choice in enumerate(choices)])
+
+    def _normalize_prompt_template(self, template: str) -> str:
+        template = template.replace("{choice}", "CHOICE")
+        if "{{" in template and "}}" in template:
+            return template
+        return re.sub(r"\{([A-Za-z_][A-Za-z0-9_]*)\}", r"{{\1}}", template)
+
+    def _resolve_prompt_template(self, bench: BenchInfo, eval_type: str):
+        prompt_cfg = bench.meta.get("prompt") if isinstance(bench.meta, dict) else None
+        if isinstance(prompt_cfg, dict):
+            user_template = str(prompt_cfg.get("user_template") or "").strip()
+            if user_template:
+                normalized = self._normalize_prompt_template(user_template)
+                prompt_hash = "sha256:" + hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+                return FormatStrPrompt(f_str_template=normalized), {
+                    "prompt_source": prompt_cfg.get("source", "gallery"),
+                    "prompt_template_id": prompt_cfg.get("template_id"),
+                    "prompt_hash": prompt_hash,
+                    "output_format": prompt_cfg.get("output_format"),
+                    "official_compatibility": prompt_cfg.get("official_compatibility"),
+                }
+
+        if bench.bench_prompt_template:
+            normalized = self._normalize_prompt_template(str(bench.bench_prompt_template))
+            prompt_hash = "sha256:" + hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+            return FormatStrPrompt(f_str_template=normalized), {
+                "prompt_source": "bench_prompt_template",
+                "prompt_template_id": None,
+                "prompt_hash": prompt_hash,
+            }
+
+        if eval_type in ("key3_q_choices_a", "key3_q_choices_as"):
+            return None, {"prompt_source": "dataflow_fallback", "prompt_template_id": None}
+        return FormatStrPrompt(f_str_template="{{question}}\nAnswer:"), {
+            "prompt_source": "one_eval_default",
+            "prompt_template_id": None,
+        }
+
+    def _mark_stats_diagnostic(self, stats: Dict[str, Any]) -> Dict[str, Any]:
+        stats = dict(stats or {})
+        stats["role"] = "diagnostic"
+        stats["display_as_primary"] = False
+        stats.setdefault("note", "DataFlow score is diagnostic only; primary score is computed by metric stage.")
+        return stats
 
     def _normalize_target_list(self, value: Any) -> List[str]:
         if self._is_empty_value(value):
@@ -653,11 +706,16 @@ class DataFlowEvalTool:
                 "metric": "llm_as_judge",
                 "judge_model": judge_model_config.model_name_or_path,
             }
+            stats = self._mark_stats_diagnostic(stats)
             Path(eval_result_path).write_text(json.dumps([stats], ensure_ascii=False, indent=2), encoding="utf-8")
             return {
                 "stats": stats,
                 "detail_path": str(Path(step2_output_path).absolute()),
                 "key_mapping": key_mapping,
+                "prompt": {
+                    "prompt_source": "judge_config",
+                    "prompt_template_id": judge_config.get("template_id"),
+                },
             }
         finally:
             if judge_cleanup_needed:
@@ -789,6 +847,142 @@ class DataFlowEvalTool:
         log.info(f"[rescore] key2_qa 翻正 {flipped} 个内核假阴性 → accuracy={accuracy:.4f}")
         return stats
 
+    def _rescore_choice_single(
+        self,
+        step_file: str,
+        eval_result_path: str,
+        stats: Dict[str, Any],
+        pred_key: str,
+        label_key: Optional[str],
+        parser_cfg: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """用 One-Eval 的 choice parser 重打单选题逐样本诊断分。
+
+        DataFlow 的 parse_choice_acc 会在长 CoT 中用第一个独立字母作为答案，
+        容易把 "<answer>F</answer>" 之前的 A/B/C 误判成模型最终答案。
+        这里复用 gallery evaluation.parser，优先解析 tagged/boxed/final-answer。
+        """
+        if not step_file or not os.path.exists(step_file) or not label_key:
+            return stats
+        try:
+            df = pd.read_json(step_file, lines=True)
+        except Exception as e:
+            log.warning(f"[choice-rescore] 读取 {step_file} 失败，跳过重打分: {e}")
+            return stats
+        if pred_key not in df.columns or label_key not in df.columns:
+            return stats
+
+        from one_eval.metrics.parsers import parse_value
+        from one_eval.metrics.parsers.choice import normalize_choice_labels
+
+        parser = parser_cfg or {"type": "choice_letter", "choices": "A-D"}
+        for col in (
+            "eval_valid",
+            "eval_score",
+            "eval_pred",
+            "eval_error",
+            "eval_pred_choice",
+            "eval_ref_choice",
+            "eval_parse_strategy",
+        ):
+            if col not in df.columns:
+                df[col] = None
+            df[col] = df[col].astype(object)
+
+        total = int(len(df))
+        denominator_count = 0
+        score_sum = 0.0
+        valid_predictions = 0
+        parse_failed = 0
+        empty_output = 0
+        invalid_references = 0
+        changed = 0
+
+        for idx, row in df.iterrows():
+            record = row.to_dict()
+            pred_parse = parse_value(record.get(pred_key), parser, record)
+            ref_parse = parse_value(record.get(label_key), parser, record)
+            labels = normalize_choice_labels(parser.get("choices", "A-D"), record)
+
+            df.at[idx, "eval_pred_choice"] = pred_parse.normalized if pred_parse.ok else None
+            df.at[idx, "eval_ref_choice"] = ref_parse.normalized if ref_parse.ok else None
+            df.at[idx, "eval_parse_strategy"] = pred_parse.strategy
+
+            if not ref_parse.ok:
+                invalid_references += 1
+                new_valid = False
+                new_score = None
+                new_error = "invalid_reference"
+            else:
+                denominator_count += 1
+                new_valid = True
+                if pred_parse.ok:
+                    valid_predictions += 1
+                    new_score = 1.0 if pred_parse.normalized == ref_parse.normalized else 0.0
+                    new_error = ""
+                else:
+                    new_score = 0.0
+                    if pred_parse.error == "empty_output":
+                        empty_output += 1
+                        new_error = "empty_output"
+                    else:
+                        parse_failed += 1
+                        new_error = "parse_failed"
+                score_sum += float(new_score or 0.0)
+
+            if pred_parse.ok and pred_parse.normalized in labels:
+                new_pred = float(labels.index(pred_parse.normalized))
+            else:
+                new_pred = None
+
+            old_score = row.get("eval_score")
+            if (
+                bool(row.get("eval_valid", False)) != new_valid
+                or (old_score is None) != (new_score is None)
+                or (new_score is not None and float(old_score or 0.0) != float(new_score))
+                or row.get("eval_error") != new_error
+            ):
+                changed += 1
+
+            df.at[idx, "eval_valid"] = new_valid
+            df.at[idx, "eval_score"] = new_score
+            df.at[idx, "eval_pred"] = new_pred
+            df.at[idx, "eval_error"] = new_error
+
+        accuracy = score_sum / denominator_count if denominator_count > 0 else 0.0
+        stats = dict(stats or {})
+        stats.update({
+            "total_samples": total,
+            "valid_samples": denominator_count,
+            "accuracy": accuracy,
+            "score": accuracy,
+            "metric": "choice_accuracy_parser",
+            "valid_predictions": valid_predictions,
+            "parse_failed": parse_failed,
+            "empty_output": empty_output,
+            "invalid_references": invalid_references,
+            "rescored_rows": changed,
+            "rescored_by": "one_eval.choice_letter_parser",
+        })
+
+        df.to_json(step_file, orient="records", lines=True, force_ascii=False)
+        try:
+            Path(eval_result_path).write_text(
+                json.dumps([stats], ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except Exception as e:
+            log.warning(f"[choice-rescore] 回写 stats 失败: {e}")
+        log.info(
+            "[choice-rescore] 单选题重打分 rows=%s accuracy=%.4f valid_predictions=%s parse_failed=%s empty=%s",
+            changed,
+            accuracy,
+            valid_predictions,
+            parse_failed,
+            empty_output,
+        )
+        return stats
+
     def run_eval(
         self,
         bench: BenchInfo,
@@ -916,19 +1110,7 @@ class DataFlowEvalTool:
         # 对于不需要生成的任务（如 text_score, choices_a_ll），Generator 可能只是透传或计算
         # BenchAnswerGenerator 内部会根据 eval_type 判断是否需要 generate
         
-        # 构造 Prompt Template (简单通用版)
-        # 注意：对于 chat 模型，通常建议使用 apply_chat_template，这里简化为 FormatStrPrompt
-        # 如果是 base 模型，这个 template 很重要
-        #
-        # 选择题（key3_q_choices_a / key3_q_choices_as）必须把 choices 注入到 prompt，否则
-        # 模型看不到选项、会把题干当填空题续写，导致 parse_failed / 分数异常偏低。
-        # FormatStrPrompt 只做占位符替换，模板里没有 {choices} 就会丢掉选项；这里对选择题
-        # 传 None，让 BenchAnswerGenerator 走自带的 choice-aware fallback（含 "Output only the
-        # option letter"）。其余生成型任务仍用简单的问答模板。
-        if bench.bench_dataflow_eval_type in ("key3_q_choices_a", "key3_q_choices_as"):
-            prompt_tmpl = None
-        else:
-            prompt_tmpl = FormatStrPrompt(f_str_template="{{question}}\nAnswer:")
+        prompt_tmpl, prompt_meta = self._resolve_prompt_template(bench, bench.bench_dataflow_eval_type)
         
         generator = BenchAnswerGenerator(
             llm_serving=self.llm_serving,
@@ -1084,9 +1266,24 @@ class DataFlowEvalTool:
                 )
             except Exception as e:
                 log.warning(f"[{bench.bench_name}] 代码层重打分跳过: {e}")
+        elif bench.bench_dataflow_eval_type == "key3_q_choices_a" and metric_type == "parse_choice_acc":
+            try:
+                evaluation = bench.meta.get("evaluation", {}) if isinstance(bench.meta, dict) else {}
+                stats = self._rescore_choice_single(
+                    last_step_file,
+                    eval_result_path,
+                    stats,
+                    "generated_ans",
+                    label_key,
+                    evaluation.get("parser") if isinstance(evaluation, dict) else None,
+                )
+            except Exception as e:
+                log.warning(f"[{bench.bench_name}] 单选题 parser 重打分跳过: {e}")
 
+        stats = self._mark_stats_diagnostic(stats)
         return {
             "stats": stats,
             "detail_path": str(Path(last_step_file).absolute()),
             "key_mapping": key_mapping,
+            "prompt": prompt_meta,
         }
