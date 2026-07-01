@@ -57,9 +57,9 @@ def _has(mod_name: str) -> bool:
 
 
 def _check_env_isolation() -> None:
-    """检查当前 python 是否跑在隔离环境里（venv / conda），避免污染系统/用户环境。
+    """检查当前 python 是否跑在隔离环境里（venv），避免污染系统/用户环境。
 
-    只告警不阻断：One-Eval 依赖较重，强烈建议跑在独立 venv/conda，
+    只告警不阻断：One-Eval 依赖较重，强烈建议跑在独立 venv，
     别装进系统自带 python 或用户全局 site-packages。
     """
     import os
@@ -67,32 +67,27 @@ def _check_env_isolation() -> None:
     exe = sys.executable or ""
     in_venv = (hasattr(sys, "real_prefix")
                or (getattr(sys, "base_prefix", sys.prefix) != sys.prefix))
-    conda_env = os.environ.get("CONDA_DEFAULT_ENV")
     venv_env = os.environ.get("VIRTUAL_ENV")
 
     print("\n运行环境隔离：")
-    if conda_env and conda_env != "base":
-        print(f"  [✓] conda 环境: {conda_env}")
-    elif conda_env == "base":
-        print(f"  [!] 处于 conda 'base' 环境 —— 建议为 One-Eval 单独建环境，勿污染 base")
-    elif venv_env or in_venv:
+    if venv_env or in_venv:
         print(f"  [✓] 虚拟环境(venv): {venv_env or sys.prefix}")
     else:
         # 没有任何隔离迹象，且像系统自带 python → 重点提示
         looks_system = exe.startswith("/usr/bin") or exe.startswith("/usr/local/bin/python") \
             or exe.startswith("/System/")
         mark = "✗" if looks_system else "!"
-        print(f"  [{mark}] 未检测到隔离环境（venv/conda）")
+        print(f"  [{mark}] 未检测到隔离环境（venv）")
         print(f"      当前解释器: {exe}")
-        print(f"      强烈建议独立环境：conda create -n one-eval python=3.11 / "
-              f"python -m venv .venv，再 pip install -e .")
+        print(f"      强烈建议独立环境：uv venv .venv（或 python -m venv .venv），"
+              f"再 uv pip install -e .（或 pip install -e .）")
         print(f"      之后所有脚本都用该环境的 python 绝对路径调用，勿动用系统/全局环境。")
 
 
 def _check_reusable_envs() -> None:
     """探测可直接复用的 Python 环境，优先复用、避免重复装 GB 级重包(torch 等)。
 
-    很多机器已有现成环境（仓库 .venv/、已激活的 conda/venv）。命中就提示直接用，
+    很多机器已有现成环境（仓库 .venv/、已激活的 venv）。命中就提示直接用，
     不必新建——新建从零装 torch/open-dataflow 等最耗时，复用是最快路径。
     """
     import os
@@ -103,23 +98,22 @@ def _check_reusable_envs() -> None:
     venv_py = common.REPO_ROOT / ".venv" / "bin" / "python"
     if venv_py.exists():
         found.append(f"仓库内 .venv → 直接用：{venv_py}")
-    # 2) 当前已激活的 venv / conda
+    # 2) 当前已激活的 venv
     if os.environ.get("VIRTUAL_ENV"):
         found.append(f"已激活 venv：{os.environ['VIRTUAL_ENV']}")
-    conda_env = os.environ.get("CONDA_DEFAULT_ENV")
-    if conda_env and conda_env != "base":
-        found.append(f"已激活 conda 环境：{conda_env}")
 
     if found:
         for f in found:
             print(f"  [✓] {f}")
         print("  ↳ 已有可用环境就直接用它跑脚本，**无需新建、无需重装**（重装 torch 等重包最慢）。")
     else:
-        # 没有现成环境：报告机器上实际可用的环境管理器，别罗列没装的
-        avail = [t for t in ("conda", "uv") if _which(t)]
-        avail.append("python -m venv")  # 兜底总是可用
-        print(f"  [○] 未发现现成可复用环境。可用的环境管理器：{', '.join(avail)}")
-        print("      装在独立环境里即可（别污染系统/全局 python）；按上面列出的实际可用工具选，别选没装的。")
+        # 没有现成环境：推荐 uv（优先）或 python -m venv（兜底）
+        has_uv = _which("uv")
+        if has_uv:
+            print("  [○] 未发现现成可复用环境。推荐：uv venv && uv pip install -e .")
+        else:
+            print("  [○] 未发现现成可复用环境。推荐：python -m venv .venv && pip install -e .")
+        print("      装在独立环境里即可（别污染系统/全局 python）。")
 
 
 def _which(cmd: str) -> bool:
