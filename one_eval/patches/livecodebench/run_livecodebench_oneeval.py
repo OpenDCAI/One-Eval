@@ -50,7 +50,7 @@ def parse_args():
                         help="Number of generations per problem (for pass@k)")
     parser.add_argument("--temperature", type=float, default=0.2)
     parser.add_argument("--max_workers", type=int, default=8)
-    parser.add_argument("--timeout", type=int, default=30,
+    parser.add_argument("--timeout", type=int, default=6,
                         help="Code execution timeout in seconds")
     parser.add_argument("--scenario", type=str, default="codegeneration",
                         choices=["codegeneration", "selfrepair",
