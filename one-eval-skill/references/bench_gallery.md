@@ -210,7 +210,7 @@ _（暂无）_
 
 | bench_name | eval_type(初判) | source_url | 原始字段 | 备注 |
 |---|---|---|---|---|
-| livecodebench | `external_repo` | https://livecodebench.github.io/ | livecodebench/code_generation (HF, 持续更新) | 【前置条件】Docker（宿主机需安装并启动 Docker daemon）。代码生成 pass@1；预构建镜像 `oneeval/livecodebench:latest`。可通过 `ONEEVAL_LCB_RELEASE` env 指定版本 (release_v1–v5/release_latest)，默认 release_latest |
+| livecodebench | `external_repo` | https://livecodebench.github.io/ | livecodebench/code_generation (HF, 持续更新) | 【前置条件】Docker（宿主机需安装并启动 Docker daemon）。代码生成 pass@1；预构建镜像 `oneeval/livecodebench:latest`。可通过 `ONEEVAL_LCB_RELEASE` env 指定版本 (release_v1–v6/release_latest)，默认 release_latest |
 | humanevalplus | `external_repo` | https://github.com/evalplus/evalplus | evalplus/humanevalplus (HF, 164题) | 【前置条件】Docker（宿主机需安装并启动 Docker daemon）。代码生成 pass@1；预构建镜像 `oneeval/humanevalplus:latest`，greedy decoding |
 | mbppplus | `external_repo` | https://github.com/evalplus/evalplus | evalplus/mbppplus (HF, 399题) | 【前置条件】Docker（宿主机需安装并启动 Docker daemon）。代码生成 pass@1；预构建镜像 `oneeval/mbppplus:latest`，与 HumanEval+ 共用 bridge 脚本 |
 

@@ -775,7 +775,7 @@ class ExternalRepoRunner:
                         stdout=log_file,
                         stderr=subprocess.STDOUT,
                         text=True,
-                        timeout=7200  # Docker 模式 2 小时超时（含镜像拉取）
+                        timeout=14400
                     )
                 else:
                     result = subprocess.run(
@@ -785,7 +785,7 @@ class ExternalRepoRunner:
                         stdout=log_file,
                         stderr=subprocess.STDOUT,
                         text=True,
-                        timeout=3600
+                        timeout=7200
                     )
 
             if result.returncode != 0:
