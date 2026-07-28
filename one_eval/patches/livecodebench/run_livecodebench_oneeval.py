@@ -51,6 +51,8 @@ def parse_args():
     parser.add_argument("--temperature", type=float, default=0.2)
     parser.add_argument("--max_workers", type=int, default=-1,
                         help="Number of parallel workers (-1 = auto-detect CPU count)")
+    parser.add_argument("--num_process_evaluate", type=int, default=1,
+                        help="Number of evaluation processes (default: 1 for memory safety)")
     parser.add_argument("--timeout", type=int, default=6,
                         help="Code execution timeout in seconds")
     parser.add_argument("--scenario", type=str, default="codegeneration",
@@ -112,6 +114,7 @@ def run_lcb_pipeline(args):
         "--temperature", str(args.temperature),
         "--evaluate",
         "--multiprocess", str(args.max_workers),
+        "--num_process_evaluate", str(args.num_process_evaluate),
     ]
 
     if args.release_version:
