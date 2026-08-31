@@ -559,7 +559,7 @@
     "humanevalplus": [
       {
         "model": "O1 mini (Sept 2024)",
-        "score": 0.890,
+        "score": 0.89,
         "setting": "pass@1, greedy",
         "source": "EvalPlus 官方 Leaderboard",
         "source_url": "https://evalplus.github.io/leaderboard.html",
@@ -615,7 +615,7 @@
       },
       {
         "model": "Llama3-70B-Instruct",
-        "score": 0.720,
+        "score": 0.72,
         "setting": "pass@1, greedy",
         "source": "EvalPlus 官方 Leaderboard",
         "source_url": "https://evalplus.github.io/leaderboard.html",
@@ -633,7 +633,7 @@
       },
       {
         "model": "Qwen2.5-Coder-32B-Instruct",
-        "score": 0.770,
+        "score": 0.77,
         "setting": "pass@1, greedy",
         "source": "EvalPlus 官方 Leaderboard",
         "source_url": "https://evalplus.github.io/leaderboard.html",
@@ -657,7 +657,7 @@
       },
       {
         "model": "DeepSeek-V3 (Nov 2024)",
-        "score": 0.730,
+        "score": 0.73,
         "setting": "pass@1, greedy",
         "source": "EvalPlus 官方 Leaderboard",
         "source_url": "https://evalplus.github.io/leaderboard.html",
@@ -673,11 +673,542 @@
       },
       {
         "model": "Llama3-70B-Instruct",
-        "score": 0.690,
+        "score": 0.69,
         "setting": "pass@1, greedy",
         "source": "EvalPlus 官方 Leaderboard",
         "source_url": "https://evalplus.github.io/leaderboard.html",
         "as_of": "2024-12"
+      }
+    ],
+    "bfcl": [
+      {
+        "model": "xLAM-2-70b-fc-r",
+        "score": 0.7845,
+        "setting": "Function Calling (FC), 全部17个category",
+        "source": "BFCL Official Result",
+        "source_url": "https://github.com/HuanzhiMao/BFCL-Result/blob/main/2025-06-14/score/data_overall.csv",
+        "as_of": "2025-06"
+      },
+      {
+        "model": "GPT-4o-2024-11-20",
+        "score": 0.7171,
+        "setting": "Function Calling (FC), 全部17个category",
+        "source": "BFCL Official Result",
+        "source_url": "https://github.com/HuanzhiMao/BFCL-Result/blob/main/2025-06-14/score/data_overall.csv",
+        "as_of": "2025-06"
+      },
+      {
+        "model": "Qwen3-32B",
+        "score": 0.6925,
+        "setting": "Function Calling (FC), 全部17个category",
+        "source": "BFCL Official Result",
+        "source_url": "https://github.com/HuanzhiMao/BFCL-Result/blob/main/2025-06-14/score/data_overall.csv",
+        "as_of": "2025-06"
+      },
+      {
+        "model": "DeepSeek-V3-0324",
+        "score": 0.6471,
+        "setting": "Function Calling (FC), 全部17个category",
+        "source": "BFCL Official Result",
+        "source_url": "https://github.com/HuanzhiMao/BFCL-Result/blob/main/2025-06-14/score/data_overall.csv",
+        "as_of": "2025-06"
+      },
+      {
+        "model": "GPT-4o-mini-2024-07-18",
+        "score": 0.6398,
+        "setting": "Function Calling (FC), 全部17个category",
+        "source": "BFCL Official Result",
+        "source_url": "https://github.com/HuanzhiMao/BFCL-Result/blob/main/2025-06-14/score/data_overall.csv",
+        "as_of": "2025-06"
+      },
+      {
+        "model": "Claude-3.5-Sonnet-20241022",
+        "score": 0.5688,
+        "setting": "Function Calling (FC), 全部17个category",
+        "source": "BFCL Official Result",
+        "source_url": "https://github.com/HuanzhiMao/BFCL-Result/blob/main/2025-06-14/score/data_overall.csv",
+        "as_of": "2025-06"
+      },
+      {
+        "model": "Llama-3.3-70B-Instruct",
+        "score": 0.5224,
+        "setting": "Function Calling (FC), 全部17个category",
+        "source": "BFCL Official Result",
+        "source_url": "https://github.com/HuanzhiMao/BFCL-Result/blob/main/2025-06-14/score/data_overall.csv",
+        "as_of": "2025-06"
+      },
+      {
+        "model": "Llama-3.1-8B-Instruct",
+        "score": 0.4957,
+        "setting": "Prompt-based, 全部17个category",
+        "source": "BFCL Official Result",
+        "source_url": "https://github.com/HuanzhiMao/BFCL-Result/blob/main/2025-06-14/score/data_overall.csv",
+        "as_of": "2025-06"
+      },
+      {
+        "model": "Llama-3.2-3B-Instruct",
+        "score": 0.4586,
+        "setting": "Function Calling (FC), 全部17个category",
+        "source": "BFCL Official Result",
+        "source_url": "https://github.com/HuanzhiMao/BFCL-Result/blob/main/2025-06-14/score/data_overall.csv",
+        "as_of": "2025-06"
+      },
+      {
+        "model": "Llama-3.2-1B-Instruct",
+        "score": 0.2195,
+        "setting": "Function Calling (FC), 全部17个category",
+        "source": "BFCL Official Result",
+        "source_url": "https://github.com/HuanzhiMao/BFCL-Result/blob/main/2025-06-14/score/data_overall.csv",
+        "as_of": "2025-06"
+      }
+    ],
+    "livecodebench": [
+      {
+        "model": "O4-Mini (High)",
+        "score": 0.873,
+        "setting": "pass@1, Code Generation, 0-shot, extended thinking (high effort); v6全集 1055题，窗口2023-05至2025-05",
+        "source": "LiveCodeBench 官方排行榜",
+        "source_url": "https://livecodebench.github.io/leaderboard.html",
+        "as_of": "2026-08",
+        "note": "Easy=98.4, Medium=92.7, Hard=71.1"
+      },
+      {
+        "model": "O3 (High)",
+        "score": 0.847,
+        "setting": "pass@1, Code Generation, 0-shot, extended thinking (high effort); v6全集 1055题，窗口2023-05至2025-05",
+        "source": "LiveCodeBench 官方排行榜",
+        "source_url": "https://livecodebench.github.io/leaderboard.html",
+        "as_of": "2026-08",
+        "note": "Easy=99.1, Medium=89.8, Hard=66.0"
+      },
+      {
+        "model": "Gemini-2.5-Pro-06-05",
+        "score": 0.843,
+        "setting": "pass@1, Code Generation, 0-shot; v6全集 1055题，窗口2023-05至2025-05",
+        "source": "LiveCodeBench 官方排行榜",
+        "source_url": "https://livecodebench.github.io/leaderboard.html",
+        "as_of": "2026-08",
+        "note": "Easy=99.1, Medium=92.2, Hard=62.0"
+      },
+      {
+        "model": "Qwen3-235B-A22B",
+        "score": 0.804,
+        "setting": "pass@1, Code Generation, 0-shot; v6全集 1055题，窗口2023-05至2025-05",
+        "source": "LiveCodeBench 官方排行榜",
+        "source_url": "https://livecodebench.github.io/leaderboard.html",
+        "as_of": "2026-08",
+        "note": "Easy=99.1, Medium=88.8, Hard=54.0"
+      },
+      {
+        "model": "Grok-3-Mini (High)",
+        "score": 0.781,
+        "setting": "pass@1, Code Generation, 0-shot, extended thinking (high effort); v6全集 1055题，窗口2023-05至2025-05",
+        "source": "LiveCodeBench 官方排行榜",
+        "source_url": "https://livecodebench.github.io/leaderboard.html",
+        "as_of": "2026-08",
+        "note": "Easy=98.1, Medium=85.9, Hard=51.1"
+      },
+      {
+        "model": "O3-Mini-2025-01-31 (High)",
+        "score": 0.777,
+        "setting": "pass@1, Code Generation, 0-shot, extended thinking (high effort); v6全集 1055题，窗口2023-05至2025-05",
+        "source": "LiveCodeBench 官方排行榜",
+        "source_url": "https://livecodebench.github.io/leaderboard.html",
+        "as_of": "2026-08",
+        "note": "Easy=99.1, Medium=87.5, Hard=47.4"
+      },
+      {
+        "model": "Gemini-2.5-Flash-05-20",
+        "score": 0.762,
+        "setting": "pass@1, Code Generation, 0-shot; v6全集 1055题，窗口2023-05至2025-05",
+        "source": "LiveCodeBench 官方排行榜",
+        "source_url": "https://livecodebench.github.io/leaderboard.html",
+        "as_of": "2026-08",
+        "note": "Easy=99.1, Medium=82.5, Hard=48.3"
+      },
+      {
+        "model": "Claude-Opus-4 (Thinking)",
+        "score": 0.704,
+        "setting": "pass@1, Code Generation, 0-shot, extended thinking; v6全集 1055题，窗口2023-05至2025-05",
+        "source": "LiveCodeBench 官方排行榜",
+        "source_url": "https://livecodebench.github.io/leaderboard.html",
+        "as_of": "2026-08",
+        "note": "Easy=99.1, Medium=80.4, Hard=33.1"
+      },
+      {
+        "model": "Claude-Sonnet-4 (Thinking)",
+        "score": 0.685,
+        "setting": "pass@1, Code Generation, 0-shot, extended thinking; v6全集 1055题，窗口2023-05至2025-05",
+        "source": "LiveCodeBench 官方排行榜",
+        "source_url": "https://livecodebench.github.io/leaderboard.html",
+        "as_of": "2026-08",
+        "note": "Easy=98.8, Medium=76.0, Hard=32.6"
+      },
+      {
+        "model": "Claude-Opus-4",
+        "score": 0.624,
+        "setting": "pass@1, Code Generation, 0-shot; v6全集 1055题，窗口2023-05至2025-05",
+        "source": "LiveCodeBench 官方排行榜",
+        "source_url": "https://livecodebench.github.io/leaderboard.html",
+        "as_of": "2026-08",
+        "note": "Easy=96.3, Medium=69.2, Hard=23.7"
+      },
+      {
+        "model": "DeepSeek-V3",
+        "score": 0.496,
+        "setting": "pass@1, Code Generation, 0-shot; v6全集 1055题，窗口2023-05至2025-05",
+        "source": "LiveCodeBench 官方排行榜",
+        "source_url": "https://livecodebench.github.io/leaderboard.html",
+        "as_of": "2026-08",
+        "note": "Easy=83.3, Medium=53.5, Hard=14.2"
+      },
+      {
+        "model": "GPT-4O-2024-08-06",
+        "score": 0.383,
+        "setting": "pass@1, Code Generation, 0-shot; v6全集 1055题，窗口2023-05至2025-05",
+        "source": "LiveCodeBench 官方排行榜",
+        "source_url": "https://livecodebench.github.io/leaderboard.html",
+        "as_of": "2026-08",
+        "note": "Easy=82.5, Medium=32.1, Hard=4.5"
+      }
+    ],
+    "gaia": [
+      {
+        "model": "GPT-5 Medium (HF Open Deep Research)",
+        "score": 0.628,
+        "setting": "validation 165题, normalized exact match, HF Open Deep Research Agent框架",
+        "source": "GAIA 官方排行榜 (Princeton HAL)",
+        "source_url": "https://hal.cs.princeton.edu/gaia",
+        "as_of": "2025-08",
+        "note": "L1=73.58, L2=62.79, L3=38.46"
+      },
+      {
+        "model": "Claude Opus 4 (HF Open Deep Research)",
+        "score": 0.5758,
+        "setting": "validation 165题, normalized exact match, HF Open Deep Research Agent框架",
+        "source": "GAIA 官方排行榜 (Princeton HAL)",
+        "source_url": "https://hal.cs.princeton.edu/gaia",
+        "as_of": "2025-05",
+        "note": "L1=66.04, L2=56.98, L3=42.31"
+      },
+      {
+        "model": "o4-mini High (HF Open Deep Research)",
+        "score": 0.5576,
+        "setting": "validation 165题, normalized exact match, HF Open Deep Research Agent框架",
+        "source": "GAIA 官方排行榜 (Princeton HAL)",
+        "source_url": "https://hal.cs.princeton.edu/gaia",
+        "as_of": "2025-04",
+        "note": "L1=69.81, L2=51.16, L3=42.31"
+      },
+      {
+        "model": "GPT-4.1 (HF Open Deep Research)",
+        "score": 0.503,
+        "setting": "validation 165题, normalized exact match, HF Open Deep Research Agent框架",
+        "source": "GAIA 官方排行榜 (Princeton HAL)",
+        "source_url": "https://hal.cs.princeton.edu/gaia",
+        "as_of": "2025-04",
+        "note": "L1=58.49, L2=50.00, L3=34.62"
+      },
+      {
+        "model": "o4-mini Low (HF Open Deep Research)",
+        "score": 0.4788,
+        "setting": "validation 165题, normalized exact match, HF Open Deep Research Agent框架",
+        "source": "GAIA 官方排行榜 (Princeton HAL)",
+        "source_url": "https://hal.cs.princeton.edu/gaia",
+        "as_of": "2025-04",
+        "note": "L1=58.49, L2=47.67, L3=26.92"
+      },
+      {
+        "model": "Claude-3.7 Sonnet (HF Open Deep Research)",
+        "score": 0.3697,
+        "setting": "validation 165题, normalized exact match, HF Open Deep Research Agent框架",
+        "source": "GAIA 官方排行榜 (Princeton HAL)",
+        "source_url": "https://hal.cs.princeton.edu/gaia",
+        "as_of": "2025-02",
+        "note": "L1=39.62, L2=39.53, L3=23.08"
+      },
+      {
+        "model": "o3 Medium (HF Open Deep Research)",
+        "score": 0.3273,
+        "setting": "validation 165题, normalized exact match, HF Open Deep Research Agent框架",
+        "source": "GAIA 官方排行榜 (Princeton HAL)",
+        "source_url": "https://hal.cs.princeton.edu/gaia",
+        "as_of": "2025-04",
+        "note": "L1=39.62, L2=31.40, L3=23.08"
+      },
+      {
+        "model": "DeepSeek V3 (HF Open Deep Research)",
+        "score": 0.2848,
+        "setting": "validation 165题, normalized exact match, HF Open Deep Research Agent框架",
+        "source": "GAIA 官方排行榜 (Princeton HAL)",
+        "source_url": "https://hal.cs.princeton.edu/gaia",
+        "as_of": "2025-03",
+        "note": "L1=35.85, L2=30.23, L3=7.69"
+      },
+      {
+        "model": "DeepSeek R1 (HF Open Deep Research)",
+        "score": 0.2485,
+        "setting": "validation 165题, normalized exact match, HF Open Deep Research Agent框架",
+        "source": "GAIA 官方排行榜 (Princeton HAL)",
+        "source_url": "https://hal.cs.princeton.edu/gaia",
+        "as_of": "2025-01",
+        "note": "L1=30.19, L2=24.42, L3=15.38"
+      },
+      {
+        "model": "Gemini 2.0 Flash (HF Open Deep Research)",
+        "score": 0.1939,
+        "setting": "validation 165题, normalized exact match, HF Open Deep Research Agent框架",
+        "source": "GAIA 官方排行榜 (Princeton HAL)",
+        "source_url": "https://hal.cs.princeton.edu/gaia",
+        "as_of": "2025-02",
+        "note": "L1=24.53, L2=19.77, L3=7.69"
+      }
+    ],
+    "mmmu_pro": [
+      {
+        "model": "Gemini 3.0 Pro",
+        "score": 0.81,
+        "setting": "Overall=(Standard-10+Vision)/2, 1730题, 每设置取max(Direct,CoT); 作者提交*",
+        "source": "MMMU-Pro 官方排行榜",
+        "source_url": "https://mmmu-benchmark.github.io/#leaderboard",
+        "as_of": "2025-11"
+      },
+      {
+        "model": "o3",
+        "score": 0.764,
+        "setting": "Overall=(Standard-10+Vision)/2, 1730题, 每设置取max(Direct,CoT); 作者提交*",
+        "source": "MMMU-Pro 官方排行榜",
+        "source_url": "https://mmmu-benchmark.github.io/#leaderboard",
+        "as_of": "2025-04"
+      },
+      {
+        "model": "Claude Opus 4.5",
+        "score": 0.739,
+        "setting": "Overall=(Standard-10+Vision)/2, 1730题, 每设置取max(Direct,CoT); 作者提交*",
+        "source": "MMMU-Pro 官方排行榜",
+        "source_url": "https://mmmu-benchmark.github.io/#leaderboard",
+        "as_of": "2025-11"
+      },
+      {
+        "model": "Qwen3-VL 235B-A22B",
+        "score": 0.681,
+        "setting": "Overall=(Standard-10+Vision)/2, 1730题, 每设置取max(Direct,CoT); 作者提交*",
+        "source": "MMMU-Pro 官方排行榜",
+        "source_url": "https://mmmu-benchmark.github.io/#leaderboard",
+        "as_of": "2025-09"
+      },
+      {
+        "model": "Gemini 2.5 Pro (05-06)",
+        "score": 0.68,
+        "setting": "Overall=(Standard-10+Vision)/2, 1730题, 每设置取max(Direct,CoT); 作者提交*",
+        "source": "MMMU-Pro 官方排行榜",
+        "source_url": "https://mmmu-benchmark.github.io/#leaderboard",
+        "as_of": "2025-05"
+      },
+      {
+        "model": "GPT-4o (0513)",
+        "score": 0.519,
+        "setting": "Overall=(Standard-10+Vision)/2, 1730题, 每设置取max(Direct,CoT)",
+        "source": "MMMU-Pro 官方排行榜",
+        "source_url": "https://mmmu-benchmark.github.io/#leaderboard",
+        "as_of": "2024-05"
+      },
+      {
+        "model": "Claude 3.5 Sonnet",
+        "score": 0.515,
+        "setting": "Overall=(Standard-10+Vision)/2, 1730题, 每设置取max(Direct,CoT)",
+        "source": "MMMU-Pro 官方排行榜",
+        "source_url": "https://mmmu-benchmark.github.io/#leaderboard",
+        "as_of": "2024-06"
+      },
+      {
+        "model": "Gemini 1.5 Pro (0801)",
+        "score": 0.469,
+        "setting": "Overall=(Standard-10+Vision)/2, 1730题, 每设置取max(Direct,CoT)",
+        "source": "MMMU-Pro 官方排行榜",
+        "source_url": "https://mmmu-benchmark.github.io/#leaderboard",
+        "as_of": "2024-08"
+      },
+      {
+        "model": "GPT-4o mini",
+        "score": 0.376,
+        "setting": "Overall=(Standard-10+Vision)/2, 1730题, 每设置取max(Direct,CoT)",
+        "source": "MMMU-Pro 官方排行榜",
+        "source_url": "https://mmmu-benchmark.github.io/#leaderboard",
+        "as_of": "2024-07"
+      },
+      {
+        "model": "LLaVA-OneVision-72B",
+        "score": 0.31,
+        "setting": "Overall=(Standard-10+Vision)/2, 1730题, 每设置取max(Direct,CoT)",
+        "source": "MMMU-Pro 官方排行榜",
+        "source_url": "https://mmmu-benchmark.github.io/#leaderboard",
+        "as_of": "2024-08"
+      }
+    ],
+    "mmmu": [
+      {
+        "model": "GPT-5.1",
+        "score": 0.854,
+        "setting": "Val set Acc, 900题, 30学科多选; 作者提交*",
+        "source": "MMMU 官方排行榜",
+        "source_url": "https://mmmu-benchmark.github.io/#leaderboard",
+        "as_of": "2025-11"
+      },
+      {
+        "model": "o3",
+        "score": 0.829,
+        "setting": "Val set Acc, 900题, 30学科多选; 作者提交*",
+        "source": "MMMU 官方排行榜",
+        "source_url": "https://mmmu-benchmark.github.io/#leaderboard",
+        "as_of": "2025-04"
+      },
+      {
+        "model": "Claude Opus 4.5",
+        "score": 0.807,
+        "setting": "Val set Acc, 900题, 30学科多选; 作者提交*",
+        "source": "MMMU 官方排行榜",
+        "source_url": "https://mmmu-benchmark.github.io/#leaderboard",
+        "as_of": "2025-11"
+      },
+      {
+        "model": "Gemini 2.5 Pro (05-06)",
+        "score": 0.796,
+        "setting": "Val set Acc, 900题, 30学科多选; 作者提交*",
+        "source": "MMMU 官方排行榜",
+        "source_url": "https://mmmu-benchmark.github.io/#leaderboard",
+        "as_of": "2025-05"
+      },
+      {
+        "model": "Qwen3-VL 235B-A22B",
+        "score": 0.787,
+        "setting": "Val set Acc, 900题, 30学科多选; 作者提交*",
+        "source": "MMMU 官方排行榜",
+        "source_url": "https://mmmu-benchmark.github.io/#leaderboard",
+        "as_of": "2025-09"
+      },
+      {
+        "model": "Claude 3.7 Sonnet",
+        "score": 0.75,
+        "setting": "Val set Acc, 900题, 30学科多选; 作者提交*",
+        "source": "MMMU 官方排行榜",
+        "source_url": "https://mmmu-benchmark.github.io/#leaderboard",
+        "as_of": "2025-02"
+      },
+      {
+        "model": "GPT-4o (1120)",
+        "score": 0.707,
+        "setting": "Val set Acc, 900题, 30学科多选; 作者提交*",
+        "source": "MMMU 官方排行榜",
+        "source_url": "https://mmmu-benchmark.github.io/#leaderboard",
+        "as_of": "2024-11"
+      },
+      {
+        "model": "Claude 3.5 Sonnet",
+        "score": 0.683,
+        "setting": "Val set Acc, 900题, 30学科多选",
+        "source": "MMMU 官方排行榜",
+        "source_url": "https://mmmu-benchmark.github.io/#leaderboard",
+        "as_of": "2024-06"
+      },
+      {
+        "model": "Gemini 1.5 Pro (0801)",
+        "score": 0.658,
+        "setting": "Val set Acc, 900题, 30学科多选",
+        "source": "MMMU 官方排行榜",
+        "source_url": "https://mmmu-benchmark.github.io/#leaderboard",
+        "as_of": "2024-08"
+      },
+      {
+        "model": "Claude 3 Opus",
+        "score": 0.594,
+        "setting": "Val set Acc, 900题, 30学科多选; 作者提交*",
+        "source": "MMMU 官方排行榜",
+        "source_url": "https://mmmu-benchmark.github.io/#leaderboard",
+        "as_of": "2024-03"
+      }
+    ],
+    "tau2_bench": [
+      {
+        "model": "Claude Opus 4.5",
+        "score": 0.8531,
+        "setting": "Core Pass^1, reasoning_effort=high, user_sim=gpt-5.2(low), 4 trials, seed=300, v1.0.1",
+        "source": "tau2-bench leaderboard (Sierra submission)",
+        "source_url": "https://github.com/sierra-research/tau2-bench/blob/main/web/leaderboard/public/submissions/claude-opus-4-5_sierra_2026-02-26/submission.json",
+        "as_of": "2026-05",
+        "note": "airline=84.0, retail=79.61, telecom=92.32"
+      },
+      {
+        "model": "GPT-5.2 (high)",
+        "score": 0.8476,
+        "setting": "Core Pass^1, reasoning_effort=high, user_sim=gpt-5.2(low), 4 trials, seed=300, v1.0.1",
+        "source": "tau2-bench leaderboard (Sierra submission)",
+        "source_url": "https://github.com/sierra-research/tau2-bench/blob/main/web/leaderboard/public/submissions/gpt-5-2_sierra_2026-02-26/submission.json",
+        "as_of": "2026-05",
+        "note": "airline=83.0, retail=81.58, telecom=89.69"
+      },
+      {
+        "model": "Gemini 3 Flash",
+        "score": 0.8349,
+        "setting": "Core Pass^1, reasoning_effort=high, user_sim=gpt-5.2(low), 4 trials, seed=123, v1.0.1",
+        "source": "tau2-bench leaderboard (Sierra submission)",
+        "source_url": "https://github.com/sierra-research/tau2-bench/blob/main/web/leaderboard/public/submissions/gemini-3-flash_sierra_2026-03-02/submission.json",
+        "as_of": "2026-03",
+        "note": "airline=82.5, retail=76.75, telecom=91.23; seed=123 (非默认300)"
+      },
+      {
+        "model": "Gemini 3 Pro",
+        "score": 0.8246,
+        "setting": "Core Pass^1, reasoning_effort=high, user_sim=gpt-5.2(low), 4 trials, seed=300, v1.0.1",
+        "source": "tau2-bench leaderboard (Sierra submission)",
+        "source_url": "https://github.com/sierra-research/tau2-bench/blob/main/web/leaderboard/public/submissions/gemini-3-pro_sierra_2026-03-02/submission.json",
+        "as_of": "2026-03",
+        "note": "airline=80.5, retail=75.88, telecom=91.01"
+      },
+      {
+        "model": "GPT-5",
+        "score": 0.7997,
+        "setting": "Core Pass^1, user_sim=gpt-4.1, 4 trials, v0.1.3",
+        "source": "tau2-bench leaderboard (Sierra submission)",
+        "source_url": "https://github.com/sierra-research/tau2-bench/blob/main/web/leaderboard/public/submissions/gpt-5_sierra_2025-08-09/submission.json",
+        "as_of": "2025-08",
+        "note": "airline=62.5, retail=81.58, telecom=95.83; 旧版 v0.1.3 + user_sim=gpt-4.1，与 v1.0.1 口径不完全可比"
+      },
+      {
+        "model": "Claude Sonnet 4.5",
+        "score": 0.7641,
+        "setting": "Core Pass^1, reasoning_effort=enabled, user_sim=gpt-5.2(low), 4 trials, seed=300, v1.0.1",
+        "source": "tau2-bench leaderboard (Sierra submission)",
+        "source_url": "https://github.com/sierra-research/tau2-bench/blob/main/web/leaderboard/public/submissions/claude-sonnet-4-5_sierra_2026-02-26/submission.json",
+        "as_of": "2026-02",
+        "note": "airline=72.0, retail=72.37, telecom=84.87"
+      },
+      {
+        "model": "Kimi-K2",
+        "score": 0.643,
+        "setting": "Core Pass^1, v0.1.3, 未验证(仅Pass^1，无trajectory)",
+        "source": "tau2-bench leaderboard (Moonshot AI submission)",
+        "source_url": "https://github.com/sierra-research/tau2-bench/blob/main/web/leaderboard/public/submissions/kimi-k2_moonshot-ai_2025-07-11/submission.json",
+        "as_of": "2025-07",
+        "note": "airline=56.5, retail=70.6, telecom=65.8; unverified, no trajectory data"
+      },
+      {
+        "model": "GPT-5.2 (none)",
+        "score": 0.6158,
+        "setting": "Core Pass^1, reasoning_effort=none, user_sim=gpt-5.2(low), 4 trials, seed=300, v1.0.1",
+        "source": "tau2-bench leaderboard (Sierra submission)",
+        "source_url": "https://github.com/sierra-research/tau2-bench/blob/main/web/leaderboard/public/submissions/gpt-5-2-none_sierra_2026-02-26/submission.json",
+        "as_of": "2026-05",
+        "note": "airline=52.5, retail=75.0, telecom=57.24; 这是我们的复现目标"
+      },
+      {
+        "model": "GPT-4.1",
+        "score": 0.5467,
+        "setting": "Core Pass^1, user_sim=gpt-4.1, 4 trials, v0.1.3",
+        "source": "tau2-bench leaderboard (Sierra submission)",
+        "source_url": "https://github.com/sierra-research/tau2-bench/blob/main/web/leaderboard/public/submissions/gpt-4-1_openai_2024-06-20/submission.json",
+        "as_of": "2025-06",
+        "note": "airline=56.0, retail=74.0, telecom=34.0; 旧版 v0.1.3 + user_sim=gpt-4.1，与 v1.0.1 口径不完全可比"
       }
     ]
   }

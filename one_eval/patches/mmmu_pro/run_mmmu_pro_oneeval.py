@@ -75,19 +75,11 @@ DOMAIN_CAT2SUB_CAT = {
 def parse_args():
     parser = argparse.ArgumentParser(description="MMMU-Pro evaluation for One-Eval")
     parser.add_argument("--output_dir", type=str, required=True)
-    parser.add_argument("--model_name", type=str,
-                        default=os.environ.get("ONEEVAL_MODEL_NAME", "gpt-4o"))
-    parser.add_argument("--api_base", type=str,
-                        default=os.environ.get("OPENAI_API_BASE", ""))
-    parser.add_argument("--api_key", type=str,
-                        default=os.environ.get("OPENAI_API_KEY", ""))
-    parser.add_argument("--max_samples", type=int,
-                        default=int(os.environ.get("ONEEVAL_MAX_SAMPLES", "-1")))
-    parser.add_argument("--setting", type=str,
-                        default=os.environ.get("ONEEVAL_CONFIG", "vision"),
+    parser.add_argument("--model_name", type=str, default="gpt-4o")
+    parser.add_argument("--max_samples", type=int, default=-1)
+    parser.add_argument("--setting", type=str, default="vision",
                         choices=["vision", "standard (10 options)", "standard (4 options)"])
-    parser.add_argument("--mode", type=str,
-                        default=os.environ.get("ONEEVAL_MODE", "direct"),
+    parser.add_argument("--mode", type=str, default="direct",
                         choices=["direct", "cot"])
     parser.add_argument("--max_workers", type=int, default=16)
     parser.add_argument("--max_tokens", type=int, default=4096)
@@ -358,7 +350,10 @@ def main():
     images_dir = output_dir / "images"
     images_dir.mkdir(parents=True, exist_ok=True)
 
-    client = OpenAI(base_url=args.api_base, api_key=args.api_key)
+    client = OpenAI(
+        base_url=os.environ.get("OPENAI_API_BASE") or None,
+        api_key=os.environ.get("OPENAI_API_KEY") or None,
+    )
 
     # Load dataset
     log.info(f"Loading MMMU/MMMU_Pro, config='{args.setting}', split='test'")

@@ -41,27 +41,15 @@ def parse_args():
     parser = argparse.ArgumentParser(description="MathVista evaluation for One-Eval")
 
     parser.add_argument('--output_dir', type=str, required=True, help='Output directory')
-    parser.add_argument('--model_name', type=str,
-                        default=os.environ.get('ONEEVAL_MODEL_NAME', 'gpt-4o'),
+    parser.add_argument('--model_name', type=str, default='gpt-4o',
                         help='Model name (e.g., gpt-4o)')
-    parser.add_argument('--api_base', type=str,
-                        default=os.environ.get('OPENAI_API_BASE', ''),
-                        help='API base URL')
-    parser.add_argument('--api_key', type=str,
-                        default=os.environ.get('OPENAI_API_KEY', ''),
-                        help='API key')
-    parser.add_argument('--max_samples', type=int,
-                        default=int(os.environ.get('ONEEVAL_MAX_SAMPLES', '-1')),
+    parser.add_argument('--max_samples', type=int, default=-1,
                         help='Max samples to evaluate (-1 for all)')
 
     # MathVista parameters
-    parser.add_argument('--dataset_name', type=str, default='AI4Math/MathVista')
-
     parser.add_argument('--shot_num', type=int, default=0)
     parser.add_argument('--shot_type', type=str, default='solution',
                         choices=['solution', 'code'])
-    parser.add_argument('--use_caption', action='store_true', default=False)
-    parser.add_argument('--use_ocr', action='store_true', default=False)
     parser.add_argument('--temperature', type=float, default=0.0)
     parser.add_argument('--max_tokens', type=int, default=1024)
 
@@ -278,14 +266,24 @@ def main():
     extracted_file = os.path.join(args.output_dir, 'extracted.json')
 
     # Load data
-    data = load_mathvista_data(args.dataset_name, 'testmini', args.max_samples)
+    data = load_mathvista_data('AI4Math/MathVista', 'testmini', args.max_samples)
 
     # Build query data using MathVista's original function
     logging.info("Creating query data...")
-    query_data = create_query_data(data, {}, {}, args)
+    from types import SimpleNamespace
+    query_args = SimpleNamespace(
+        shot_num=args.shot_num,
+        shot_type=args.shot_type,
+        use_caption=False,
+        use_ocr=False,
+    )
+    query_data = create_query_data(data, {}, {}, query_args)
 
     # Create model client
-    client = OpenAI(base_url=args.api_base, api_key=args.api_key)
+    client = OpenAI(
+        base_url=os.environ.get("OPENAI_API_BASE") or None,
+        api_key=os.environ.get("OPENAI_API_KEY") or None,
+    )
     model = GPT_Model(
         client=client,
         model=args.model_name,

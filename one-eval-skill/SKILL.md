@@ -1,6 +1,6 @@
 ---
 name: one-eval
-description: 驱动 One-Eval 对「纯文本 LLM」做端到端评测。当用户想评测一个模型（API 或本地 vLLM）在某些 benchmark 上的表现、对比多个 benchmark 分数、补充多维度 metric、或生成图文评测报告时使用本 skill。
+description: 驱动 One-Eval 对 API 或本地模型做端到端评测，覆盖纯文本、多模态、代码生成、函数调用和 Agent benchmark。当用户想评测模型在一个或多个 benchmark 上的表现、比较分数、补充 metric，或生成图文评测报告时使用本 skill。
 ---
 
 # One-Eval Skill
@@ -97,24 +97,32 @@ python scripts/check_model.py --api --model <名> --api-url <url> --api-key <key
 得到确认再开跑。全程对话里**始终明说被测模型是谁**，摘要/报告里的模型名以 `evalspec.yaml`
 的 `model_name_or_path` 为准——`run_eval.py` 启动首行也会打印 `被测模型: <名>`，以此为准核对。
 
-**连通后，主动与用户确认生成参数**（别用默认值闷头跑）：温度 `temperature`、`top_p`、
-`max_tokens`、`seed`。给出推荐并说明影响——评测默认 `temperature=0`+固定 `seed` 求可复现；
-`max_tokens` 对数学/CoT 题不要太小（截断会导致抽不出答案、假阴性，宁可放大到 2048+）。
-若用户想测模型「发挥上限」或多样性，再调高 temperature 并说明分数会抖动。最终确认值写进
-`evalspec.yaml`，会随结果落盘并在报告「评测设置」里如实记录（见 step 8 / report_template）。
+**连通后，确认采样参数**（别用默认值闷头跑）：
+
+`model` 段的采样参数（`temperature`、`top_p`、`max_tokens`、`seed`）**仅对 dataflow bench
+生效**。若本次只跑 external_repo bench，无需填写此块——external_repo bench 的参数由
+`bench_gallery.json` 中各自的默认值决定，如需覆盖在 `benchmarks[].params` 中显式填写。
+
+若包含 dataflow bench，主动与用户确认这些参数。给出推荐并说明影响——评测默认
+`temperature=0`+固定 `seed` 求可复现；`max_tokens` 对数学/CoT 题不要太小（截断会导致
+抽不出答案、假阴性，宁可放大到 2048+）。若用户想测模型「发挥上限」或多样性，再调高
+temperature 并说明分数会抖动。最终确认值写进 `evalspec.yaml`，会随结果落盘并在报告
+「评测设置」里如实记录（见 step 8 / report_template）。
 
 ### 2. 选 benchmark
 - 先看 `references/bench_gallery.md`：**READY 区**（已测通、可直接复用）优先；
   否则从**候选区**（103 个未验证 bench）选，接入前需走 smoke 验证。
 - 用户要评测 gallery 之外的新数据集 → 用 `scripts/prepare_bench.py` 下载并**预览嵌套结构**，
   再按 `references/eval_types.md` 判断 eval_type、规划 key_mapping（嵌套字段须先拍平）。
-- **自带仓库 / 需特殊环境的 bench**（LiveCodeBench、BFCL、EvalPlus 等需沙箱执行的）→
-  走 `references/external_bench.md` 的 `bench_kind=external_repo` 机制：在 gallery 登记
-  仓库地址 + 安装/运行/取分说明。`run_eval.py` 遇到这类 bench 会自动调用 `ExternalRepoRunner`，
-  完成 clone、venv 创建、依赖安装、评测运行、结果解析全流程，无需手动干预。
+- **external_repo bench**（LiveCodeBench、BFCL、EvalPlus 等）→
+  从 `bench_gallery.md` 末尾 External Repo Benchmarks 区选择，确认前置条件；
+  参数契约见 `bench_gallery.json` 的 `meta.repo_eval.params`，只在 `benchmarks[].params`
+  中覆盖需要改的参数。不填 `eval_type`/`key_mapping`，`ExternalRepoRunner` 自动处理
+  clone→安装→运行→解析全流程。接入 gallery 中不存在的新 bench 时才读 `references/external_bench.md`。
 
 ### 3. 选 metric（默认已给主分，额外维度可选）
-**先告诉用户每个 bench 默认用什么主分、它衡量什么能力**（dataflow 内核按 eval_type 自动选）：
+**先告诉用户每个 bench 默认用什么主分、它衡量什么能力**（dataflow 内核按 eval_type 自动选）。
+external_repo bench 直接使用官方 harness 返回的主指标，默认不追加 One-Eval metric。
 
 | eval_type | 默认主指标 | 衡量的能力 |
 |---|---|---|
@@ -136,7 +144,7 @@ python scripts/check_model.py --api --model <名> --api-url <url> --api-key <key
 
 ### 4. 生成 evalspec.yaml
 基于 `assets/evalspec.template.yaml` 填写 model / benchmarks / metrics / runtime。
-eval_type 与 key_mapping 必须符合 `references/eval_types.md` 的硬契约。
+dataflow bench 的 eval_type 与 key_mapping 必须符合 `references/eval_types.md` 的硬契约；
 `benchmarks[]` 中 benchmark 名称字段统一写 `bench_name`，与 `bench_gallery.json` 对齐；
 `benchmark` / `benchmark_name` 只是脚本兼容旧 spec 的别名，不作为新 spec 的标准写法。
 

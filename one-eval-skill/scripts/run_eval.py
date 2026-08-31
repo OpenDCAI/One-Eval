@@ -196,7 +196,7 @@ def _run_external_repo(bench_dict: dict, model_dict: dict, cache_dir: Path,
     python_path = setup_result["python"]
     print(f"[{bench_name}] ✅ 仓库设置完成")
 
-    # 2. 准备环境变量
+    # 2. 准备环境变量（仅敏感凭证，外部库会自动读取）
     env_vars = {}
     if model_dict.get("is_api"):
         api_key = model_dict.get("api_key")
@@ -205,42 +205,48 @@ def _run_external_repo(bench_dict: dict, model_dict: dict, cache_dir: Path,
         if api_key:
             env_vars["OPENAI_API_KEY"] = api_key
         if api_url:
-            # OpenAI SDK expects base_url without /chat/completions
             base = api_url.rstrip("/")
             if base.lower().endswith("/chat/completions"):
                 base = base[: -len("/chat/completions")].rstrip("/")
             env_vars["OPENAI_API_BASE"] = base
 
-    # 传递模型名称和采样限制
-    model_name_val = model_dict.get("model_name_or_path", "")
-    if model_name_val:
-        env_vars["ONEEVAL_MODEL_NAME"] = model_name_val
-    if max_samples is not None:
-        env_vars["ONEEVAL_MAX_SAMPLES"] = str(max_samples)
-
-    # 传递数据相关配置（所有字段可选，bridge 脚本自带默认值）
-    # split: 从 evalspec 顶层或 download_config 读取
-    dl_config = bench_dict.get("download_config") or meta.get("download_config") or {}
-    split = bench_dict.get("split") or dl_config.get("split")
-    if split:
-        env_vars["ONEEVAL_SPLIT"] = split
-
-    # config: HuggingFace dataset config（如 MMMU-Pro 的 vision/standard）
-    config = dl_config.get("config")
-    if config:
-        env_vars["ONEEVAL_CONFIG"] = config
-
-    # prompt_mode: 评测时的提示模式（如 direct/cot）
-    eval_config = bench_dict.get("evaluation_config") or {}
-    prompt_mode = eval_config.get("prompt_mode")
-    if prompt_mode:
-        env_vars["ONEEVAL_MODE"] = prompt_mode
-
     # 用户自定义环境变量（来自 evalspec.runtime.env）
     if runtime_env:
         env_vars.update(runtime_env)
 
-    # 3. 运行评测
+    # 3. 构建参数列表
+    params_schema = repo_eval.get("params", {})
+
+    # bench 级参数覆盖（仅 bench 特有参数，如 release_version、n、temperature 等）
+    param_values = {}
+    params_dict = bench_dict.get("params", {})
+    unsupported = [k for k in params_dict if k not in params_schema]
+    if unsupported:
+        print(f"[{bench_name}] ⚠️  忽略不支持的参数: {', '.join(unsupported)}")
+    param_values.update({k: v for k, v in params_dict.items() if v is not None and k in params_schema})
+
+    # 遍历 schema 构建 bench 特有参数的 argv
+    params_argv = []
+    for param_name, param_spec in params_schema.items():
+        value = param_values.get(param_name, param_spec.get("default"))
+        if value is None:
+            continue
+        cli_arg = param_spec.get("cli_arg")
+        if not cli_arg:
+            continue
+        if param_spec.get("type") == "flag":
+            if value:
+                params_argv.append(cli_arg)
+        else:
+            params_argv.extend([cli_arg, str(value)])
+
+    # 框架权威参数——不在 params schema 中，由框架直接注入，不可被 benchmarks[].params 覆盖
+    if model_dict.get("model_name_or_path"):
+        params_argv.extend(["--model_name", model_dict["model_name_or_path"]])
+    if max_samples is not None:
+        params_argv.extend(["--max_samples", str(max_samples)])
+
+    # 4. 运行评测
     eval_output_dir = output_dir / "_external" / bench_name
     print(f"[{bench_name}] 运行评测...")
     t0 = time.time()
@@ -249,7 +255,8 @@ def _run_external_repo(bench_dict: dict, model_dict: dict, cache_dir: Path,
         repo_path=repo_path,
         python_path=python_path,
         env_vars=env_vars,
-        output_dir=str(eval_output_dir)
+        output_dir=str(eval_output_dir),
+        params_argv=params_argv
     )
     elapsed = round(time.time() - t0, 2)
 

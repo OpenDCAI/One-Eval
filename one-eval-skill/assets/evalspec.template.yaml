@@ -24,15 +24,19 @@ model:
   # gpu_memory_utilization: 0.9
   # max_model_len: 4096
 
-  # ---- 采样参数（两种模型通用，会原样进推理请求；务必与用户确认）----
+  # ---- 采样参数（仅 dataflow bench 生效；只跑 external_repo bench 时无需填写此块）----
   # 评测可复现性的关键。默认给「确定性评测」推荐值；如用户要测模型发挥上限/多样性，再调高。
+  # external_repo bench 的采样参数由 bench_gallery.json 中各自的默认值决定，
+  # 如需覆盖请在 benchmarks[].params 中显式填写，而非在此处改动。
   temperature: 0.0    # 0=贪心解码、可复现（评测默认）；调高更随机，分数会抖动
   top_p: 1.0          # nucleus 采样阈值；temperature=0 时基本无影响
   max_tokens: 2048    # 生成上限。数学/CoT 题偏小会被截断导致抽不出答案 → 假阴性，宁可放大
   seed: 42            # 固定种子，配合 temperature=0 让结果可复现（部分 API 不保证生效）
 
 # --- 待评测的 benchmark 列表 ------------------------------------------------
-# 每个 bench 必须属于 6 种 eval_type 之一，且按类型填全 key_mapping 必填字段。
+# dataflow bench 必须属于 6 种 eval_type 之一，且按类型填全 key_mapping 必填字段。
+# external_repo bench 不使用 eval_type/key_mapping，只需 bench_name、bench_kind，
+# 以及可选的 params 参数覆盖。
 # eval_type 与 key_mapping 的对应见 references/eval_types.md。
 # 字段名标准与 bench_gallery.json 对齐：列表项使用 bench_name。
 # benchmark / benchmark_name 仅作为旧 spec 兼容别名，脚本会读入后规范化为 bench_name。
@@ -59,23 +63,34 @@ benchmarks:
   #     input_choices_key: "choices"
   #     input_label_key: "answer"
 
-  # 示例：external_repo bench（自带仓库评测环境，如 mathvista、livecodebench）
-  # 只需写 bench_name + bench_kind；meta.repo_eval（repo/装法/跑法/取分）会按名从
-  # bench_gallery.json 自动回填。run_eval.py 会自动 clone 仓库、创建 venv 并执行评测。
-  # - bench_name: "mathvista"
+  # 示例：external_repo bench（自带仓库评测环境）
+  # repo、安装方式、执行命令和结果解析规则会从 bench_gallery.json 自动回填。
+  # params 只填写需要覆盖 gallery 默认值的 bench 特定参数。
+  #
+  # - bench_name: "livecodebench"
   #   bench_kind: "external_repo"
+  #   params:
+  #     release_version: "release_v6"    # 覆盖默认的 release_latest
+  #     n: 10                            # pass@k 的采样数
 
 # --- 额外多维度 metric（dataflow 主分数之外，可选）-------------------------
 # 用 run_metrics.py 计算；用 `run_metrics.py --list` 查看注册表所有可用 metric。
-# 留空则只用 dataflow 主分数。
-metrics:
-  - name: "exact_match"
-    priority: "primary"        # primary 进主表 / secondary 进附表
-  # - name: "bleu"
-  #   priority: "secondary"
+# external_repo bench 使用其官方 harness 输出的主指标，不需要额外 metric。
+# dataflow bench 如需额外 metric，再按需填写。
+metrics: []
+
+# metrics:
+#   - name: "exact_match"
+#     priority: "primary"        # primary 进主表 / secondary 进附表
+#   - name: "bleu"
+#     priority: "secondary"
 
 # --- 运行时 -----------------------------------------------------------------
 runtime:
   output_dir: null             # null=skill 默认 eval_outputs/
   cache_dir: null              # null=skill 默认 cache/
   max_samples: null            # null=全量；填数字=每 bench 截断到该条数
+
+  # 仅用于 external_repo bench 的额外环境变量
+  # env:
+  #   HF_TOKEN: "hf_xxx"          # GAIA 等 gated dataset 需要

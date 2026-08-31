@@ -1,90 +1,6 @@
 {
   "benches": [
     {
-      "bench_name": "bfcl",
-      "bench_table_exist": true,
-      "bench_prompt_template": null,
-      "bench_keys": [
-        "question",
-        "answer"
-      ],
-      "meta": {
-        "aliases": [
-          "BFCL",
-          "bfcl",
-          "Berkeley Function Calling Leaderboard",
-          "berkeley_function_calling",
-          "function_calling"
-        ],
-        "bench_name": "bfcl",
-        "category": "Agents & Tools",
-        "tags": [
-          "agents & tools"
-        ],
-        "description": "Berkeley Function Calling Leaderboard，函数调用/API 参数抽取的事实标准之一；覆盖 Python、Java、JS、SQL、REST API。",
-        "description_zh": "Berkeley Function Calling Leaderboard，函数调用/API 参数抽取的事实标准之一；覆盖 Python、Java、JS、SQL、REST API。",
-        "source": "bench_item_list",
-        "key_mapping": {
-          "input_question_key": "question",
-          "input_target_key": "answer"
-        },
-        "hf_meta": {
-          "bench_name": "bfcl",
-          "hf_repo": null,
-          "card_text": "Berkeley Function Calling Leaderboard，函数调用/API 参数抽取的事实标准之一；覆盖 Python、Java、JS、SQL、REST API。",
-          "tags": [
-            "agents & tools"
-          ],
-          "exists_on_hf": false
-        },
-        "evaluation": {
-          "score_source": "metric_stage",
-          "official_metric": "exact_match",
-          "primary_metric": "exact_match",
-          "denominator": "total",
-          "prediction_mode": "generation",
-          "parser": {
-            "type": "no_parse"
-          },
-          "failure_policy": {
-            "parse_failed": "score_zero",
-            "empty_output": "score_zero",
-            "invalid_reference": "exclude"
-          }
-        },
-        "prompt": {
-          "source": "gallery",
-          "template_id": "bfcl_contract_v1",
-          "system_prompt": "",
-          "user_template": "{question}\nAnswer:",
-          "output_format": {
-            "type": "freeform_text"
-          },
-          "few_shot": {
-            "enabled": false,
-            "num_shots": 0,
-            "source_split": null
-          },
-          "generation": {
-            "temperature": 0.0,
-            "top_p": 1.0,
-            "max_tokens": 1024,
-            "stop": []
-          }
-        },
-        "readiness": {
-          "status": "contract_inferred",
-          "smoke_passed": false,
-          "golden_cases": null,
-          "known_limitations": [
-            "No direct lm-eval YAML match was found; contract fields are inferred from the requested bench list."
-          ]
-        }
-      },
-      "bench_dataflow_eval_type": "key2_qa",
-      "bench_source_url": null
-    },
-    {
       "bench_name": "lab-bench-language-agent-biology-benchmark",
       "bench_table_exist": true,
       "bench_source_url": "https://huggingface.co/datasets/futurehouse/lab-bench",
@@ -16771,13 +16687,39 @@
             "{{uv}} pip install openai datasets pillow Levenshtein rich opencv-python-headless word2number tqdm pandas"
           ],
           "model_interface": "api",
+          "params": {
+            "temperature": {
+              "cli_arg": "--temperature",
+              "type": "float",
+              "default": 0.0
+            },
+            "max_tokens": {
+              "cli_arg": "--max_tokens",
+              "type": "int",
+              "default": 1024
+            },
+            "shot_num": {
+              "cli_arg": "--shot_num",
+              "type": "int",
+              "default": 0,
+              "description": "Number of few-shot examples"
+            },
+            "shot_type": {
+              "cli_arg": "--shot_type",
+              "type": "string",
+              "default": "solution",
+              "choices": ["solution", "code"],
+              "description": "Few-shot example type"
+            }
+          },
           "run": {
             "work_dir": "{{repo_dir}}/evaluation",
             "argv": [
               "{{python}}",
               "run_mathvista_oneeval.py",
               "--output_dir",
-              "{{output_dir}}"
+              "{{output_dir}}",
+              "{{params_argv}}"
             ]
           },
           "result": {
@@ -16863,13 +16805,33 @@
             "{{uv}} pip install datasets openai pillow tqdm tabulate"
           ],
           "model_interface": "api",
+          "params": {
+            "split": {
+              "cli_arg": "--split",
+              "type": "string",
+              "default": "validation",
+              "choices": ["validation", "test"],
+              "description": "Dataset split to evaluate"
+            },
+            "temperature": {
+              "cli_arg": "--temperature",
+              "type": "float",
+              "default": 0.0
+            },
+            "max_tokens": {
+              "cli_arg": "--max_tokens",
+              "type": "int",
+              "default": 1024
+            }
+          },
           "run": {
             "work_dir": "{{repo_dir}}/mmmu",
             "argv": [
               "{{python}}",
               "run_mmmu_oneeval.py",
               "--output_dir",
-              "{{output_dir}}"
+              "{{output_dir}}",
+              "{{params_argv}}"
             ]
           },
           "result": {
@@ -16957,13 +16919,41 @@
             "{{uv}} pip install datasets openai pillow tqdm pyyaml"
           ],
           "model_interface": "api",
+          "params": {
+            "setting": {
+              "cli_arg": "--setting",
+              "type": "string",
+              "default": "vision",
+              "choices": ["vision", "standard (10 options)", "standard (4 options)"],
+              "description": "Input setting for MMMU-Pro"
+            },
+            "mode": {
+              "cli_arg": "--mode",
+              "type": "string",
+              "default": "direct",
+              "choices": ["direct", "cot"],
+              "description": "Prompting mode: direct or cot (chain-of-thought)"
+            },
+            "max_workers": {
+              "cli_arg": "--max_workers",
+              "type": "int",
+              "default": 16,
+              "description": "Number of concurrent inference workers"
+            },
+            "max_tokens": {
+              "cli_arg": "--max_tokens",
+              "type": "int",
+              "default": 4096
+            }
+          },
           "run": {
             "work_dir": "{{repo_dir}}/mmmu-pro",
             "argv": [
               "{{python}}",
               "run_mmmu_pro_oneeval.py",
               "--output_dir",
-              "{{output_dir}}"
+              "{{output_dir}}",
+              "{{params_argv}}"
             ]
           },
           "result": {
@@ -17052,13 +17042,64 @@
             "type": "api",
             "how": "读 OPENAI_API_KEY (映射为 OPENAI_KEY) + OPENAI_API_BASE 环境变量，走 OpenAI 兼容接口"
           },
+          "params": {
+            "temperature": {
+              "cli_arg": "--temperature",
+              "type": "float",
+              "default": 0.2
+            },
+            "release_version": {
+              "cli_arg": "--release_version",
+              "type": "string",
+              "default": "release_latest",
+              "description": "LiveCodeBench release version"
+            },
+            "n": {
+              "cli_arg": "--n",
+              "type": "int",
+              "default": 10,
+              "description": "Number of generations per problem (for pass@k)"
+            },
+            "scenario": {
+              "cli_arg": "--scenario",
+              "type": "string",
+              "default": "codegeneration",
+              "choices": ["codegeneration", "selfrepair", "testoutputprediction", "codeexecution"],
+              "description": "Evaluation scenario"
+            },
+            "max_workers": {
+              "cli_arg": "--max_workers",
+              "type": "int",
+              "default": -1,
+              "description": "Number of parallel workers (-1 = auto-detect)"
+            },
+            "num_process_evaluate": {
+              "cli_arg": "--num_process_evaluate",
+              "type": "int",
+              "default": 1,
+              "description": "Number of evaluation processes"
+            },
+            "timeout": {
+              "cli_arg": "--timeout",
+              "type": "int",
+              "default": 6,
+              "description": "Code execution timeout in seconds"
+            },
+            "eval_batch_size": {
+              "cli_arg": "--eval_batch_size",
+              "type": "int",
+              "default": 32,
+              "description": "Number of problems per evaluation batch"
+            }
+          },
           "run": {
             "work_dir": "{{repo_dir}}",
             "argv": [
               "{{python}}",
               "run_livecodebench_oneeval.py",
               "--output_dir",
-              "{{output_dir}}"
+              "{{output_dir}}",
+              "{{params_argv}}"
             ]
           },
           "result": {
@@ -17079,6 +17120,10 @@
             {
               "src": "one_eval/patches/livecodebench/run_livecodebench_oneeval.py",
               "dest": "run_livecodebench_oneeval.py"
+            },
+            {
+              "src": "one_eval/patches/livecodebench/utils_execute.py",
+              "dest": "lcb_runner/evaluation/utils_execute.py"
             }
           ]
         },
@@ -17155,13 +17200,27 @@
             "type": "api",
             "how": "读 OPENAI_API_KEY + OPENAI_API_BASE 环境变量，走 OpenAI 兼容接口（--backend openai --base-url）"
           },
+          "params": {
+            "temperature": {
+              "cli_arg": "--temperature",
+              "type": "float",
+              "default": 0.0
+            },
+            "n_samples": {
+              "cli_arg": "--n_samples",
+              "type": "int",
+              "default": 1,
+              "description": "Number of generations per problem (for pass@k)"
+            }
+          },
           "run": {
             "work_dir": "{{repo_dir}}",
             "argv": [
               "{{python}}",
               "run_humanevalplus_oneeval.py",
               "--output_dir",
-              "{{output_dir}}"
+              "{{output_dir}}",
+              "{{params_argv}}"
             ]
           },
           "result": {
@@ -17257,6 +17316,19 @@
             "type": "api",
             "how": "读 OPENAI_API_KEY + OPENAI_API_BASE 环境变量，走 OpenAI 兼容接口（--backend openai --base-url）"
           },
+          "params": {
+            "temperature": {
+              "cli_arg": "--temperature",
+              "type": "float",
+              "default": 0.0
+            },
+            "n_samples": {
+              "cli_arg": "--n_samples",
+              "type": "int",
+              "default": 1,
+              "description": "Number of generations per problem (for pass@k)"
+            }
+          },
           "run": {
             "work_dir": "{{repo_dir}}",
             "argv": [
@@ -17265,7 +17337,8 @@
               "--dataset",
               "mbpp",
               "--output_dir",
-              "{{output_dir}}"
+              "{{output_dir}}",
+              "{{params_argv}}"
             ]
           },
           "result": {
@@ -17362,13 +17435,33 @@
             "type": "api",
             "how": "读 OPENAI_API_KEY + OPENAI_API_BASE 环境变量，走 OpenAI 兼容接口。BFCL 通过 handler 系统路由到 OpenAI 兼容后端。"
           },
+          "params": {
+            "temperature": {
+              "cli_arg": "--temperature",
+              "type": "float",
+              "default": 0.001
+            },
+            "test_category": {
+              "cli_arg": "--test_category",
+              "type": "string",
+              "default": "all",
+              "description": "Test categories or preset (ast/live/multi_turn/all/default)"
+            },
+            "num_threads": {
+              "cli_arg": "--num_threads",
+              "type": "int",
+              "default": 4,
+              "description": "Number of concurrent generation threads"
+            }
+          },
           "run": {
             "work_dir": "{{repo_dir}}/berkeley-function-call-leaderboard",
             "argv": [
               "{{python}}",
               "run_bfcl_oneeval.py",
               "--output_dir",
-              "{{output_dir}}"
+              "{{output_dir}}",
+              "{{params_argv}}"
             ]
           },
           "result": {
@@ -17384,7 +17477,7 @@
             "data_version": "BFCL v3 (4441 entries: 1390 non-live AST + 2251 live + 800 multi-turn), pinned to gorilla repo tag v1.3",
             "verified_date": "2026-07-13"
           },
-          "notes": "默认跑 AST + Live 类别（不含 exec 和 multi_turn）。exec 类需要 Docker 沙箱执行生成的函数调用；multi_turn 需要更复杂的状态管理。可通过 BFCL_TEST_CATEGORIES 环境变量选择评测子集（preset: ast/exec/live/multi_turn/all/default）。",
+          "notes": "默认跑全部 17 个类别（AST + Live + Multi-Turn，共 4441 题）。可通过 BFCL_TEST_CATEGORIES 环境变量选择评测子集（preset: ast/live/multi_turn/all/default/non_live/single_turn，或逗号分隔的具体类别名）。",
           "patch_files": [
             {
               "src": "one_eval/patches/bfcl/run_bfcl_oneeval.py",
@@ -17438,7 +17531,7 @@
         },
         "repo_eval": {
           "repo_url": "https://github.com/sierra-research/tau2-bench",
-          "ref": "v1.0.0",
+          "ref": "v1.0.1",
           "license": "MIT",
           "env_requires": {
             "python": ">=3.12",
@@ -17452,13 +17545,64 @@
             "type": "api",
             "how": "通过 LiteLLM 路由，读 OPENAI_API_KEY + OPENAI_API_BASE 环境变量，模型名前缀 openai/ 走 OpenAI 兼容接口"
           },
+          "params": {
+            "domains": {
+              "cli_arg": "--domains",
+              "type": "string",
+              "default": "airline,retail,telecom",
+              "description": "Comma-separated domains to evaluate"
+            },
+            "user_model": {
+              "cli_arg": "--user_model",
+              "type": "string",
+              "default": null,
+              "description": "User simulator model (defaults to agent model)"
+            },
+            "num_trials": {
+              "cli_arg": "--num_trials",
+              "type": "int",
+              "default": 4,
+              "description": "Number of evaluation trials per task"
+            },
+            "task_seed": {
+              "cli_arg": "--task_seed",
+              "type": "int",
+              "default": 300,
+              "description": "Random seed for task sampling/ordering"
+            },
+            "max_concurrency": {
+              "cli_arg": "--max_concurrency",
+              "type": "int",
+              "default": 5,
+              "description": "Max concurrent evaluation tasks"
+            },
+            "agent_reasoning_effort": {
+              "cli_arg": "--agent_reasoning_effort",
+              "type": "string",
+              "default": "none",
+              "description": "Reasoning effort for agent LLM (none/low/medium/high)"
+            },
+            "user_reasoning_effort": {
+              "cli_arg": "--user_reasoning_effort",
+              "type": "string",
+              "default": "low",
+              "description": "Reasoning effort for user simulator LLM"
+            },
+            "eval_model": {
+              "cli_arg": "--eval_model",
+              "type": "string",
+              "default": null,
+              "description": "NL evaluator model (defaults to agent model)"
+            }
+          },
           "run": {
             "work_dir": "{{repo_dir}}",
             "argv": [
               "{{python}}",
               "run_tau2_bench_oneeval.py",
               "--output_dir",
-              "{{output_dir}}"
+              "{{output_dir}}",
+              "{{params_argv}}"
             ]
           },
           "result": {
@@ -17529,25 +17673,43 @@
           "ref": "v1.25.0",
           "license": "Apache-2.0",
           "env_requires": {
-            "python": ">=3.10"
+            "python": ">=3.10",
+            "sandbox": "docker",
+            "system_packages": [
+              "docker"
+            ]
           },
+          "dockerfile": "one_eval/patches/gaia/Dockerfile",
+          "docker_image": "oneeval/gaia:latest",
+          "docker_skip_setup": true,
           "setup": [
-            "{{uv}} pip install smolagents[openai] ddgs markdownify requests datasets --python {{python}}"
+            "{{uv}} pip install smolagents[openai] litellm ddgs markdownify requests datasets huggingface-hub --python {{python}}",
+            "{{uv}} pip install pdfminer.six python-pptx mammoth openpyxl puremagic pathvalidate beautifulsoup4 --python {{python}}",
+            "{{uv}} pip install pydub SpeechRecognition youtube-transcript-api google-search-results --python {{python}}"
           ],
+          "params": {
+            "concurrency": {
+              "cli_arg": "--concurrency",
+              "type": "int",
+              "default": 4,
+              "description": "Number of parallel workers"
+            }
+          },
           "run": {
-            "work_dir": "{{repo_dir}}",
+            "work_dir": "{{repo_dir}}/examples/open_deep_research",
             "argv": [
               "{{python}}",
-              "run_gaia_oneeval.py",
+              "../../run_gaia_oneeval.py",
               "--output_dir",
-              "{{output_dir}}"
+              "{{output_dir}}",
+              "{{params_argv}}"
             ]
           },
           "result": {
             "path": "scores_*.json",
             "format": "json",
             "score_path": "average.accuracy",
-            "scale": "percent",
+            "scale": "ratio",
             "metric_name": "accuracy"
           },
           "data_alignment": {
@@ -17556,7 +17718,7 @@
             "data_version": "2023_all validation split (165 questions)",
             "verified_date": "2026-07-17"
           },
-          "notes": "使用 smolagents v1.25.0 (HuggingFace 官方 Agent 框架) + OpenAIModel 运行 GAIA 评测。Agent 配备 DuckDuckGo 搜索和 Python 代码执行工具，兼容任意 OpenAI 兼容端点。⚠️ GAIA 是 gated dataset，需要：1) 在 https://huggingface.co/datasets/gaia-benchmark/GAIA 接受使用条款；2) 在 evalspec 的 runtime.env 中设置 HF_TOKEN。搜索工具免费无需额外 API key。默认使用 validation split（165 题，答案公开），test split 需提交 leaderboard。评分使用 GAIA 官方 scorer：字符串归一化 exact match，支持数字/列表/文本三种比较模式。",
+          "notes": "使用 smolagents v1.25.0 (HuggingFace 官方 Agent 框架) + OpenAIModel 运行 GAIA 评测。整个评测进程在 Docker 容器中运行（sandbox=docker），Agent 生成的任意代码在容器内隔离执行，防止恶意代码影响宿主机。Agent 配备 DuckDuckGo 搜索和 Python 代码执行工具，兼容任意 OpenAI 兼容端点。⚠️ GAIA 是 gated dataset，需要：1) 在 https://huggingface.co/datasets/gaia-benchmark/GAIA 接受使用条款；2) 确保系统环境变量中已设置 HF_TOKEN（子进程自动继承）。搜索工具免费无需额外 API key。固定使用 validation split（165 题，答案公开），test split 需提交 leaderboard。评分使用 GAIA 官方 scorer：字符串归一化 exact match，支持数字/列表/文本三种比较模式。需要宿主机安装 Docker。",
           "patch_files": [
             {
               "src": "one_eval/patches/gaia/run_gaia_oneeval.py",
@@ -17568,6 +17730,151 @@
           "config": "2023_all",
           "split": "validation",
           "reason": "validation split (165 questions) has public answers. test split (300 questions) requires leaderboard submission for scoring."
+        }
+      }
+    },
+    {
+      "bench_name": "omniabench",
+      "bench_table_exist": true,
+      "bench_source_url": "https://github.com/scuuy/OmniaBench",
+      "bench_dataflow_eval_type": null,
+      "bench_kind": "external_repo",
+      "bench_prompt_template": null,
+      "bench_keys": [],
+      "meta": {
+        "bench_name": "omniabench",
+        "source": "external_repo",
+        "aliases": [
+          "omniabench",
+          "OmniaBench"
+        ],
+        "category": "Agent",
+        "tags": [
+          "agent",
+          "tool-use",
+          "multi-turn",
+          "planning",
+          "reasoning"
+        ],
+        "description": "OmniaBench: A diagnostic benchmark for evaluating general-purpose AI agents across 644 curated tasks spanning 90 level-1 and 354 level-2 domains.",
+        "description_zh": "OmniaBench: 通用AI智能体诊断性评测基准，覆盖90个一级领域、354个二级领域共644道精选任务。",
+        "hf_meta": {
+          "bench_name": "omniabench",
+          "hf_repo": "scuuy666/OmniaBench",
+          "card_text": "OmniaBench evaluates general-purpose AI agents across consumer, business, and employee-facing applications with multi-dimensional scoring.",
+          "tags": [
+            "agent",
+            "tool-use",
+            "multi-turn"
+          ],
+          "exists_on_hf": true,
+          "splits": [
+            {
+              "name": "challenging_subset",
+              "num_examples": 644
+            }
+          ]
+        },
+        "repo_eval": {
+          "repo_url": "https://github.com/scuuy/OmniaBench",
+          "ref": "6f919305e0efe563d5cb3a2c8549b6d6faf66aef",
+          "license": "Apache-2.0",
+          "env_requires": [
+            "python>=3.10"
+          ],
+          "setup": [
+            "{{uv}} pip install -r {{repo_dir}}/evaluation/requirements.txt",
+            "{{uv}} pip install openai anthropic python-dotenv huggingface_hub matplotlib numpy"
+          ],
+          "model_interface": {
+            "type": "api",
+            "how": "生成 profiles.json 写入 agent/user/judge 三模型配置，环境变量传递 API key 和 base_url。支持 OpenAI 兼容和 Anthropic 原生。"
+          },
+          "params": {
+            "temperature": {
+              "cli_arg": "--temperature",
+              "type": "float",
+              "default": 0.0
+            },
+            "routes": {
+              "cli_arg": "--routes",
+              "type": "string",
+              "default": "route1,route2,route3,route4",
+              "description": "Comma-separated routes to evaluate"
+            },
+            "pass_k": {
+              "cli_arg": "--pass_k",
+              "type": "int",
+              "default": 1,
+              "description": "pass@k: number of attempts per task"
+            },
+            "max_task_workers": {
+              "cli_arg": "--max_task_workers",
+              "type": "int",
+              "default": 8,
+              "description": "Max concurrent task workers"
+            },
+            "judge_model": {
+              "cli_arg": "--judge_model",
+              "type": "string",
+              "default": null,
+              "description": "Rubric judge model (defaults to agent model)"
+            },
+            "user_model": {
+              "cli_arg": "--user_model",
+              "type": "string",
+              "default": null,
+              "description": "User simulator model (defaults to agent model)"
+            },
+            "infer_mode": {
+              "cli_arg": "--infer_mode",
+              "type": "string",
+              "default": "fc",
+              "choices": ["fc", "prompt"],
+              "description": "Inference mode: fc (function-calling) or prompt"
+            },
+            "reasoning_effort": {
+              "cli_arg": "--reasoning_effort",
+              "type": "string",
+              "default": "high",
+              "description": "Agent reasoning effort (high/medium/low)"
+            }
+          },
+          "run": {
+            "work_dir": "{{repo_dir}}",
+            "argv": [
+              "{{python}}",
+              "run_omniabench_oneeval.py",
+              "--output_dir",
+              "{{output_dir}}",
+              "{{params_argv}}"
+            ]
+          },
+          "result": {
+            "path": "scores_*.json",
+            "format": "json",
+            "score_path": "pass_at_1",
+            "scale": "ratio",
+            "metric_name": "pass@1"
+          },
+          "data_alignment": {
+            "ref_paper": "OmniaBench: Towards Comprehensive Diagnostics of General-Purpose AI Agents",
+            "ref_url": "https://github.com/scuuy/OmniaBench",
+            "data_version": "challenging subset (644 tasks, 4 routes)",
+            "verified_date": "2026-08-01"
+          },
+          "notes": "OmniaBench 是一个智能体评测基准，包含 4 条评测路径：route1 (DAG多轮对话, 354题), route2 (Solver优化题, 60题), route3 (Program程序题, 30题), route4 (DAG-S单轮, 200题)。需要配置 agent/user_simulator/judge 三个模型。数据集首次运行时从 HuggingFace (scuuy666/OmniaBench) 自动下载。评分方式：route1/2/4 使用 rubric 检查表（combined_score==1.0 才算 pass），route3 使用代码验证器二值判定。Leaderboard 指标为 Overall Pass@1。论文协议：agent temperature=0, reasoning_effort=high, user/judge 使用 DeepSeek-V4-Pro (thinking disabled)。若未配置独立 judge/user 模型，报告自动标记 non_official_protocol。",
+          "patch_files": [
+            {
+              "src": "one_eval/patches/omniabench/run_omniabench_oneeval.py",
+              "dest": "run_omniabench_oneeval.py"
+            }
+          ]
+        },
+        "download_config": {
+          "config": null,
+          "split": "challenging_subset",
+          "reason": "644-task challenging subset is the recommended evaluation set. Full 1431 tasks available but costlier and may have contamination."
         }
       }
     }

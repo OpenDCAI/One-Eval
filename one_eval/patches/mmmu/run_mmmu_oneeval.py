@@ -53,18 +53,10 @@ SUBJECTS = [
 def parse_args():
     parser = argparse.ArgumentParser(description="MMMU evaluation for One-Eval")
     parser.add_argument("--output_dir", type=str, required=True)
-    parser.add_argument("--model_name", type=str,
-                        default=os.environ.get("ONEEVAL_MODEL_NAME", "gpt-4o"))
-    parser.add_argument("--api_base", type=str,
-                        default=os.environ.get("OPENAI_API_BASE", ""))
-    parser.add_argument("--api_key", type=str,
-                        default=os.environ.get("OPENAI_API_KEY", ""))
-    parser.add_argument("--max_samples", type=int,
-                        default=int(os.environ.get("ONEEVAL_MAX_SAMPLES", "-1")))
-    parser.add_argument("--split", type=str,
-                        default=os.environ.get("ONEEVAL_SPLIT", "validation"),
+    parser.add_argument("--model_name", type=str, default="gpt-4o")
+    parser.add_argument("--max_samples", type=int, default=-1)
+    parser.add_argument("--split", type=str, default="validation",
                         choices=["validation", "test"])
-    parser.add_argument("--max_workers", type=int, default=8)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--max_tokens", type=int, default=1024)
     return parser.parse_args()
@@ -316,7 +308,10 @@ def main():
     # MMMU repo root (this script is placed at mmmu/run_mmmu_oneeval.py)
     mmmu_root = Path(__file__).parent.parent
 
-    client = OpenAI(base_url=args.api_base, api_key=args.api_key)
+    client = OpenAI(
+        base_url=os.environ.get("OPENAI_API_BASE") or None,
+        api_key=os.environ.get("OPENAI_API_KEY") or None,
+    )
 
     # Stage 1: Inference
     # When max_samples is set, treat it as TOTAL sample cap (aligned with dataflow):

@@ -37,32 +37,20 @@ EVALUATE_TIMEOUT = 1800
 def parse_args():
     parser = argparse.ArgumentParser(description="HumanEval+ evaluation for One-Eval")
     parser.add_argument("--output_dir", type=str, required=True)
-    parser.add_argument("--model_name", type=str,
-                        default=os.environ.get("ONEEVAL_MODEL_NAME", "gpt-4o"))
-    parser.add_argument("--api_base", type=str,
-                        default=os.environ.get("OPENAI_API_BASE", ""))
-    parser.add_argument("--api_key", type=str,
-                        default=os.environ.get("OPENAI_API_KEY", ""))
-    parser.add_argument("--max_samples", type=int,
-                        default=int(os.environ.get("ONEEVAL_MAX_SAMPLES", "-1")))
+    parser.add_argument("--model_name", type=str, default="gpt-4o")
+    parser.add_argument("--max_samples", type=int, default=-1)
     parser.add_argument("--n_samples", type=int, default=1,
                         help="Number of generations per problem (for pass@k)")
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--dataset", type=str, default="humaneval",
                         choices=["humaneval", "mbpp"],
                         help="Dataset to evaluate on (humaneval for HumanEval+, mbpp for MBPP+)")
-    parser.add_argument("--greedy", action="store_true", default=True,
-                        help="Use greedy decoding (default: True for deterministic results)")
-    parser.add_argument("--no-greedy", dest="greedy", action="store_false",
-                        help="Disable greedy decoding, use sampling with n_samples and temperature")
     return parser.parse_args()
 
 
 def run_codegen(args) -> Path:
     """Run evalplus.codegen to generate code samples."""
     env = os.environ.copy()
-    if args.api_key:
-        env["OPENAI_API_KEY"] = args.api_key
 
     cmd = [
         sys.executable, "-m", "evalplus.codegen",
@@ -71,10 +59,16 @@ def run_codegen(args) -> Path:
         "--backend", "openai",
     ]
 
-    if args.api_base:
-        cmd.extend(["--base-url", args.api_base])
+    api_base = os.environ.get("OPENAI_API_BASE", "")
+    if api_base:
+        cmd.extend(["--base-url", api_base])
 
-    if args.greedy:
+    if args.temperature == 0.0:
+        # evalplus requires --greedy for temperature=0 (OpenAI provider asserts
+        # temperature > 0 when do_sample=True). --greedy forces n_samples=1 internally.
+        if args.n_samples > 1:
+            log.warning(f"temperature=0 with n_samples={args.n_samples} is contradictory "
+                        f"(identical outputs). Falling back to greedy (n_samples=1).")
         cmd.append("--greedy")
     else:
         cmd.extend(["--n-samples", str(args.n_samples)])
@@ -155,8 +149,6 @@ def run_evaluate(args, samples_file: Path) -> tuple:
         (scores_dict, eval_results_path or None)
     """
     env = os.environ.copy()
-    if args.api_key:
-        env["OPENAI_API_KEY"] = args.api_key
 
     # Remove stale eval_results to force fresh evaluation of all samples
     # evalplus names it {stem}_eval_results.json (underscore, not dot)
@@ -328,9 +320,9 @@ def write_oneeval_scores(args, scores: dict, samples_file: Path, eval_results_pa
         "bench_name": f"{args.dataset}plus",
         "model_name": args.model_name,
         "dataset": args.dataset,
-        "n_samples": 1 if args.greedy else args.n_samples,
+        "n_samples": args.n_samples,
         "total_samples": total_samples,
-        "temperature": 0.0 if args.greedy else args.temperature,
+        "temperature": args.temperature,
         "timestamp": timestamp,
         **scores,
     }
@@ -422,9 +414,7 @@ def main():
     log.info("HumanEval+ One-Eval bridge starting")
     log.info(f"  Model: {args.model_name}")
     log.info(f"  Dataset: {args.dataset}")
-    log.info(f"  Greedy: {args.greedy}")
-    if not args.greedy:
-        log.info(f"  n_samples={args.n_samples}, temperature={args.temperature}")
+    log.info(f"  n_samples={args.n_samples}, temperature={args.temperature}")
 
     samples_file = run_codegen(args)
     scores, eval_results_path = run_evaluate(args, samples_file)

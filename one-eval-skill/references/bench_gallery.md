@@ -5,19 +5,13 @@
 
 ## 接入约定（务必先读 `eval_types.md`）
 - **READY 区**：已 smoke 测通、key_mapping 已确认、本地数据就绪的 bench，可直接复用（免重测）。
-- **候选区**：来自主仓库 gallery 的 118 个 bench，**本版默认都未验证**。接入某个候选 bench 时：
+- **候选区**：来自主仓库 gallery 的 dataflow bench，**本版默认都未验证**。接入某个候选 bench 时：
   1. `eval_type` 列只是依据原始字段做的**初步归类**，需按 `eval_types.md` 复核。
   2. `原始字段` 是 HF 上的列名，**不等于** key_mapping —— 嵌套字段要先拍平。
   3. 用 `prepare_bench.py` 下载预览结构 → 填 key_mapping → `run_eval.py --smoke` 验证。
   4. 测通后该 bench 进入 READY（`.local_state.json`），可手工登记到下方 READY 区。
 
-### external_repo 类 bench 通用说明
-所有 `eval_type` 为 `external_repo` 的 bench，evalspec 中**必须**加 `bench_kind: external_repo`。它们的共同特征：
-- 不走 One-Eval 内核的 dataflow 评测流程，而是克隆外部仓库 + 运行 bridge 脚本
-- 模型通过 `OPENAI_API_KEY` + `OPENAI_API_BASE` 环境变量接入（由 One-Eval 自动注入）
-- 仓库版本（ref）已在 `bench_gallery.json` 中锁定，运行时自动使用
-- 备注列中标注的"前置条件"是用户必须满足的（如 HF_TOKEN、Docker、Python 版本、联网环境等），agent 应在生成 evalspec 前向用户确认这些条件
-
+> **候选区仅包含 dataflow bench**。External repo bench（使用独立评测仓库）已单独列在文件末尾 "External Repo Benchmarks" 区。
 
 ---
 
@@ -33,16 +27,6 @@ _（暂无）_
 ---
 
 ## 候选区（未验证，按分类）
-
-
-### Agents & Tools（3）
-
-| bench_name | eval_type(初判) | source_url | 原始字段 | 备注 |
-|---|---|---|---|---|
-| bfcl | `external_repo` | https://gorilla.cs.berkeley.edu/leaderboard | gorilla-llm/Berkeley-Function-Calling-Leaderboard (HF, 4441题) | 【前置条件】Docker（宿主机需安装并启动 Docker daemon）。函数/工具调用评测 (AST 匹配+执行验证)；预构建镜像 `oneeval/bfcl:latest`。默认跑 AST+Live，可通过 `BFCL_TEST_CATEGORIES` env 选子集 (ast/live/multi_turn/non_live/single_turn/all/default) |
-| gaia | `external_repo` | https://huggingface.co/datasets/gaia-benchmark/GAIA | gaia-benchmark/GAIA (HF, validation 165题) | 【前置条件】①HF_TOKEN（gated dataset，需先在 HF 页面接受使用条款）②联网环境（agent 运行时需访问外网搜索）。通用 AI 助手评测：多步推理+网页搜索+工具使用；smolagents CodeAgent。评分：normalized exact match |
-| tau2_bench | `external_repo` | https://github.com/sierra-research/tau2-bench | τ2-bench (airline/retail/telecom/banking_knowledge) | 【前置条件】无额外前置条件（uv 会自动安装 Python>=3.12）。多轮客服场景 Agent 工具调用评测；LiteLLM 路由。可通过 `ONEEVAL_TAU2_DOMAINS` env 选 domain (airline/retail/telecom/banking_knowledge，逗号分隔，默认 airline,retail)，`ONEEVAL_USER_MODEL` env 指定用户模拟器模型 |
-
 
 ### Domain-Specific（14）
 
@@ -197,20 +181,141 @@ _（暂无）_
 | xstest | `key3_q_a_rejected` | — | chosen, rejected |
 
 
-### Multimodal（3）
+---
 
-| bench_name | eval_type(初判) | source_url | 原始字段 | 备注 |
-|---|---|---|---|---|
-| mathvista | `external_repo` | https://mathvista.github.io/ | AI4Math/MathVista (HF testmini, 1000题) | 【前置条件】vision 模型（需支持图片输入）。数学视觉推理；使用 MathVista 官方仓库评测代码 |
-| mmmu | `external_repo` | https://mmmu-benchmark.github.io/ | MMMU/MMMU (HF validation 900题 / test 10500题) | 【前置条件】vision 模型（需支持图片输入）。30学科多模态理解与推理。可通过 `ONEEVAL_SPLIT` env 选 validation/test，默认 validation |
-| mmmu_pro | `external_repo` | https://mmmu-benchmark.github.io/ | MMMU/MMMU_Pro (HF test, 1730题) | 【前置条件】vision 模型（需支持图片输入）。MMMU 加强版，10选项。通过 `ONEEVAL_SPLIT` env 选 config (vision/standard (10 options)/standard (4 options))，默认 vision；通过 `ONEEVAL_MODE` env 选 prompt 模式 (direct/cot)，默认 direct |
+## External Repo Benchmarks（独立评测仓库）
 
+以下 benchmark 使用官方或指定版本的外部评测仓库，由 `ExternalRepoRunner` 自动完成环境准备、评测执行和结果解析。**这些 bench 不需要填写 eval_type 或 key_mapping，也不通过 prepare_bench 下载数据**；所有配置由 `bench_gallery.json` 提供。
 
-### Code（3）
+### 使用方式
 
-| bench_name | eval_type(初判) | source_url | 原始字段 | 备注 |
-|---|---|---|---|---|
-| livecodebench | `external_repo` | https://livecodebench.github.io/ | livecodebench/code_generation (HF, 持续更新) | 【前置条件】Docker（宿主机需安装并启动 Docker daemon）。代码生成 pass@1；预构建镜像 `oneeval/livecodebench:latest`。可通过 `ONEEVAL_LCB_RELEASE` env 指定版本 (release_v1–v6/release_latest)，默认 release_latest |
-| humanevalplus | `external_repo` | https://github.com/evalplus/evalplus | evalplus/humanevalplus (HF, 164题) | 【前置条件】Docker（宿主机需安装并启动 Docker daemon）。代码生成 pass@1；预构建镜像 `oneeval/humanevalplus:latest`，greedy decoding |
-| mbppplus | `external_repo` | https://github.com/evalplus/evalplus | evalplus/mbppplus (HF, 399题) | 【前置条件】Docker（宿主机需安装并启动 Docker daemon）。代码生成 pass@1；预构建镜像 `oneeval/mbppplus:latest`，与 HumanEval+ 共用 bridge 脚本 |
+在 EvalSpec 中：
+- 必须填写 `bench_name` 和 `bench_kind: external_repo`
+- `params` 只填写希望覆盖的参数；未填写的参数使用 gallery 中的默认值
+- `model_name` 自动取自 `model.model_name_or_path`
+- `max_samples` 自动取自 `runtime.max_samples`
+- `api_url` 和 `api_key` 从 `model` 配置自动注入，不应写入 `params`
+- **前置条件**（Docker、Python 版本、HF_TOKEN、联网等）见下表；agent 应在生成 evalspec 前向用户确认这些条件
+
+示例：
+```yaml
+benchmarks:
+  - bench_name: "livecodebench"
+    bench_kind: "external_repo"
+    params:
+      release_version: "release_v6"
+      n: 10
+```
+
+### 可用的 External Repo Benchmarks
+
+| bench | 能力/主指标 | 前置条件 |
+|---|---|---|
+| mathvista | 视觉数学推理，accuracy | vision 模型 |
+| mmmu | 多模态学科推理，accuracy | vision 模型 |
+| mmmu_pro | 强化多模态推理，accuracy | vision 模型 |
+| livecodebench | 代码生成，pass@1 | Docker（宿主机需安装并启动 Docker daemon） |
+| humanevalplus | 代码生成，pass@1 | Docker（宿主机需安装并启动 Docker daemon） |
+| mbppplus | 代码生成，pass@1 | Docker（宿主机需安装并启动 Docker daemon） |
+| bfcl | 函数调用，overall accuracy | Docker（宿主机需安装并启动 Docker daemon） |
+| tau2_bench | 多轮工具调用，pass rate | 无额外前置条件 |
+| gaia | 搜索工具Agent，accuracy | ① Docker（宿主机需安装并启动 Docker daemon） ② HF_TOKEN (gated) ③ 联网环境 |
+| omniabench | 通用Agent，pass@1 | 无额外前置条件 |
+
+> **重要**：表格中展示的参数信息力求完整，但**参数的类型、默认值、choices 等细节以 `bench_gallery.json` 中对应条目的 `meta.repo_eval.params` 为最终依据**。生成 evalspec 前，不要根据其他 benchmark 推测参数。
+
+### 参数详细说明
+
+#### mathvista
+
+| 参数 | 类型 | 默认值 | 可选值/说明 |
+|---|---|---|---|
+| temperature | float | 0.0 | 采样温度 |
+| max_tokens | int | 1024 | 最大生成长度 |
+| shot_num | int | 0 | few-shot 样本数 |
+| shot_type | string | solution | solution/code — few-shot 示例类型 |
+
+#### mmmu
+
+| 参数 | 类型 | 默认值 | 可选值/说明 |
+|---|---|---|---|
+| split | string | validation | validation/test — 数据集划分 |
+| temperature | float | 0.0 | 采样温度 |
+| max_tokens | int | 1024 | 最大生成长度 |
+
+#### mmmu_pro
+
+| 参数 | 类型 | 默认值 | 可选值/说明 |
+|---|---|---|---|
+| setting | string | vision | vision/standard (10 options)/standard (4 options) — 输入设置 |
+| mode | string | direct | direct/cot — 提示模式（直接回答/思维链） |
+| max_workers | int | 16 | 并行推理 worker 数 |
+| max_tokens | int | 4096 | 最大生成长度 |
+
+#### livecodebench
+
+| 参数 | 类型 | 默认值 | 可选值/说明 |
+|---|---|---|---|
+| temperature | float | 0.2 | 采样温度 |
+| release_version | string | release_latest | release_v1/v2/v3/v4/v5/v6/release_latest — 评测版本 |
+| n | int | 10 | 每题生成样本数（pass@k） |
+| scenario | string | codegeneration | codegeneration/selfrepair/testoutputprediction/codeexecution — 评测场景 |
+| max_workers | int | -1 | 并行 worker 数（-1 = 自动检测） |
+| num_process_evaluate | int | 1 | 评测进程数 |
+| timeout | int | 6 | 代码执行超时（秒） |
+| eval_batch_size | int | 32 | 每批评测的问题数 |
+
+#### humanevalplus
+
+| 参数 | 类型 | 默认值 | 可选值/说明 |
+|---|---|---|---|
+| temperature | float | 0.0 | 采样温度 |
+| n_samples | int | 1 | 每题生成样本数（pass@k） |
+
+#### mbppplus
+
+| 参数 | 类型 | 默认值 | 可选值/说明 |
+|---|---|---|---|
+| temperature | float | 0.0 | 采样温度 |
+| n_samples | int | 1 | 每题生成样本数（pass@k） |
+
+#### bfcl
+
+| 参数 | 类型 | 默认值 | 可选值/说明 |
+|---|---|---|---|
+| temperature | float | 0.001 | 采样温度 |
+| test_category | string | all | ast/live/multi_turn/non_live/single_turn/all/default — 测试类别或预设 |
+| num_threads | int | 4 | 并发生成线程数 |
+
+#### tau2_bench
+
+| 参数 | 类型 | 默认值 | 可选值/说明 |
+|---|---|---|---|
+| domains | string | airline,retail,telecom | 逗号分隔的领域列表（airline/retail/telecom/banking_knowledge） |
+| user_model | string | null | 用户模拟器模型（默认使用 agent 模型） |
+| num_trials | int | 4 | 每个任务的评测试次 |
+| task_seed | int | 300 | 任务采样/排序的随机种子 |
+| max_concurrency | int | 5 | 最大并发评测任务数 |
+| agent_reasoning_effort | string | none | none/low/medium/high — agent LLM 推理努力程度 |
+| user_reasoning_effort | string | low | none/low/medium/high — 用户模拟器 LLM 推理努力程度 |
+| eval_model | string | null | 自然语言评估器模型（默认使用 agent 模型） |
+
+#### gaia
+
+| 参数 | 类型 | 默认值 | 可选值/说明 |
+|---|---|---|---|
+| concurrency | int | 4 | 并发任务数 |
+
+#### omniabench
+
+| 参数 | 类型 | 默认值 | 可选值/说明 |
+|---|---|---|---|
+| temperature | float | 0.0 | 采样温度 |
+| routes | string | route1,route2,route3,route4 | 逗号分隔的评测路线 |
+| pass_k | int | 1 | pass@k：每个任务的尝试次数 |
+| max_task_workers | int | 8 | 最大并发任务 worker 数 |
+| judge_model | string | null | 评分 judge 模型（默认使用 agent 模型） |
+| user_model | string | null | 用户模拟器模型（默认使用 agent 模型） |
+| infer_mode | string | fc | fc/prompt — 推理模式（函数调用/提示） |
+| reasoning_effort | string | high | high/medium/low — agent 推理努力程度 |
 

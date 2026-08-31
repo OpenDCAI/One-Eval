@@ -15,7 +15,11 @@ Model config is read from environment variables:
   ONEEVAL_MODEL_NAME    - Model name (will be prefixed with "openai/")
   ONEEVAL_USER_MODEL    - User simulator model (optional, defaults to agent model)
   ONEEVAL_MAX_SAMPLES   - Max number of tasks to evaluate per domain (-1 = all)
-  ONEEVAL_TAU2_DOMAINS  - Comma-separated domains to evaluate (default: airline,retail)
+  ONEEVAL_TAU2_DOMAINS  - Comma-separated domains to evaluate (default: airline,retail,telecom)
+  ONEEVAL_TAU2_TRIALS   - Number of trials per task (default: 4)
+  ONEEVAL_AGENT_REASONING_EFFORT - reasoning_effort for agent LLM (e.g. none, low, medium, high)
+  ONEEVAL_USER_REASONING_EFFORT  - reasoning_effort for user simulator LLM (e.g. low)
+  ONEEVAL_EVAL_MODEL    - NL evaluator model (default: gpt-4.1)
 """
 
 import argparse
@@ -33,38 +37,40 @@ logging.basicConfig(
 )
 log = logging.getLogger("tau2_bench_oneeval")
 
-DEFAULT_DOMAINS = "airline,retail"
+DEFAULT_DOMAINS = "airline,retail,telecom"
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="τ2-bench evaluation for One-Eval")
-    parser.add_argument("--domains", type=str,
-                        default=os.environ.get("ONEEVAL_TAU2_DOMAINS", DEFAULT_DOMAINS),
+    parser.add_argument("--domains", type=str, default=DEFAULT_DOMAINS,
                         help="Comma-separated domains to evaluate")
     parser.add_argument("--output_dir", type=str, required=True)
-    parser.add_argument("--model_name", type=str,
-                        default=os.environ.get("ONEEVAL_MODEL_NAME", "gpt-4o"))
-    parser.add_argument("--user_model", type=str,
-                        default=os.environ.get("ONEEVAL_USER_MODEL", ""))
-    parser.add_argument("--api_base", type=str,
-                        default=os.environ.get("OPENAI_API_BASE", ""))
-    parser.add_argument("--api_key", type=str,
-                        default=os.environ.get("OPENAI_API_KEY", ""))
-    parser.add_argument("--max_samples", type=int,
-                        default=int(os.environ.get("ONEEVAL_MAX_SAMPLES", "-1")))
-    parser.add_argument("--num_trials", type=int, default=1,
+    parser.add_argument("--model_name", type=str, default="gpt-4o")
+    parser.add_argument("--user_model", type=str, default="",
+                        help="User simulator model (defaults to agent model)")
+    parser.add_argument("--max_samples", type=int, default=-1)
+    parser.add_argument("--num_trials", type=int, default=4,
                         help="Number of evaluation trials per task")
+    parser.add_argument("--task_seed", type=int, default=300,
+                        help="Random seed for task sampling/ordering")
+    parser.add_argument("--agent_reasoning_effort", type=str, default="none",
+                        help="Reasoning effort for agent LLM (none/low/medium/high)")
+    parser.add_argument("--user_reasoning_effort", type=str, default="low",
+                        help="Reasoning effort for user simulator LLM")
+    parser.add_argument("--eval_model", type=str, default="",
+                        help="NL evaluator model (defaults to agent model)")
     parser.add_argument("--max_concurrency", type=int, default=5)
     return parser.parse_args()
 
 
-def setup_env(args):
-    """Configure environment for LiteLLM's OpenAI provider."""
-    if args.api_key:
-        os.environ["OPENAI_API_KEY"] = args.api_key
+def setup_env():
+    """Verify environment for LiteLLM's OpenAI provider.
 
-    if args.api_base:
-        os.environ["OPENAI_API_BASE"] = args.api_base
+    API credentials are passed via environment variables (OPENAI_API_KEY,
+    OPENAI_API_BASE) set by the orchestrator.
+    """
+    if not os.environ.get("OPENAI_API_KEY"):
+        log.warning("OPENAI_API_KEY not set in environment")
 
 
 def build_llm_string(model_name: str) -> str:
@@ -74,12 +80,12 @@ def build_llm_string(model_name: str) -> str:
     return f"openai/{model_name}"
 
 
-def _patch_tau2_config(model_string: str):
+def _patch_tau2_config(agent_model: str, user_model: str, eval_model: str):
     """Patch tau2.config defaults BEFORE other tau2 modules import them.
 
-    tau2-bench hardcodes gpt-4.1-2025-04-14 for env_interface, nl_assertions, etc.
-    We override them with the user-specified model so all LLM calls go through
-    the same API endpoint.
+    Only override agent and user simulator models.
+    NL evaluator (nl_assertions, env_interface) uses eval_model if provided,
+    otherwise defaults to agent_model.
     """
     import importlib.util
     config_path = Path("src/tau2/config.py")
@@ -89,31 +95,50 @@ def _patch_tau2_config(model_string: str):
     config_mod = importlib.util.module_from_spec(spec)
     sys.modules["tau2.config"] = config_mod
     spec.loader.exec_module(config_mod)
-    config_mod.DEFAULT_LLM_AGENT = model_string
-    config_mod.DEFAULT_LLM_USER = model_string
-    config_mod.DEFAULT_LLM_NL_ASSERTIONS = model_string
-    config_mod.DEFAULT_LLM_ENV_INTERFACE = model_string
-    config_mod.DEFAULT_LLM_EVAL_USER_SIMULATOR = model_string
+    config_mod.DEFAULT_LLM_AGENT = agent_model
+    config_mod.DEFAULT_LLM_USER = user_model
+    config_mod.DEFAULT_LLM_EVAL_USER_SIMULATOR = user_model
+
+    eval_llm = build_llm_string(eval_model)
+    config_mod.DEFAULT_LLM_NL_ASSERTIONS = eval_llm
+    config_mod.DEFAULT_LLM_ENV_INTERFACE = eval_llm
 
 
-def run_tau2_evaluation_api(args, domain: str):
-    """Run τ2-bench evaluation for a single domain using the programmatic API."""
+def run_tau2_evaluation_api(args, domain: str, num_tasks: int = -1):
+    """Run τ2-bench evaluation for a single domain using the programmatic API.
+
+    Args:
+        num_tasks: Number of tasks to evaluate in this domain.
+                   -1 means all available tasks.
+    """
     from tau2.data_model.simulation import TextRunConfig
     from tau2.runner import run_domain
 
     agent_llm = build_llm_string(args.model_name)
     user_llm = build_llm_string(args.user_model) if args.user_model else agent_llm
 
+    # Build llm_args with reasoning_effort if specified
+    llm_args_agent = {"temperature": 0.0}
+    llm_args_user = {"temperature": 0.0}
+
+    if args.agent_reasoning_effort and args.agent_reasoning_effort != "none":
+        llm_args_agent["reasoning_effort"] = args.agent_reasoning_effort
+    if args.user_reasoning_effort:
+        llm_args_user["reasoning_effort"] = args.user_reasoning_effort
+
     config_kwargs = dict(
         domain=domain,
         agent="llm_agent",
         llm_agent=agent_llm,
         llm_user=user_llm,
+        llm_args_agent=llm_args_agent,
+        llm_args_user=llm_args_user,
         num_trials=args.num_trials,
+        seed=args.task_seed,
         max_concurrency=args.max_concurrency,
     )
-    if args.max_samples > 0:
-        config_kwargs["num_tasks"] = args.max_samples
+    if num_tasks > 0:
+        config_kwargs["num_tasks"] = num_tasks
 
     run_config = TextRunConfig(**config_kwargs)
 
@@ -122,7 +147,7 @@ def run_tau2_evaluation_api(args, domain: str):
     return results
 
 
-def run_tau2_evaluation_cli(args, domain: str):
+def run_tau2_evaluation_cli(args, domain: str, num_tasks: int = -1):
     """Fallback: run τ2-bench via CLI subprocess for a single domain."""
     import subprocess
 
@@ -136,8 +161,8 @@ def run_tau2_evaluation_cli(args, domain: str):
         "--user-llm", user_llm,
         "--num-trials", str(args.num_trials),
     ]
-    if args.max_samples > 0:
-        cmd.extend(["--num-tasks", str(args.max_samples)])
+    if num_tasks > 0:
+        cmd.extend(["--num-tasks", str(num_tasks)])
 
     log.info(f"Running CLI: {' '.join(cmd)}")
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -170,20 +195,20 @@ def parse_cli_results():
     return None
 
 
-def run_single_domain(args, domain: str):
+def run_single_domain(args, domain: str, num_tasks: int = -1):
     """Run evaluation for one domain, with CLI fallback on API failure."""
     try:
-        results = run_tau2_evaluation_api(args, domain)
+        results = run_tau2_evaluation_api(args, domain, num_tasks)
         if results:
             return results
     except (TypeError, ImportError) as e:
         log.warning(f"Programmatic API failed for {domain} ({e}), falling back to CLI...")
 
-    return run_tau2_evaluation_cli(args, domain)
+    return run_tau2_evaluation_cli(args, domain, num_tasks)
 
 
 def compute_domain_scores(results) -> dict:
-    """Compute pass_rate for a single domain's results."""
+    """Compute Pass^k metrics for a single domain's results using tau2's official API."""
     if isinstance(results, dict):
         if "pass_rate" in results:
             return results
@@ -191,9 +216,19 @@ def compute_domain_scores(results) -> dict:
         pass_rate = sum(rewards) / len(rewards) if rewards else 0.0
         return {
             "pass_rate": pass_rate,
+            "pass_hat_ks": {1: pass_rate},
             "num_tasks": len(rewards),
             "num_passed": sum(1 for r in rewards if r >= 1.0),
         }
+
+    # Use official compute_metrics for proper Pass^k calculation
+    pass_hat_ks = {}
+    try:
+        from tau2.metrics.agent_metrics import compute_metrics
+        metrics = compute_metrics(results)
+        pass_hat_ks = dict(metrics.pass_hat_ks) if metrics.pass_hat_ks else {}
+    except (ImportError, Exception) as e:
+        log.warning(f"compute_metrics failed ({e}), falling back to manual calculation")
 
     simulations = results.simulations if hasattr(results, "simulations") else results
 
@@ -204,7 +239,6 @@ def compute_domain_scores(results) -> dict:
         reward = r.reward_info.reward if r.reward_info else 0.0
         rewards.append(reward)
 
-        # Extract conversation messages (2000 chars per message to preserve tool calls)
         messages = []
         if hasattr(r, 'messages') and r.messages:
             for msg in r.messages:
@@ -218,10 +252,8 @@ def compute_domain_scores(results) -> dict:
                 if msg_dict:
                     messages.append(msg_dict)
 
-        # Extract task description
         goal = ""
         if hasattr(r, 'task'):
-            # Try multiple possible fields
             if hasattr(r.task, 'goal') and r.task.goal:
                 goal = str(r.task.goal)
             elif hasattr(r.task, 'description') and r.task.description:
@@ -229,7 +261,6 @@ def compute_domain_scores(results) -> dict:
             elif hasattr(r.task, 'instruction') and r.task.instruction:
                 goal = str(r.task.instruction)
             elif hasattr(r.task, '__dict__'):
-                # Fallback: extract any text field from task
                 task_dict = r.task.__dict__
                 for key in ['goal', 'description', 'instruction', 'prompt', 'text']:
                     if key in task_dict and task_dict[key]:
@@ -244,12 +275,18 @@ def compute_domain_scores(results) -> dict:
             "messages": messages,
         })
 
-    pass_rate = sum(rewards) / len(rewards) if rewards else 0.0
+    # Fallback if compute_metrics didn't work
+    if not pass_hat_ks:
+        pass_rate = sum(rewards) / len(rewards) if rewards else 0.0
+        pass_hat_ks = {1: pass_rate}
+
+    pass_rate = pass_hat_ks.get(1, 0.0)
     num_passed = sum(1 for r in rewards if r >= 1.0)
 
     return {
         "pass_rate": pass_rate,
-        "num_tasks": len(rewards),
+        "pass_hat_ks": pass_hat_ks,
+        "num_tasks": len(set(d["task_id"] for d in details)),
         "num_passed": num_passed,
         "details": details,
     }
@@ -316,46 +353,69 @@ def write_oneeval_scores(args, domain_scores: dict, domains: list):
 
     log.info(f"Per-sample detail written to: {detail_path} ({total_samples} samples)")
 
-    # Compute average pass_rate
-    all_pass_rates = [
-        domain_scores[d]["pass_rate"] for d in domains if d in domain_scores
-    ]
-    avg_pass_rate = (
-        sum(all_pass_rates) / len(all_pass_rates) if all_pass_rates else 0.0
-    )
+    # Compute overall Pass^k as equal-weight average across domains
+    evaluated_domains = [d for d in domains if d in domain_scores]
+    num_domains = len(evaluated_domains)
 
+    overall_pass_hat_ks = {}
+    if num_domains > 0:
+        all_ks = set()
+        for d in evaluated_domains:
+            all_ks.update(domain_scores[d].get("pass_hat_ks", {}).keys())
+        for k in sorted(all_ks):
+            vals = [domain_scores[d]["pass_hat_ks"].get(k, 0.0) for d in evaluated_domains]
+            overall_pass_hat_ks[k] = sum(vals) / num_domains
+
+    pass1 = overall_pass_hat_ks.get(1, 0.0)
+
+    # Reproduction metadata
     result = {
-        "pass_rate": avg_pass_rate,  # Top-level for score_path extraction
-        "average": {"pass_rate": avg_pass_rate},
+        "pass_rate": pass1,
+        "pass_hat_ks": overall_pass_hat_ks,
+        "average": {"pass_rate": pass1},
         "total_samples": total_samples,
         "detail_path": detail_name,
         "bench_name": "tau2_bench",
-        "model_name": args.model_name,
-        "user_model": args.user_model or args.model_name,
-        "domains": domains,
+        "metadata": {
+            "agent_model": args.model_name,
+            "agent_reasoning_effort": args.agent_reasoning_effort or None,
+            "user_model": args.user_model or args.model_name,
+            "user_reasoning_effort": args.user_reasoning_effort or None,
+            "eval_model": args.eval_model or args.model_name,
+            "num_trials": args.num_trials,
+            "task_seed": args.task_seed,
+            "domains": evaluated_domains,
+            "task_split": "base",
+            "benchmark": "tau2-bench",
+            "benchmark_ref": "v1.0.1",
+        },
+        "domains": evaluated_domains,
         "num_trials": args.num_trials,
+        "task_seed": args.task_seed,
         "timestamp": timestamp,
     }
 
-    # Add per-domain stats
-    for d in domains:
-        if d in domain_scores:
-            result[f"{d}_pass_rate"] = domain_scores[d]["pass_rate"]
-            result[f"{d}_num_tasks"] = domain_scores[d]["num_tasks"]
-            result[f"{d}_num_passed"] = domain_scores[d]["num_passed"]
+    # Add per-domain stats with full Pass^k
+    for d in evaluated_domains:
+        s = domain_scores[d]
+        result[f"{d}_pass_rate"] = s["pass_rate"]
+        result[f"{d}_pass_hat_ks"] = s.get("pass_hat_ks", {})
+        result[f"{d}_num_tasks"] = s["num_tasks"]
 
     score_file = output_dir / f"scores_{timestamp}.json"
     score_file.write_text(
         json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8"
     )
     log.info(f"Scores written to: {score_file}")
-    log.info(f"Overall pass_rate: {avg_pass_rate:.4f}")
-    for d in domains:
-        if d in domain_scores:
-            s = domain_scores[d]
-            log.info(
-                f"  {d}: {s['pass_rate']:.4f} ({s['num_passed']}/{s['num_tasks']})"
-            )
+    log.info(f"Overall Pass^1: {pass1:.4f}")
+    if overall_pass_hat_ks:
+        for k, v in sorted(overall_pass_hat_ks.items()):
+            log.info(f"  Pass^{k}: {v:.4f}")
+    for d in evaluated_domains:
+        s = domain_scores[d]
+        ks = s.get("pass_hat_ks", {})
+        ks_str = ", ".join(f"Pass^{k}={v:.4f}" for k, v in sorted(ks.items()))
+        log.info(f"  {d}: {ks_str} (tasks={s['num_tasks']})")
 
     return result
 
@@ -368,7 +428,10 @@ def main():
     log.info(f"  Domains: {domains}")
     log.info(f"  Agent model: {args.model_name}")
     log.info(f"  User model: {args.user_model or '(same as agent)'}")
-    log.info(f"  max_samples={args.max_samples}, num_trials={args.num_trials}")
+    log.info(f"  num_trials={args.num_trials}, task_seed={args.task_seed}, max_samples={args.max_samples}")
+    log.info(f"  Agent reasoning_effort: {args.agent_reasoning_effort or '(default)'}")
+    log.info(f"  User reasoning_effort: {args.user_reasoning_effort or '(default)'}")
+    log.info(f"  Eval model: {args.eval_model or '(same as agent)'}")
 
     # Clean stale simulation data directory
     sim_dir = Path("data/simulations")
@@ -377,18 +440,25 @@ def main():
         shutil.rmtree(sim_dir)
         log.info(f"Removed stale simulation directory: {sim_dir}")
 
-    setup_env(args)
+    setup_env()
 
     agent_llm = build_llm_string(args.model_name)
-    _patch_tau2_config(agent_llm)
+    user_llm = build_llm_string(args.user_model) if args.user_model else agent_llm
+    eval_llm_model = args.eval_model if args.eval_model else args.model_name
+    _patch_tau2_config(agent_llm, user_llm, eval_llm_model)
 
     domain_scores = {}
+    remaining = args.max_samples if args.max_samples > 0 else -1
+
     for domain in domains:
+        if remaining == 0:
+            break
+
         log.info("=" * 60)
         log.info(f"Evaluating domain: {domain}")
         log.info("=" * 60)
 
-        results = run_single_domain(args, domain)
+        results = run_single_domain(args, domain, remaining)
 
         if not results:
             log.error(f"No results for domain: {domain}")
@@ -397,6 +467,11 @@ def main():
         scores = compute_domain_scores(results)
         domain_scores[domain] = scores
         log.info(f"  {domain} pass_rate: {scores['pass_rate']:.4f}")
+
+        if remaining > 0:
+            remaining -= scores["num_tasks"]
+            if remaining < 0:
+                remaining = 0
 
     if not domain_scores:
         log.error("No evaluation results for any domain!")
