@@ -732,6 +732,8 @@ class BenchNameSuggestNode(BaseNode):
                     bench_prompt_template=gallery_entry.get('bench_prompt_template'),
                     bench_keys=gallery_entry.get('bench_keys', []),
                     meta={**gallery_entry.get('meta', {}), 'from_gallery': True, 'retrieval_score': data['score']},
+                    dataset_cache=gallery_entry.get('dataset_cache'),
+                    download_status=gallery_entry.get('download_status'),
                 )
                 log.info(f"[gallery命中] {repo_id} → 使用完整配置（eval_type={bench.bench_dataflow_eval_type}）")
             else:

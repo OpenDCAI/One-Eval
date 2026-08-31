@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Dict, Any
 
 from one_eval.core.node import BaseNode
@@ -36,6 +37,19 @@ class DatasetStructureNode(BaseNode):
         self.logger.info(f"[DatasetStructureNode] 开始解析 {len(benches)} 个数据集的结构...")
 
         for bench in benches:
+            # Local uploaded benches already have a real dataset_cache and a
+            # synthetic structure registered by the upload endpoint. Never
+            # probe their name as a HuggingFace repo.
+            if (
+                bench.dataset_cache
+                and Path(bench.dataset_cache).exists()
+                and isinstance(bench.meta, dict)
+                and bench.meta.get("source") == "user_upload"
+            ):
+                bench.download_status = "success"
+                self.logger.info(f"[DatasetStructureNode] 使用本地上传文件: {bench.dataset_cache}")
+                continue
+
             # 检查是否已经存在 structure 信息
             if bench.meta and bench.meta.get("structure") and bench.meta["structure"].get("ok"):
                 self.logger.info(f"[DatasetStructureNode] 跳过 {bench.bench_name}，已存在结构信息")

@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from urllib.parse import urlparse
 
 import requests
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from one_eval.logger import get_logger
@@ -394,10 +394,13 @@ from one_eval.utils.deal_json import _save_state_json
 from langgraph.types import Command
 from one_eval.utils.bench_registry import BenchRegistry
 from one_eval.core.metric_registry import get_registered_metrics_meta, MetricMeta
+from one_eval.utils.local_bench import build_local_bench_entry, inspect_jsonl
 
 # Bench Registry - 使用 bench_gallery.json 作为数据源
 BENCH_GALLERY_PATH = REPO_ROOT / "one_eval" / "utils" / "bench_table" / "bench_gallery.json"
 bench_registry = BenchRegistry(str(BENCH_GALLERY_PATH))
+CUSTOM_BENCH_DIR = REPO_ROOT / "cache" / "custom_benches"
+MAX_CUSTOM_BENCH_BYTES = 512 * 1024 * 1024
 
 # Models
 class HFConfigResponse(BaseModel):
@@ -1974,6 +1977,154 @@ def add_bench_to_gallery(req: AddBenchRequest):
         return {"status": "success", "bench": bench_data}
     else:
         raise HTTPException(status_code=400, detail=f"Failed to add bench. It may already exist.")
+
+
+@app.post("/api/benches/upload")
+async def upload_local_bench(
+    dataset_file: UploadFile = File(...),
+    bench_name: str = Form(...),
+    bench_type: str = Form("other"),
+    description: str = Form(""),
+    eval_type: str = Form(""),
+    key_mapping: str = Form(""),
+):
+    """Store and register a local JSONL benchmark for the normal workflow."""
+    normalized_name = (bench_name or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,99}", normalized_name):
+        raise HTTPException(
+            status_code=400,
+            detail="bench_name must be 1-100 characters using letters, numbers, '.', '_' or '-'.",
+        )
+
+    normalized_description = (description or "").strip()
+    if not normalized_description:
+        raise HTTPException(status_code=400, detail="description is required")
+
+    filename = (dataset_file.filename or "").lower()
+    if not filename.endswith(".jsonl"):
+        raise HTTPException(status_code=400, detail="Only UTF-8 .jsonl files are supported")
+
+    if any(
+        str(item.get("bench_name", "")).casefold() == normalized_name.casefold()
+        for item in bench_registry.get_all_benches()
+        if isinstance(item, dict)
+    ):
+        raise HTTPException(status_code=409, detail=f"Bench '{normalized_name}' already exists")
+
+    normalized_eval_type = (eval_type or "").strip() or None
+    if normalized_eval_type and normalized_eval_type not in _VALID_EVAL_TYPES:
+        raise HTTPException(status_code=400, detail=f"Invalid eval_type: {normalized_eval_type}")
+
+    mapping: Dict[str, Any] = {}
+    if (key_mapping or "").strip():
+        try:
+            parsed_mapping = json.loads(key_mapping)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(status_code=400, detail=f"key_mapping must be valid JSON: {exc.msg}") from exc
+        if not isinstance(parsed_mapping, dict):
+            raise HTTPException(status_code=400, detail="key_mapping must be a JSON object")
+        mapping = parsed_mapping
+
+    CUSTOM_BENCH_DIR.mkdir(parents=True, exist_ok=True)
+    upload_id = uuid.uuid4().hex[:12]
+    final_path = CUSTOM_BENCH_DIR / f"{normalized_name}__{upload_id}.jsonl"
+    temp_path = CUSTOM_BENCH_DIR / f".{normalized_name}__{upload_id}.uploading"
+    registered = False
+
+    try:
+        total_bytes = 0
+        with temp_path.open("wb") as output:
+            while True:
+                chunk = await dataset_file.read(1024 * 1024)
+                if not chunk:
+                    break
+                total_bytes += len(chunk)
+                if total_bytes > MAX_CUSTOM_BENCH_BYTES:
+                    raise HTTPException(status_code=413, detail="Uploaded Bench exceeds the 512 MiB limit")
+                output.write(chunk)
+
+        try:
+            inspected = inspect_jsonl(temp_path)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        temp_path.replace(final_path)
+        bench_data = build_local_bench_entry(
+            bench_name=normalized_name,
+            description=normalized_description,
+            category=_map_bench_type_to_category(bench_type),
+            bench_type=(bench_type or "other").strip(),
+            dataset_path=final_path,
+            source_name=final_path.name,
+            num_rows=int(inspected["num_rows"]),
+            keys=list(inspected["keys"]),
+            eval_type=normalized_eval_type,
+            key_mapping=mapping,
+        )
+        bench_data["meta"]["size_bytes"] = total_bytes
+
+        if not bench_registry.add_bench(bench_data, str(BENCH_GALLERY_PATH)):
+            raise HTTPException(status_code=409, detail=f"Bench '{normalized_name}' already exists")
+        registered = True
+        return {
+            "status": "success",
+            "bench": bench_data,
+            "num_rows": inspected["num_rows"],
+            "keys": inspected["keys"],
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.exception("Failed to upload local bench '%s'", normalized_name)
+        raise HTTPException(status_code=500, detail=f"Failed to register local Bench: {exc}") from exc
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
+        if not registered and final_path.exists():
+            final_path.unlink()
+        await dataset_file.close()
+
+
+@app.delete("/api/benches/gallery/{bench_name}")
+def delete_local_bench(bench_name: str):
+    """Delete a user-uploaded local Bench and its dataset file.
+
+    Built-in and remote Gallery entries are intentionally protected.
+    """
+    bench = bench_registry.get_bench_by_name(bench_name)
+    if not isinstance(bench, dict):
+        raise HTTPException(status_code=404, detail=f"Bench '{bench_name}' not found")
+
+    meta = bench.get("meta") if isinstance(bench.get("meta"), dict) else {}
+    if meta.get("source") != "user_upload":
+        raise HTTPException(
+            status_code=403,
+            detail="Only locally uploaded benches can be deleted",
+        )
+
+    dataset_path_value = bench.get("dataset_cache") or meta.get("local_path")
+    dataset_path = Path(dataset_path_value).resolve() if dataset_path_value else None
+    custom_dir = CUSTOM_BENCH_DIR.resolve()
+    if dataset_path is None or not dataset_path.is_relative_to(custom_dir):
+        raise HTTPException(status_code=500, detail="Local Bench path is invalid")
+
+    removed = bench_registry.remove_bench(bench.get("bench_name", bench_name), str(BENCH_GALLERY_PATH))
+    if removed is None:
+        raise HTTPException(status_code=500, detail="Failed to remove Bench from registry")
+
+    file_deleted = True
+    if dataset_path.exists():
+        try:
+            dataset_path.unlink()
+        except OSError as exc:
+            file_deleted = False
+            log.warning("Removed Bench '%s' from registry but failed to delete %s: %s", bench_name, dataset_path, exc)
+
+    return {
+        "status": "success",
+        "bench_name": removed.get("bench_name", bench_name),
+        "dataset_deleted": file_deleted,
+    }
 
 
 if __name__ == "__main__":

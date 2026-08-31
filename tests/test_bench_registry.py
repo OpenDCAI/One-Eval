@@ -1,5 +1,48 @@
 import os
+import json
 from one_eval.utils.bench_registry import BenchRegistry
+
+
+def test_remove_bench_persists_and_returns_removed_entry(tmp_path):
+    config_path = tmp_path / "bench_gallery.json"
+    local = {
+        "bench_name": "local_demo",
+        "meta": {"source": "user_upload"},
+    }
+    remote = {
+        "bench_name": "remote_demo",
+        "meta": {"source": "bench_item_list"},
+    }
+    config_path.write_text(json.dumps({"benches": [local, remote]}), encoding="utf-8")
+
+    registry = BenchRegistry(str(config_path))
+    removed = registry.remove_bench("LOCAL_DEMO", str(config_path))
+
+    assert removed is not None
+    assert removed["bench_name"] == "local_demo"
+    persisted = json.loads(config_path.read_text(encoding="utf-8"))
+    assert [item["bench_name"] for item in persisted["benches"]] == ["remote_demo"]
+    assert registry.get_bench_by_name("local_demo") is None
+
+
+def test_bench_registry_deduplicates_names_and_prefers_last_entry(tmp_path):
+    config_path = tmp_path / "bench_gallery.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "benches": [
+                    {"bench_name": "bfcl", "meta": {"source": "old"}},
+                    {"bench_name": "BFCL", "meta": {"source": "new"}},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    registry = BenchRegistry(str(config_path))
+
+    assert len(registry.get_all_benches()) == 1
+    assert registry.get_bench_by_name("bfcl")["meta"]["source"] == "new"
 
 
 def test_bench_registry():

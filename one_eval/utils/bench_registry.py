@@ -60,7 +60,7 @@ class BenchRegistry:
         # 2. {"bench_name": {...}, ...} - 旧的 bench_config.json 格式（兼容）
         if isinstance(raw_data, dict) and "benches" in raw_data:
             # bench_gallery.json 格式
-            self.benches = raw_data.get("benches", [])
+            self.benches = self._deduplicate_benches(raw_data.get("benches", []))
             # 构建 bench_name -> info 的映射
             for bench in self.benches:
                 bench_name = bench.get("bench_name")
@@ -76,6 +76,34 @@ class BenchRegistry:
                 self.benches.append({"bench_name": name, **info})
 
         log.info(f"[BenchRegistry] Loaded {len(self.benches)} benches from {config_path}")
+
+    @staticmethod
+    def _deduplicate_benches(benches: Any) -> List[Dict[str, Any]]:
+        """Keep one entry per bench name, preferring the last definition.
+
+        The gallery is generated from multiple sources and can occasionally
+        contain the same benchmark more than once.  The last definition is
+        preferred because it matches the existing name-to-entry resolution
+        behavior used by the registry.
+        """
+        if not isinstance(benches, list):
+            return []
+
+        result: List[Dict[str, Any]] = []
+        positions: Dict[str, int] = {}
+        for bench in benches:
+            if not isinstance(bench, dict):
+                continue
+            name = str(bench.get("bench_name", "")).strip()
+            if not name:
+                continue
+            key = name.casefold()
+            if key in positions:
+                result[positions[key]] = bench
+            else:
+                positions[key] = len(result)
+                result.append(bench)
+        return result
 
     # ---------------------------------------------------------
     # 辅助：名称 / alias 匹配
@@ -254,3 +282,54 @@ class BenchRegistry:
             del self.data[bench_name]
             del self.lower_map[bench_name.lower()]
             return False
+
+    def remove_bench(self, bench_name: str, config_path: str) -> Optional[Dict[str, Any]]:
+        """Remove a benchmark from the registry and persist the change.
+
+        The caller is responsible for deciding whether the benchmark is safe
+        to remove (for example, only user-uploaded local benches).
+        """
+        if not isinstance(bench_name, str) or not bench_name.strip():
+            return None
+
+        normalized = bench_name.strip().lower()
+        canonical_name = self.lower_map.get(normalized)
+        if not canonical_name or canonical_name not in self.data:
+            return None
+
+        removed = self.data[canonical_name]
+        original_index = next(
+            (index for index, item in enumerate(self.benches) if item is removed),
+            None,
+        )
+        if original_index is None:
+            return None
+
+        self.benches.pop(original_index)
+        del self.data[canonical_name]
+        del self.lower_map[normalized]
+
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                file_data = json.load(f)
+
+            if isinstance(file_data, dict) and "benches" in file_data:
+                file_data["benches"] = [
+                    item
+                    for item in file_data["benches"]
+                    if str(item.get("bench_name", "")).lower() != normalized
+                ]
+            else:
+                file_data = {"benches": self.benches}
+
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(file_data, f, ensure_ascii=False, indent=2)
+
+            log.info(f"[BenchRegistry] Removed bench '{canonical_name}' successfully")
+            return removed
+        except Exception as e:
+            log.error(f"[BenchRegistry] Failed to persist removal: {e}")
+            self.benches.insert(original_index, removed)
+            self.data[canonical_name] = removed
+            self.lower_map[normalized] = canonical_name
+            return None

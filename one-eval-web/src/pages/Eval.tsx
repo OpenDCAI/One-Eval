@@ -760,10 +760,12 @@ export const Eval = () => {
           bench_name: bench.bench_name,
           eval_type: inferredEvalType,
           bench_dataflow_eval_type: inferredEvalType,
+          dataset_cache: bench.dataset_cache,
+          download_status: bench.download_status,
           meta: {
               ...bench.meta,
               tags: safeTaskTypes, // Store all task types as tags
-              source: "gallery", // Flag to skip probing
+              source: bench?.meta?.source === "user_upload" ? "user_upload" : "gallery",
               skip_probing: true,
               bench_dataflow_eval_type: inferredEvalType,
               keys: [], // Default empty keys to prevent white screen

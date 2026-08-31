@@ -15,6 +15,8 @@ import {
   RefreshCw,
   Loader2,
   Plus,
+  Upload,
+  Trash2,
   Bot,
   MessageSquare,
   FlaskConical,
@@ -32,6 +34,7 @@ import { useLang } from "@/lib/i18n";
 // ============================================================================
 
 type BenchCategory = "Math" | "Reasoning" | "Knowledge & QA" | "Safety & Alignment" | "Coding" | "Agents & Tools" | "Instruction & Chat" | "Long Context & RAG" | "Domain-Specific";
+type BenchSourceFilter = "all" | "remote" | "local";
 
 // bench_gallery.json 中的 HF 元数据
 type HfMeta = {
@@ -91,11 +94,14 @@ type BenchGalleryMeta = {
 // bench_gallery.json 中的单个 bench 项
 type BenchGalleryItem = {
   bench_name: string;
+  bench_kind?: string;
   bench_table_exist: boolean;
   bench_source_url: string;
   bench_dataflow_eval_type: string;
   bench_prompt_template: string | null;
   bench_keys: string[];
+  dataset_cache?: string;
+  download_status?: string;
   meta: BenchGalleryMeta;
 };
 
@@ -203,6 +209,26 @@ function transformBenchGalleryItem(item: BenchGalleryItem): BenchItem {
   };
 }
 
+function isLocalBench(bench: BenchItem): boolean {
+  return bench._raw?.meta?.source === "user_upload";
+}
+
+function deduplicateBenchItems(items: BenchItem[]): BenchItem[] {
+  const positions = new Map<string, number>();
+  const result: BenchItem[] = [];
+  for (const item of items) {
+    const key = item.id.trim().toLowerCase();
+    const existingIndex = positions.get(key);
+    if (existingIndex === undefined) {
+      positions.set(key, result.length);
+      result.push(item);
+    } else {
+      result[existingIndex] = item;
+    }
+  }
+  return result;
+}
+
 function getApiBaseUrl(): string {
   return localStorage.getItem("oneEval.apiBaseUrl") || "http://localhost:8000";
 }
@@ -213,7 +239,7 @@ function loadGalleryBenches(): BenchItem[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as BenchItem[];
     if (!Array.isArray(parsed) || parsed.length === 0) return [];
-    return parsed;
+    return deduplicateBenchItems(parsed);
   } catch {
     return [];
   }
@@ -242,6 +268,15 @@ const BENCH_TYPES = [
   "domain-specific",
   "multilingual",
   "other",
+];
+
+const EVAL_TYPES = [
+  "key1_text_score",
+  "key2_qa",
+  "key2_q_ma",
+  "key3_q_choices_a",
+  "key3_q_choices_as",
+  "key3_q_a_rejected",
 ];
 
 export const Gallery = () => {
@@ -286,19 +321,32 @@ export const Gallery = () => {
   const [benches, setBenches] = useState<BenchItem[]>([]);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<(typeof CATEGORIES)[number]["id"]>("All");
+  const [sourceFilter, setSourceFilter] = useState<BenchSourceFilter>("all");
   const [activeBenchId, setActiveBenchId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Add Bench Modal 状态
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [addMode, setAddMode] = useState<"hf" | "local">("hf");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadEvalType, setUploadEvalType] = useState("");
+  const [uploadKeyMapping, setUploadKeyMapping] = useState("");
   const [addForm, setAddForm] = useState({
     bench_name: "",
     type: "knowledge",
     description: "",
     dataset_url: "",
   });
+  const sourceLabel = (source: BenchSourceFilter) => {
+    const map: Record<BenchSourceFilter, { zh: string; en: string }> = {
+      all: { zh: "全部来源", en: "All Sources" },
+      remote: { zh: "在线注册", en: "Remote" },
+      local: { zh: "本地上传", en: "Local" },
+    };
+    return tt(map[source].zh, map[source].en);
+  };
 
   // 从 API 获取 bench 数据
   const fetchBenches = async () => {
@@ -311,7 +359,7 @@ export const Gallery = () => {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       const data: BenchGalleryItem[] = await response.json();
-      const transformed = data.map(transformBenchGalleryItem);
+      const transformed = deduplicateBenchItems(data.map(transformBenchGalleryItem));
       setBenches(transformed);
       saveGalleryBenches(transformed);
     } catch (err) {
@@ -342,13 +390,14 @@ export const Gallery = () => {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return benches
+      .filter((b) => sourceFilter === "all" || (sourceFilter === "local" ? isLocalBench(b) : !isLocalBench(b)))
       .filter((b) => (category === "All" ? true : b.meta.category === category))
       .filter((b) => {
         if (!q) return true;
         const hay = `${b.name} ${b.id} ${b.meta.description} ${b.meta.description_zh || ""} ${b.meta.tags.join(" ")} ${b.meta.category}`.toLowerCase();
         return hay.includes(q);
       });
-  }, [benches, query, category]);
+  }, [benches, query, category, sourceFilter]);
 
   const handleUseBench = (benchId: string) => {
     navigate("/eval", { state: { preSelectedBench: benchId } });
@@ -401,6 +450,79 @@ export const Gallery = () => {
     }
   };
 
+  const handleUploadBench = async () => {
+    if (!addForm.bench_name.trim() || !addForm.description.trim() || !uploadFile) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const form = new FormData();
+      form.append("dataset_file", uploadFile);
+      form.append("bench_name", addForm.bench_name.trim());
+      form.append("bench_type", addForm.type);
+      form.append("description", addForm.description.trim());
+      form.append("eval_type", uploadEvalType);
+      form.append("key_mapping", uploadKeyMapping.trim());
+
+      const apiBaseUrl = getApiBaseUrl();
+      const response = await fetch(`${apiBaseUrl}/api/benches/upload`, {
+        method: "POST",
+        body: form,
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || tt("上传 Bench 失败", "Failed to upload Bench"));
+      }
+
+      await fetchBenches();
+      setIsAddModalOpen(false);
+      setAddMode("hf");
+      setAddForm({ bench_name: "", type: "knowledge", description: "", dataset_url: "" });
+      setUploadFile(null);
+      setUploadEvalType("");
+      setUploadKeyMapping("");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : tt("上传 Bench 失败", "Failed to upload Bench"));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteBench = async (bench: BenchItem) => {
+    if (!isLocalBench(bench)) {
+      alert(tt("只有本地上传的 Bench 可以删除。", "Only locally uploaded benches can be deleted."));
+      return;
+    }
+
+    const confirmed = window.confirm(
+      tt(
+        `确定删除本地 Bench「${bench.name}」及其数据文件吗？此操作不可恢复。`,
+        `Delete local Bench "${bench.name}" and its dataset file? This cannot be undone.`,
+      ),
+    );
+    if (!confirmed) return;
+
+    setIsSubmitting(true);
+    try {
+      const apiBaseUrl = getApiBaseUrl();
+      const response = await fetch(`${apiBaseUrl}/api/benches/gallery/${encodeURIComponent(bench.id)}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || tt("删除 Bench 失败", "Failed to delete Bench"));
+      }
+
+      setActiveBenchId(null);
+      await fetchBenches();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : tt("删除 Bench 失败", "Failed to delete Bench"));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="p-12 max-w-7xl mx-auto space-y-8">
       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
@@ -411,10 +533,18 @@ export const Gallery = () => {
         <div className="flex gap-3">
           <Button
             className="bg-gradient-to-r from-blue-600 to-violet-600 text-white hover:from-blue-500 hover:to-violet-500"
-            onClick={() => setIsAddModalOpen(true)}
+            onClick={() => { setAddMode("hf"); setIsAddModalOpen(true); }}
           >
             <Plus className="w-4 h-4 mr-2" />
             {tt("新增 Bench", "Add Bench")}
+          </Button>
+          <Button
+            variant="outline"
+            className="border-blue-200 text-blue-700 hover:bg-blue-50"
+            onClick={() => { setAddMode("local"); setIsAddModalOpen(true); }}
+          >
+            <Upload className="w-4 h-4 mr-2" />
+            {tt("上传本地", "Upload Local")}
           </Button>
           <Button
             variant="outline"
@@ -439,30 +569,48 @@ export const Gallery = () => {
       )}
 
       <div className="flex flex-col gap-4">
-        <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
-          <div className="relative w-full md:max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder={tt("搜索基准、标签、分类...", "Search benches, tags, categories...")}
-              className="pl-9 bg-white border-slate-200"
-            />
+        <div className="flex flex-col md:flex-row gap-5 md:items-start">
+          <div className="w-full md:w-2/5 lg:w-[40%] shrink-0 flex flex-col gap-3">
+            <div className="relative w-full">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={tt("搜索基准、标签、分类...", "Search benches, tags, categories...")}
+                className="pl-9 bg-white border-slate-200"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {(["all", "remote", "local"] as BenchSourceFilter[]).map((source) => (
+                <button
+                  key={source}
+                  onClick={() => setSourceFilter(source)}
+                  className={cn(
+                    "px-3 py-1.5 text-sm rounded-full border transition-colors",
+                    source === sourceFilter
+                      ? "bg-slate-900 text-white border-slate-900"
+                      : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50",
+                  )}
+                >
+                  {sourceLabel(source)}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex-1 flex flex-wrap content-start gap-2">
             {CATEGORIES.map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => setCategory(c.id)}
-                    className={cn(
-                      "px-3 py-1.5 text-sm rounded-full border transition-colors",
-                      c.id === category
+              <button
+                key={c.id}
+                onClick={() => setCategory(c.id)}
+                className={cn(
+                  "px-3 py-1.5 text-sm rounded-full border transition-colors",
+                  c.id === category
                     ? "bg-gradient-to-r from-blue-600 to-violet-600 text-white border-transparent shadow-sm shadow-blue-600/20"
-                    : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
-                    )}
-                  >
-                    {categoryLabel(c.id)}
-                  </button>
+                    : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50",
+                )}
+              >
+                {categoryLabel(c.id)}
+              </button>
             ))}
           </div>
         </div>
@@ -495,7 +643,17 @@ export const Gallery = () => {
                         </div>
                         <div>
                           <CardTitle className="text-xl text-slate-900">{bench.name}</CardTitle>
-                          <div className="text-xs text-slate-500 mt-0.5">{categoryLabel(bench.meta.category)}</div>
+                          <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+                            <span>{categoryLabel(bench.meta.category)}</span>
+                            <span className={cn(
+                              "px-1.5 py-0.5 rounded-full border",
+                              isLocalBench(bench)
+                                ? "bg-amber-50 text-amber-700 border-amber-200"
+                                : "bg-sky-50 text-sky-700 border-sky-200",
+                            )}>
+                              {isLocalBench(bench) ? sourceLabel("local") : sourceLabel("remote")}
+                            </span>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -716,6 +874,17 @@ export const Gallery = () => {
                 <Button className="flex-1 bg-slate-900 text-white hover:bg-slate-800" onClick={() => handleUseBench(activeBench.id)}>
                   {tt("使用该 Bench", "Use This Bench")}
                 </Button>
+                {isLocalBench(activeBench) && (
+                  <Button
+                    variant="outline"
+                    className="border-red-200 text-red-700 hover:bg-red-50"
+                    onClick={() => handleDeleteBench(activeBench)}
+                    disabled={isSubmitting}
+                    title={tt("删除本地 Bench", "Delete local Bench")}
+                  >
+                    {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  </Button>
+                )}
                 <Button variant="outline" className="border-slate-200" onClick={() => setActiveBenchId(null)}>
                   {tt("关闭", "Close")}
                 </Button>
@@ -742,7 +911,11 @@ export const Gallery = () => {
               className="relative bg-white rounded-2xl shadow-2xl p-6 w-full max-w-lg mx-4"
             >
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold text-slate-900">{tt("新增 Benchmark", "Add New Benchmark")}</h2>
+                <h2 className="text-xl font-bold text-slate-900">
+                  {addMode === "local"
+                    ? tt("上传本地 Benchmark", "Upload Local Benchmark")
+                    : tt("新增 Benchmark", "Add New Benchmark")}
+                </h2>
                 <button
                   className="p-2 rounded-lg hover:bg-slate-100 text-slate-500"
                   onClick={() => setIsAddModalOpen(false)}
@@ -757,10 +930,16 @@ export const Gallery = () => {
                   <Input
                     value={addForm.bench_name}
                     onChange={(e) => setAddForm({ ...addForm, bench_name: e.target.value })}
-                    placeholder={tt("例如：org/dataset_name", "e.g., org/dataset_name")}
+                    placeholder={addMode === "local"
+                      ? tt("例如：my_local_bench", "e.g., my_local_bench")
+                      : tt("例如：org/dataset_name", "e.g., org/dataset_name")}
                     className="border-slate-200"
                   />
-                  <p className="text-xs text-slate-500">{tt("请使用 HuggingFace 格式：org/dataset_name", "Use HuggingFace format: org/dataset_name")}</p>
+                  <p className="text-xs text-slate-500">
+                    {addMode === "local"
+                      ? tt("用于 Gallery 和评测结果中的唯一名称。", "Unique name used in Gallery and evaluation results.")
+                      : tt("请使用 HuggingFace 格式：org/dataset_name", "Use HuggingFace format: org/dataset_name")}
+                  </p>
                 </div>
 
                 <div className="space-y-2">
@@ -786,23 +965,65 @@ export const Gallery = () => {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label>{tt("数据集链接（可选）", "Dataset URL (optional)")}</Label>
-                  <Input
-                    value={addForm.dataset_url}
-                    onChange={(e) => setAddForm({ ...addForm, dataset_url: e.target.value })}
-                    placeholder="https://huggingface.co/datasets/..."
-                    className="border-slate-200"
-                  />
-                  <p className="text-xs text-slate-500">{tt("留空将根据 bench 名自动生成", "Leave empty to auto-generate from bench name")}</p>
-                </div>
+                {addMode === "local" ? (
+                  <>
+                    <div className="space-y-2">
+                      <Label>{tt("Bench 文件（JSONL）*", "Bench File (JSONL) *")}</Label>
+                      <Input
+                        type="file"
+                        accept=".jsonl,application/jsonl"
+                        onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                        className="border-slate-200 bg-white"
+                      />
+                      <p className="text-xs text-slate-500">
+                        {tt("每行一个 JSON object，文件会保存到评测服务端。", "One JSON object per line; the file is stored on the evaluation server.")}
+                      </p>
+                      <p className="text-xs text-amber-700">
+                        {tt("仅支持 JSONL 格式的纯文本测评数据集；其余类型的本地测试集请使用 Skill 模式。", "Only JSONL text-based evaluation datasets are supported; use Skill mode for other types of local test sets.")}
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>{tt("评测类型（可选）", "Evaluation Type (optional)")}</Label>
+                      <select
+                        value={uploadEvalType}
+                        onChange={(e) => setUploadEvalType(e.target.value)}
+                        className="w-full h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+                      >
+                        <option value="">{tt("上传后自动推断", "Infer after upload")}</option>
+                        {EVAL_TYPES.map((value) => <option key={value} value={value}>{value}</option>)}
+                      </select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>{tt("字段映射（可选 JSON）", "Key Mapping (optional JSON)")}</Label>
+                      <textarea
+                        value={uploadKeyMapping}
+                        onChange={(e) => setUploadKeyMapping(e.target.value)}
+                        placeholder={'{"input_question_key":"question","input_target_key":"answer"}'}
+                        className="w-full min-h-[90px] rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-mono text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-2">
+                    <Label>{tt("数据集链接（可选）", "Dataset URL (optional)")}</Label>
+                    <Input
+                      value={addForm.dataset_url}
+                      onChange={(e) => setAddForm({ ...addForm, dataset_url: e.target.value })}
+                      placeholder="https://huggingface.co/datasets/..."
+                      className="border-slate-200"
+                    />
+                    <p className="text-xs text-slate-500">{tt("留空将根据 bench 名自动生成", "Leave empty to auto-generate from bench name")}</p>
+                  </div>
+                )}
               </div>
 
               <div className="mt-6 flex gap-3">
                 <Button
                   className="flex-1 bg-gradient-to-r from-blue-600 to-violet-600 text-white hover:from-blue-500 hover:to-violet-500"
-                  onClick={handleAddBench}
-                  disabled={isSubmitting || !addForm.bench_name.trim() || !addForm.description.trim()}
+                  onClick={addMode === "local" ? handleUploadBench : handleAddBench}
+                  disabled={isSubmitting || !addForm.bench_name.trim() || !addForm.description.trim() || (addMode === "local" && !uploadFile)}
                 >
                   {isSubmitting ? (
                     <>
@@ -812,7 +1033,9 @@ export const Gallery = () => {
                   ) : (
                     <>
                       <Plus className="w-4 h-4 mr-2" />
-                      {tt("新增 Benchmark", "Add Benchmark")}
+                      {addMode === "local"
+                        ? tt("上传并注册", "Upload and Register")
+                        : tt("新增 Benchmark", "Add Benchmark")}
                     </>
                   )}
                 </Button>

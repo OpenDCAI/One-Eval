@@ -15,6 +15,7 @@ log = get_logger("BenchResolveAgent")
 class BenchResolveAgent(CustomAgent):
 
     _gallery_index: Optional[Dict[str, Dict]] = None
+    _gallery_index_mtime_ns: Optional[int] = None
 
     @property
     def role_name(self) -> str:
@@ -31,11 +32,19 @@ class BenchResolveAgent(CustomAgent):
 
     def _load_gallery_index(self) -> Dict[str, Dict]:
         """加载 bench_gallery.json，构建 bench_name -> 完整配置 的索引"""
-        if BenchResolveAgent._gallery_index is not None:
-            return BenchResolveAgent._gallery_index
         gallery_path = Path(__file__).parent.parent / "utils" / "bench_table" / "bench_gallery.json"
+        try:
+            gallery_mtime_ns = gallery_path.stat().st_mtime_ns
+        except OSError:
+            gallery_mtime_ns = None
+        if (
+            BenchResolveAgent._gallery_index is not None
+            and BenchResolveAgent._gallery_index_mtime_ns == gallery_mtime_ns
+        ):
+            return BenchResolveAgent._gallery_index
         if not gallery_path.exists():
             BenchResolveAgent._gallery_index = {}
+            BenchResolveAgent._gallery_index_mtime_ns = gallery_mtime_ns
             return {}
         with open(gallery_path, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -48,6 +57,7 @@ class BenchResolveAgent(CustomAgent):
                     if isinstance(alias, str) and alias:
                         index[alias.lower()] = bench
         BenchResolveAgent._gallery_index = index
+        BenchResolveAgent._gallery_index_mtime_ns = gallery_mtime_ns
         return index
 
     def _lookup_gallery(self, bench_name: str) -> Optional[Dict]:
@@ -352,6 +362,8 @@ class BenchResolveAgent(CustomAgent):
                         'from_gallery': True,
                         'source': 'hf_gallery',  # HF 搜到 + gallery 有配置
                     },
+                    dataset_cache=gallery_entry.get('dataset_cache'),
+                    download_status=gallery_entry.get('download_status'),
                 )
                 log.info(f"[HF+Gallery] {repo_id} → gallery 有完整配置（eval_type={bench.bench_dataflow_eval_type}）")
             else:
